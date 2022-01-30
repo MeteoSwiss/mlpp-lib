@@ -8,8 +8,7 @@ def split_list(
     shuffle_samples: bool = False,
     seed: Optional[int] = None,
 ) -> list:
-    """Split a list of samples according to split ratios."""
-
+    """Split list into subsets according to given split ratios."""
     if not round(sum(split_ratios), 5) == 1.0:
         raise ValueError("Split ratios don't add up to 1!")
     split_ratios[-1] = 1 - sum(split_ratios[:-1])
@@ -33,7 +32,7 @@ def split_list(
 def split_list_stratify(
     samples: list, sample_labels: list, split_ratios: list, **split_kwargs
 ) -> list:
-    """Stratified split of a list of samples according to split ratios."""
+    """Stratified split list into subsets according to given split ratios."""
 
     if not len(sample_labels) == len(samples):
         raise ValueError("'samples' and 'sample_labels' must have the same length")

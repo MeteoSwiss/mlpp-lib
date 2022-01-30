@@ -1,6 +1,6 @@
 import numpy as np
 
-from mlpp_lib.data_handling import split_list, split_list_stratify
+from mlpp_lib.model_selection import split_list, split_list_stratify
 
 
 def get_split_lengths(split_ratios, n):
