@@ -24,7 +24,7 @@ def split_list(
         start = int(cum_fraction * n_samples)
         cum_fraction += split_ratios[i]
         end = int(cum_fraction * n_samples)
-        split_data.append(samples[start:end])
+        split_data.append(sorted(samples[start:end]))
 
     return split_data
 
