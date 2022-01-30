@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "mlpp-lib"
+version = "0.1.0"
+description = ""
+authors = ["Daniele Nerini <daniele.nerini@meteoswiss.ch>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+numpy = "^1.22.1"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+black = "^22.1.0"
+
+[build-system]
+requires = ["setuptools", "poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
