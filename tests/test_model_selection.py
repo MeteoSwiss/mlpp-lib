@@ -1,6 +1,6 @@
 import numpy as np
 
-from mlpp_lib.model_selection import split_list, split_list_stratify
+from mlpp_lib.model_selection import split_list, split_list_stratify, split_reftimes_cv
 
 
 def get_split_lengths(split_ratios, n):
@@ -52,3 +52,22 @@ def test_split_list_stratify():
         assert sum([s in sample_split[0] for s in subdata]) == split_lengths[0]
         assert sum([s in sample_split[1] for s in subdata]) == split_lengths[1]
         assert sum([s in sample_split[2] for s in subdata]) == split_lengths[2]
+
+
+def test_split_reftimes_cv():
+    """"""
+
+    split_ratios = [0.6, 0.2, 0.2]
+    reftimes = np.arange("2016-01-01", "2021-01-01", dtype="datetime64[12h]").astype(
+        "datetime64[ns]"
+    )
+
+    split_lists = split_reftimes_cv(
+        reftimes, gap=5, interval=360, p=split_ratios, p_tol=0.05, uni_tol=0.01
+    )
+
+    split = split_lists[0]
+    assert len(split) == reftimes.shape[0]
+    assert np.isclose(
+        split[split == 0].shape[0] / split.shape[0], split_ratios[0], atol=0.05
+    )
