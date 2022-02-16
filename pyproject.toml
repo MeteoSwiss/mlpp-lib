@@ -5,8 +5,9 @@ description = ""
 authors = ["Daniele Nerini <daniele.nerini@meteoswiss.ch>"]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = ">=3.9, <3.11"
 numpy = "^1.22.1"
+tensorflow = "^2.8.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
