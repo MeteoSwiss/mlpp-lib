@@ -4,6 +4,8 @@ from tensorflow.keras.layers import Layer, Dense, Dropout
 from tensorflow.keras import Model, initializers
 
 from mlpp_lib.physical_layers import *
+from mlpp_lib.probabilistic_layers import *
+
 import numpy as np
 
 try:
@@ -20,7 +22,8 @@ def fully_connected_network(
     hidden_layers: list = [32, 32, 32],
     activations: Optional[Union[str, list[str]]] = "relu",
     dropout: Optional[Union[float, list[float]]] = None,
-    output_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
+    out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
+    probabilistic_layer: Optional[str] = None,
 ) -> Model:
     """
     Build a Fully Connected Neural Network.
@@ -38,9 +41,7 @@ def fully_connected_network(
     elif isinstance(activations, str):
         activations = [activations] * len(hidden_layers)
 
-    if isinstance(output_bias_init, np.ndarray):
-        output_bias_init = initializers.Constant(output_bias_init)
-
+    # build core blocks
     inputs = tf.keras.Input(shape=input_shape)
     x = inputs
     for i, units in enumerate(hidden_layers):
@@ -48,8 +49,28 @@ def fully_connected_network(
         if i < len(dropout):
             x = Dropout(dropout[i], name=f"dropout_{i}")(x)
 
-    outputs = Dense(output_size, bias_initializer=output_bias_init, name="output")(x)
+    # probabilistic prediction
+    if probabilistic_layer:
+        probabilistic_layer = globals()[probabilistic_layer]
+        n_params = probabilistic_layer.params_size(output_size)
+        if isinstance(out_bias_init, np.ndarray):
+            out_bias_init = np.hstack(
+                [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
+            )
+            out_bias_init = initializers.Constant(out_bias_init)
+
+        x = Dense(n_params, bias_initializer=out_bias_init, name="dist_params")(x)
+        outputs = probabilistic_layer(output_size, name="output")(x)
+
+    # deterministic prediction
+    else:
+        if isinstance(out_bias_init, np.ndarray):
+            out_bias_init = initializers.Constant(out_bias_init)
+
+        outputs = Dense(output_size, bias_initializer=out_bias_init, name="output")(x)
+
     model = Model(inputs=inputs, outputs=outputs)
+
     return model
 
 
@@ -62,7 +83,7 @@ def temporal_convolutional_network(
     use_skip_connections: bool = True,
     dropout_rate: float = 0,
     activation: str = "relu",
-    output_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
+    out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     **kwargs,
 ) -> Model:
     """
@@ -72,8 +93,8 @@ def temporal_convolutional_network(
     if not TCN_IMPORTED:
         raise ImportError("Optional dependency keras-tcn is missing!")
 
-    if isinstance(output_bias_init, np.ndarray):
-        output_bias_init = initializers.Constant(output_bias_init)
+    if isinstance(out_bias_init, np.ndarray):
+        out_bias_init = initializers.Constant(out_bias_init)
 
     inputs = tf.keras.Input(shape=input_shape, name="input")
     x_tcn = tcn.TCN(
@@ -89,9 +110,7 @@ def temporal_convolutional_network(
         **kwargs,
     )(inputs)
 
-    outputs = Dense(output_size, bias_initializer=output_bias_init, name="output")(
-        x_tcn
-    )
+    outputs = Dense(output_size, bias_initializer=out_bias_init, name="output")(x_tcn)
     model = Model(inputs=inputs, outputs=outputs)
 
     return model
