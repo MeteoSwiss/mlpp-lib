@@ -1,3 +1,4 @@
+from ast import Assert
 import tensorflow as tf
 from typing import Optional, Union, Any
 from tensorflow.keras.layers import Layer, Dense, Dropout
@@ -19,7 +20,7 @@ else:
 def fully_connected_network(
     input_shape: tuple[int],
     output_size: int,
-    hidden_layers: list = [32, 32, 32],
+    hidden_layers: list,
     activations: Optional[Union[str, list[str]]] = "relu",
     dropout: Optional[Union[float, list[float]]] = None,
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
@@ -27,6 +28,35 @@ def fully_connected_network(
 ) -> Model:
     """
     Build a Fully Connected Neural Network.
+
+    Parameters
+    ----------
+    input_shape: tuple[int]
+        Shape of the input samples (not including batch size)
+    output_size: int
+        Number of target predictands.
+    hidden_layers: list[int]
+        List that is used to define the fully connected block. Each element creates
+        a Dense layer with the corresponding units.
+    activations: str | list[str]
+        (Optional) Activation function(s) for the Dense layer(s). See https://keras.io/api/layers/activations/#relu-function.
+        If a string is passed, the same activation is used for all layers. Default is `relu`.
+    dropout: float | list[float]
+        (Optional) Dropout rate for the optional dropout layers. If a `float` is passed,
+        dropout layers with the given rate are created after each Dense layer, except before the output layer.
+        Default is None.
+    out_bias_init: str | np.ndarray
+        (Optional) Specifies the initialization of the output layer bias. If a string is passed,
+        it must be a valid Keras built-in initializer (see https://keras.io/api/layers/initializers/).
+        If an array is passed, it must match the `output_size` argument.
+    probabilistic_layer: str
+        (Optional) Name of a probabilistic layer defined in `mlpp_lib.probabilistic_layers`, which is
+        used as output layer of the keras `Model`. Default is None.
+
+    Return
+    ------
+    model: keras Functional model
+        The built (but not yet compiled) model.
     """
 
     if isinstance(dropout, list):
@@ -40,6 +70,13 @@ def fully_connected_network(
         assert len(activations) == len(hidden_layers)
     elif isinstance(activations, str):
         activations = [activations] * len(hidden_layers)
+
+    if isinstance(out_bias_init, np.ndarray):
+        out_bias_init_shape = out_bias_init.shape[-1]
+        assert out_bias_init.shape[-1] == output_size, (
+            f"Bias initialization array is shape {out_bias_init_shape}"
+            f"but output size is {output_size}"
+        )
 
     # build core blocks
     inputs = tf.keras.Input(shape=input_shape)
