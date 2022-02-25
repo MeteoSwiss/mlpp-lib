@@ -15,6 +15,26 @@ class BatchGeneratorSequence(tf.keras.utils.Sequence):
     """
     Generate custom batches with desired dimensions and sizes.
     Subclasses the Sequence utility from Keras.
+
+    Parameters
+    ----------
+    features: xr.Dataset
+        Dataset containing features predictors
+    targets: xr.Dataset
+        Dataset containing targets predictands.
+    stack_dims: dict
+        Dimensions that are going to be stacked
+        and the number of samples that will be included in a batch.
+    shuffle: bool
+        Whether or not to shuffle batches at the end of each epoch.
+
+    Attributes
+    ----------
+    x_shape: tuple
+        Shape of predictors, with batch size (None) as first dimension.
+    y_shape: tuple
+        Shape of predictands, with batch size (None) as first dimension.
+
     """
 
     features: xr.Dataset = field(repr=False)
@@ -51,6 +71,17 @@ class BatchGeneratorDataset(tf.data.Dataset):
     """
     Generate custom batches with desired dimensions and sizes.
     Subclasses the Dataset utility from tf.data.
+
+    Parameters
+    ----------
+    features: xr.Dataset
+        Dataset containing features predictors
+    targets: xr.Dataset
+        Dataset containing targets predictands.
+    stack_dims: dict
+        Dimensions that are going to be stacked
+        and the number of samples that will be included in a batch.
+
     """
 
     def _generator(
@@ -91,11 +122,30 @@ def chunks(lst: list, n: int) -> list:
 def get_batches_list(
     features: xr.Dataset, stack_dims: dict[str, int]
 ) -> list[dict[str, Union[int, str, datetime, float]]]:
-    """Return a list of dictionaries that can be used for selecting batches with xarray objects"""
-    stack_batches = [
-        [b for b in chunks(features[dim].values, size) if len(b) == size]
-        for dim, size in stack_dims.items()
-    ]
+    """
+    Return a list of dictionaries for indexing xarray objects.
+
+    Parameters
+    ----------
+    features: xr.Dataset
+        Dataset containing input features.
+    stack_dims: dict
+        Dimensions that are going to be stacked
+        and the number of samples that will be included in a batch.
+
+    Returns
+    -------
+    batches: list
+        List of dict-like indexes for xarray objects. Each element of the list
+        can be used to select a batch from the Datasets.
+    """
+
+    stack_batches = []
+    for dim, size in stack_dims.items():
+        size = min(features.sizes[dim], size)
+        chunked = chunks(features[dim].values, size)
+        stack_batches.append([b for b in chunked if len(b) == size])
+
     batches = list(itertools.product(*stack_batches))
     batches = [{d: b[i] for i, d in enumerate(stack_dims)} for b in batches]
     return batches
@@ -107,6 +157,31 @@ def select_stack_batch(
     stack_dims: dict[str, int],
     batch: dict[str, Union[int, str, datetime, float]],
 ) -> tuple[np.ndarray]:
+    """
+    Construct a batch.
+
+    Selects samples from the provided datasets and stack dimensions to form a batch,
+    then removes samples with missing values.
+
+    Parameters
+    ----------
+    features: xr.Dataset
+        Dataset containing input features.
+    targets: xr.Dataset
+        Dataset containing output targets.
+    stack_dims: dict
+        Dimensions that are going to be stacked
+        and the number of samples that will be included in a batch.
+    batch: dict
+        A dict-like indexer for xarray objects.
+
+    Returns
+    -------
+    batch_x: np.ndarray
+        Predictors batch.
+    batch_y: np.ndarray
+        Predictands batch.
+    """
 
     batch_x = (
         features.loc[batch]
@@ -135,6 +210,27 @@ def select_stack_batch(
 def get_batches_shapes(
     features: xr.Dataset, targets: xr.Dataset, stack_dims: dict[str, int]
 ) -> tuple[tuple]:
+    """
+    Return the shapes of predictors and predictands batches.
+
+    Parameters
+    ----------
+    features: xr.Dataset
+        Dataset containing features predictors.
+    targets: xr.Dataset
+        Dataset containing targets predictands.
+    stack_dims: dict
+        Dimensions that are going to be stacked
+        and the number of samples that will be included in a batch.
+
+    Returns
+    -------
+    batch_x_shape: tuple
+        Shape of predictors, with batch size (None) as first dimension.
+    batch_y_shape: tuple
+        Shape of predictands, with batch size (None) as first dimension.
+
+    """
     remaining_dims = list(set(features.dims.mapping) - set(stack_dims.keys()))
     remaining_dims_size = [features.dims.mapping[dim] for dim in remaining_dims]
     batch_x_shape = (None, *remaining_dims_size, len(features.data_vars))
