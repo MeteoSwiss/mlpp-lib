@@ -1,10 +1,13 @@
-from typing import Union
+from typing import Literal, Union
 
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
+from mlpp_lib.decorators import with_attrs
 
+
+@with_attrs(loss_type="probabilistic")
 def crps_energy_ensemble(
     obs: Union[tf.Tensor, np.ndarray],
     fct_ens: Union[tf.Tensor, np.ndarray],
@@ -43,6 +46,7 @@ def crps_energy_ensemble(
     return crps
 
 
+@with_attrs(loss_type="probabilistic")
 def crps_energy(
     obs: Union[tf.Tensor, np.ndarray],
     fct_dist: tfp.distributions.Distribution,
@@ -67,7 +71,7 @@ def crps_energy(
         The CRPS for each sample.
     """
 
-    assert fct_dist.batch_shape == obs.shape
+    assert fct_dist.shape == obs.shape
 
     n_samples = 1000
 
@@ -86,3 +90,173 @@ def crps_energy(
     crps = E_1 - E_2 / 2
 
     return crps
+
+
+class MultivariateLoss(tf.keras.losses.Loss):
+    """
+    Compute losses for multivariate data.
+
+    Facilitates computing losses for multivariate targets
+    that may have different units. Allows rescaling the inputs
+    and applying weights to each target variables.
+
+    Parameters
+    ----------
+    metric: {"mse", "mae", "crps_energy"}
+        The function used to compute the loss.
+    scaling: {"minmax", "standard"}
+        (Optional) A scaling to apply to the data, in order to address the differences
+        in magnitude due to different units (if unit is not of the variables. Default is `None`.
+    weights: array-like
+        (Optional) Weights assigned to each variable in the computation of the loss. Default is `None`.
+    **kwargs:
+        (Optional) Additional keyword arguments to be passed to the parent `Loss` class.
+
+
+    """
+
+    avail_metrics = {
+        "mse": lambda y_true, y_pred: tf.reduce_mean(
+            tf.square(y_true - y_pred), axis=0
+        ),
+        "mae": lambda y_true, y_pred: tf.reduce_mean(tf.abs(y_true - y_pred), axis=0),
+        "crps_energy": crps_energy,
+    }
+
+    avail_scaling = {
+        "standard": "_standard_scaling",
+        "minmax": "_minmax_scaling",
+        None: "none",
+    }
+
+    def __init__(
+        self,
+        metric: Literal["mse", "mae"],
+        scaling: Literal["minmax", "standard"] = None,
+        weights: Union[list, np.ndarray] = None,
+        **kwargs,
+    ) -> None:
+        super(MultivariateLoss, self).__init__(**kwargs)
+
+        try:
+            self.metric = self.avail_metrics[metric]
+        except KeyError as err:
+            raise NotImplementedError(
+                f"`metric` argument must be one of {list(self.avail_metrics.keys())}"
+            ) from err
+
+        try:
+            if getattr(self.metric, "loss_type", None) == "probabilistic":
+                method_name = self.avail_scaling[scaling] + "_probabilistic"
+            else:
+                method_name = self.avail_scaling[scaling]
+            self.scaling = getattr(self, method_name, None)
+        except KeyError as err:
+            raise NotImplementedError(
+                f"`scaling` argument must be one of {list(self.avail_scaling.keys())}"
+            ) from err
+
+        if weights:
+            self.weights = tf.constant(weights)
+        else:
+            self.weights = None
+
+    def get_config(self) -> None:
+        config = {
+            "metric": self.metric,
+            "scaling": self.scaling,
+            "weights": self.weights,
+        }
+        base_config = super().get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def call(
+        self,
+        y_true: Union[tf.Tensor, np.ndarray],
+        y_pred: Union[tf.Tensor, np.ndarray, tfp.distributions.Distribution],
+    ) -> tf.Tensor:
+        """
+        Compute the loss.
+
+        Parameters
+        ----------
+        y_true: array-like
+            Values representing the ground truth.
+        y_pred: array_like or tfp.Distribution
+            Predicted values or distributions.
+
+        """
+
+        assert y_true.shape[1:] == y_pred.shape[1:]
+        if self.weights is not None:
+            assert (
+                len(self.weights) == y_true.shape[-1]
+            ), "Number weights must match the number of target variables."
+
+        if self.scaling:
+            y_true, y_pred = self.scaling(y_true, y_pred)
+
+        loss = self.metric(y_true, y_pred)
+
+        if self.weights is not None:
+            loss = tf.multiply(loss, self.weights)
+
+        return loss
+
+    def _minmax_scaling(
+        self, y_true: Union[tf.Tensor, np.ndarray], y_pred: Union[tf.Tensor, np.ndarray]
+    ) -> tuple[tf.Tensor]:
+
+        y_true_min = tf.reduce_min(y_true, axis=0)
+        y_true_max = tf.reduce_max(y_true, axis=0)
+        y_true = (y_true - y_true_min) / (y_true_max - y_true_min)
+        y_pred = (y_pred - y_true_min) / (y_true_max - y_true_min)
+
+        return y_true, y_pred
+
+    def _minmax_scaling_probabilistic(
+        self,
+        y_true: Union[tf.Tensor, np.ndarray],
+        y_pred: tfp.distributions.Distribution,
+    ) -> tuple[tf.Tensor]:
+
+        y_true_min = tf.reduce_min(y_true, axis=0)
+        y_true_max = tf.reduce_max(y_true, axis=0)
+
+        scale = tfp.bijectors.Scale(scale=1 / (y_true_max - y_true_min))
+        shift = tfp.bijectors.Shift(shift=-y_true_min)
+        y_true = (y_true - y_true_min) / (y_true_max - y_true_min)
+        y_pred = scale(shift(y_pred))
+
+        y_pred.shape = (*y_pred.batch_shape, *y_pred.event_shape)
+
+        return y_true, y_pred
+
+    def _standard_scaling(
+        self, y_true: Union[tf.Tensor, np.ndarray], y_pred: Union[tf.Tensor, np.ndarray]
+    ) -> tuple[tf.Tensor]:
+
+        y_true_mean = tf.math.reduce_mean(y_true, axis=0)
+        y_true_std = tf.math.reduce_std(y_true, axis=0)
+        y_true = (y_true - y_true_mean) / y_true_std
+        y_pred = (y_pred - y_true_mean) / y_true_std
+
+        return y_true, y_pred
+
+    def _standard_scaling_probabilistic(
+        self,
+        y_true: Union[tf.Tensor, np.ndarray],
+        y_pred: tfp.distributions.Distribution,
+    ) -> tuple[tf.Tensor]:
+
+        y_true_mean = tf.math.reduce_mean(y_true, axis=0)
+        y_true_std = tf.math.reduce_std(y_true, axis=0)
+
+        scale = tfp.bijectors.Scale(scale=1 / y_true_std)
+        shift = tfp.bijectors.Shift(shift=-y_true_mean)
+        y_true = (y_true - y_true_mean) / y_true_std
+        y_pred = scale(shift(y_pred))
+
+        y_pred.shape = (*y_pred.batch_shape, *y_pred.event_shape)
+
+        return y_true, y_pred
