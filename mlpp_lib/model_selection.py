@@ -63,13 +63,14 @@ def train_test_split(
     return data_split
 
 
-class TimeSeriesSplit:
-    """Time Series cross-validator
+class UniformTimeSeriesSplit:
+    """Time Series cross-validator ...
 
     Parameters
     ----------
     n_splits : int, default=5
         Number of splits. Must be at least 2.
+    ...
     """
 
     def __init__(

@@ -40,7 +40,7 @@ def test_time_series_cv():
     reftimes = np.arange("2016-01-01", "2021-01-01", dtype="datetime64[12h]").astype(
         "datetime64[ns]"
     )
-    cv = ms.TimeSeriesSplit(n_splits)
+    cv = ms.UniformTimeSeriesSplit(n_splits)
     for n, (train, test) in enumerate(cv.split(reftimes)):
         assert isinstance(train, list)
         assert isinstance(test, list)
