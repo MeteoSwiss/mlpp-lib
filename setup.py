@@ -4,8 +4,11 @@ from setuptools import setup, find_packages
 
 requirements = [
     "numpy",
+    "scipy",
+    "pandas",
     "tensorflow",
-    "tensorflow-probability"
+    "tensorflow-probability",
+    "xarray",
 ]
 
 setup(
