@@ -124,9 +124,10 @@ class UniformTimeSeriesSplit:
                 split.loc[start:end] = choice
                 if next_choice != choice:
                     gap_start = end
-                    gap_end = end + self.gap
+                    gap_end = gap_start + self.gap
                     split.loc[gap_start:gap_end] = 3
-                start += test_interval + self.gap
+                    start += self.gap
+                start += test_interval
             split.loc[X[-1] - self.gap : X[-1]] = 3
             if self._check_split(split, test_size):
                 good_splits.append(split.values)
