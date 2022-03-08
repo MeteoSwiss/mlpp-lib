@@ -1,4 +1,6 @@
+from multiprocessing.sharedctypes import Value
 import random
+from re import A
 from typing import Optional
 import time
 from itertools import combinations
@@ -70,6 +72,33 @@ class UniformTimeSeriesSplit:
     ----------
     n_splits : int, default=5
         Number of splits. Must be at least 2.
+    test_size : (Optional) float
+        The size (as fraction) of the test set.
+    interval : (Optional), str
+        The length of a cross-validation interval of the as a duration string (e.g. 180D).
+        When not set, the interval is effectively equals to the length of the test set.
+        Example: with five years of data and test_size=0.2, if interval is not set we will
+        have maximum of five splits (that are also exclusive and are therefore "folds"). But if
+        the interval is six months, we can have 5 x 5 = 25 splits in total. In this case, however,
+        they will be non-exclusive.
+    gap : str, default="10D"
+        Length of a gap between sets as a duration string. Can be used to
+        preserve independency between sets.
+    size_tolerance : float, default=0.05
+        Because of gaps (and interval) lengths, the size of the test
+        set may not be exactly the one specified in `test_size`. This argument
+        sets the tolerance.
+    uniformity: str, default="month"
+        Label used to check for uniformity.
+    uniformity_tolerance: float, default=0.01
+        Maximum tolerated distance from a uniform distribution,
+        calculated using Wasserstein distance.
+
+    Note
+    ----
+    The use of this feature often requires some trial and error.
+
+
     ...
     """
 
@@ -77,17 +106,30 @@ class UniformTimeSeriesSplit:
         self,
         n_splits: int = 5,
         test_size: Optional[float] = None,
+        interval: Optional[str] = None,
         gap: str = "10D",
         size_tolerance: float = 0.05,
         uniformity: Optional[str] = "month",
         uniformity_tolerance: float = 0.01,
+        random_state: int = 1234,
     ):
+
+        if test_size:
+            if (n_splits > 1 / test_size) and interval is None:
+                raise ValueError(
+                    f"Cannot return {n_splits} splits. A maximum of  1 / {test_size}"
+                    f" splits can be returned if test_size={test_size} and"
+                    " the interval argument is not set."
+                )
+
         self.n_splits = n_splits
         self.test_size = test_size
         self.gap = pd.Timedelta(gap)
+        self.interval = pd.Timedelta(interval) if interval else None
         self.size_tolerance = size_tolerance
         self.uniformity = uniformity
         self.uniformity_tolerance = uniformity_tolerance
+        self.random_state = random_state
 
     def split(
         self,
@@ -107,13 +149,38 @@ class UniformTimeSeriesSplit:
         test : ndarray
             The testing set indices for that split.
         """
+
+        self.failed_uniformity = 0
+        self.failed_size = 0
         n_splits = self.n_splits
         test_size = self.test_size if self.test_size is not None else 1 / n_splits
-        test_interval = (X[-1] - X[0]) * test_size - self.gap
-        which = combinations(range(n_splits), 1)
-        which = np.array(list(which), dtype=int)[::-1]
-        splits = np.zeros((len(which), n_splits), dtype=int)
+
+        # if interval is explicitely defined by the user
+        if self.interval:
+            test_interval = self.interval
+            n_intervals = int((X[-1] - X[0]) / test_interval)
+            n_test_intervals = max(int(n_intervals * test_size), 1)
+
+        # if interval is simply the length of the test set
+        else:
+            test_interval = (X[-1] - X[0]) * test_size - self.gap
+            n_intervals = n_splits
+            n_test_intervals = 1
+
+        which = list(combinations(range(n_intervals), n_test_intervals))
+        which = np.array(which, dtype=int)[::-1]
+        splits = np.zeros((len(which), n_intervals), dtype=int)
         splits[np.arange(len(which))[None].T, which] = 1
+
+        if len(splits) < n_splits:
+            raise ValueError(
+                f"The number of possible combinations is {len(splits)}"
+                f" but the requested number of splits is {n_splits}."
+            )
+
+        rng = np.random.default_rng(self.random_state)
+        rng.shuffle(splits)
+
         good_splits = []
         for choice_array in splits:
             split = pd.Series(-1, index=X, dtype=int)
@@ -136,9 +203,13 @@ class UniformTimeSeriesSplit:
         n_good_splits = len(good_splits)
         if n_good_splits < self.n_splits:
             raise RuntimeError(
-                "we could not find enough valid splits... try change your input parameter?"
+                "We could not find enough valid splits! "
+                f"{len(splits)} splits were checked but only {n_good_splits} passed... "
+                f"{self.failed_size} failed size checks, "
+                f"{self.failed_uniformity} uniformity checks. "
+                "Try change your input parameter?"
             )
-        for good_split in good_splits:
+        for good_split in good_splits[:n_splits]:
             train_idx = np.where(good_split == 0)[0].tolist()
             test_idx = np.where(good_split == 1)[0].tolist()
             yield train_idx, test_idx
@@ -156,6 +227,7 @@ class UniformTimeSeriesSplit:
         if np.isclose(train_proportion, 1 - test_size, atol=self.size_tolerance):
             return True
         else:
+            self.failed_size += 1
             return False
 
     def _check_uniformity(self, split, test_size):
@@ -171,8 +243,10 @@ class UniformTimeSeriesSplit:
         try:
             wsd = wasserstein_distance(freq, uniform_dist)
         except ValueError:
+            self.failed_uniformity += 1
             return False
         if wsd < self.uniformity_tolerance:
             return True
         else:
+            self.failed_uniformity += 1
             return False
