@@ -1,10 +1,11 @@
 import numpy as np
 
-from mlpp_lib.model_selection import split_list, split_list_stratify, split_reftimes_cv
+import mlpp_lib.model_selection as ms
 
 
-def get_split_lengths(split_ratios, n):
+def get_split_lengths(test_size, n):
     split_lengths = []
+    split_ratios = [1 - test_size, test_size]
     start = 0
     for ratio in split_ratios:
         end = start + ratio
@@ -13,61 +14,36 @@ def get_split_lengths(split_ratios, n):
     return split_lengths
 
 
-def test_list_split():
+def test_train_test_split():
     """"""
     n_samples = 101
-    split_ratios = [0.3, 0.6, 0.1]
-
-    samples = list(range(n_samples))
-    sample_split = split_list(samples, split_ratios)
-    split_lengths = get_split_lengths(split_ratios, n_samples)
-    for i in range(len(split_ratios)):
-        assert len(sample_split[i]) == split_lengths[i]
-
-    tmp_data = []
-    for i in range(len(split_ratios)):
-        tmp_data += sample_split[i]
-    assert len(tmp_data) == len(samples)
-
-    sample_split_shuffled = split_list(samples, split_ratios, shuffle_samples=True)
-    assert sample_split_shuffled != sample_split
-
-
-def test_split_list_stratify():
-    """"""
-    n_samples = 101
-    split_ratios = [0.5, 0.2, 0.3]
+    test_size = 0.2
     n_labels = 7
 
     samples = list(range(n_samples))
     labels = np.random.randint(0, n_labels, n_samples)
 
-    sample_split = split_list_stratify(samples, labels, split_ratios)
-    assert len(sample_split) == len(split_ratios)
+    sample_split = ms.train_test_split(samples, labels, test_size)
+    assert len(sample_split) == 2
     assert len([item for sublist in sample_split for item in sublist]) == n_samples
 
     for label in set(labels):
         subdata = [s for l, s in zip(labels, samples) if l == label]
-        split_lengths = get_split_lengths(split_ratios, len(subdata))
+        split_lengths = get_split_lengths(test_size, len(subdata))
         assert sum([s in sample_split[0] for s in subdata]) == split_lengths[0]
         assert sum([s in sample_split[1] for s in subdata]) == split_lengths[1]
-        assert sum([s in sample_split[2] for s in subdata]) == split_lengths[2]
 
 
-def test_split_reftimes_cv():
+def test_time_series_cv():
     """"""
-
-    split_ratios = [0.6, 0.2, 0.2]
+    n_splits = 5
     reftimes = np.arange("2016-01-01", "2021-01-01", dtype="datetime64[12h]").astype(
         "datetime64[ns]"
     )
-
-    split_lists = split_reftimes_cv(
-        reftimes, gap=5, interval=360, p=split_ratios, p_tol=0.05, uni_tol=0.01
-    )
-
-    split = split_lists[0]
-    assert len(split) == reftimes.shape[0]
-    assert np.isclose(
-        split[split == 0].shape[0] / split.shape[0], split_ratios[0], atol=0.05
-    )
+    cv = ms.UniformTimeSeriesSplit(n_splits)
+    for n, (train, test) in enumerate(cv.split(reftimes)):
+        assert isinstance(train, list)
+        assert isinstance(test, list)
+        assert np.isclose(len(train) / len(reftimes), 1 - 1 / n_splits, atol=0.05)
+        assert np.isclose(len(test) / len(reftimes), 1 / n_splits, atol=0.05)
+    assert n_splits == (n + 1)
