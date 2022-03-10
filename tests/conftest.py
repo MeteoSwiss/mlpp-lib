@@ -12,11 +12,6 @@ DIMS = ["forecast_reference_time", "t", "station"]
 
 
 @pytest.fixture
-def stack_dims() -> dict[str, int]:
-    return {"forecast_reference_time": 10, "station": 5}
-
-
-@pytest.fixture
 def features_dataset() -> xr.Dataset:
     """
     Create a dataset as if it was loaded from `features.zarr`.
