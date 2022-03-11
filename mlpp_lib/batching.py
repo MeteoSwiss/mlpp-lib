@@ -4,8 +4,8 @@ import tensorflow as tf
 
 
 def get_tensor_dataset(
-    features: xr.Dataset, targets: xr.Dataset, event_dims: list, batch_size: int
-) -> tf.data.Dataset:
+    features: xr.Dataset, targets: xr.Dataset, event_dims: list
+) -> tuple[xr.DataArray]:
 
     stacked_dims = list(set(features.dims) - set(event_dims))
 
@@ -28,13 +28,4 @@ def get_tensor_dataset(
     y = y[np.isfinite(x).all(dim=mask_x_dims)]
     x = x[np.isfinite(x).all(dim=mask_x_dims)]
 
-    data = tf.data.Dataset.from_tensor_slices((x.values, y.values))
-    data = data.shuffle(int(x.shape[0] / 2)).batch(batch_size)
-
-    data.features = features
-    data.targets = targets
-    data.batch_size = batch_size
-    data.event_dims = event_dims
-    data.stacked_dims = stacked_dims
-
-    return data
+    return x, y
