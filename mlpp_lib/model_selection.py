@@ -1,8 +1,5 @@
-from multiprocessing.sharedctypes import Value
 import random
-from re import A
 from typing import Optional
-import time
 from itertools import combinations
 
 import numpy as np
@@ -149,6 +146,8 @@ class UniformTimeSeriesSplit:
         test : ndarray
             The testing set indices for that split.
         """
+
+        X = pd.to_datetime(X)
 
         self.failed_uniformity = 0
         self.failed_size = 0
