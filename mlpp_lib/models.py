@@ -83,7 +83,7 @@ def fully_connected_network(
     x = inputs
     for i, units in enumerate(hidden_layers):
         x = Dense(units, activation=activations[i], name=f"dense_{i}")(x)
-        if i < len(dropout):
+        if i < len(dropout) and 0.0 < dropout[i] < 1.0:
             x = Dropout(dropout[i], name=f"dropout_{i}")(x)
 
     # probabilistic prediction
