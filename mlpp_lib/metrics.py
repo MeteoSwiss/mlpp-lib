@@ -32,8 +32,6 @@ def crps_energy_ensemble(
         The CRPS for each sample.
     """
 
-    assert fct_ens.shape[1:] == obs.shape
-
     # first term
     E_1 = tf.abs(fct_ens - obs[None, :])
     E_1 = tf.reduce_mean(E_1, axis=0)
@@ -70,8 +68,6 @@ def crps_energy(
     crps: tf.Tensor
         The CRPS for each sample.
     """
-
-    assert fct_dist.shape == obs.shape
 
     n_samples = 1000
 
