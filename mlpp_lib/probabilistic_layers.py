@@ -234,7 +234,7 @@ class IndependentLogNormal(tfpl.DistributionLambda):
             return independent_lib.Independent(
                 tfd.LogNormal(
                     loc=tf.reshape(loc, output_shape),
-                    scale=tf.math.softplus(tf.reshape(scale, output_shape)),
+                    scale=tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-3,
                     validate_args=validate_args,
                 ),
                 reinterpreted_batch_ndims=tf.size(event_shape),
@@ -337,7 +337,7 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
             return independent_lib.Independent(
                 tfd.TruncatedNormal(
                     loc=tf.reshape(loc, output_shape),
-                    scale=tf.math.softplus(tf.reshape(scale, output_shape)),
+                    scale=tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-3,
                     low=0,
                     high=np.inf,
                     validate_args=validate_args,
@@ -443,7 +443,7 @@ class IndependentWeibull(tfpl.DistributionLambda):
                 tfd.Weibull(
                     concentration=tf.math.softplus(
                         tf.reshape(concentration, output_shape)
-                    ),
+                    ) + 1.0,
                     scale=tf.math.softplus(tf.reshape(scale, output_shape)),
                     validate_args=validate_args,
                 ),
