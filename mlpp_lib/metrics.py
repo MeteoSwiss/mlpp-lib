@@ -88,6 +88,31 @@ def crps_energy(
     return crps
 
 
+def ensemble_bias(
+    obs: Union[tf.Tensor, np.ndarray],
+    fct_dist: tfp.distributions.Distribution,
+) -> tf.Tensor:
+    """
+    Compute the bias of the ensemble median.
+
+    Parameters
+    ----------
+    fct_dist: tensorflow-probability Distribution
+        The predicted distribution.
+    obs: array-like
+        Observations.
+
+    Return
+    ------
+    bias: tf.Tensor
+        The bias for each sample.
+    """
+    n_samples = 1000
+    pred = np.median(fct_dist.sample(n_samples), axis=0)
+    diff = pred - obs
+    return tf.reduce_mean(diff, axis=-1)
+
+
 class MultivariateLoss(tf.keras.losses.Loss):
     """
     Compute losses for multivariate data.

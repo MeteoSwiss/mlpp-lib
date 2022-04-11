@@ -443,7 +443,8 @@ class IndependentWeibull(tfpl.DistributionLambda):
                 tfd.Weibull(
                     concentration=tf.math.softplus(
                         tf.reshape(concentration, output_shape)
-                    ) + 1.0,
+                    )
+                    + 1.0,
                     scale=tf.math.softplus(tf.reshape(scale, output_shape)),
                     validate_args=validate_args,
                 ),

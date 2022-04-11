@@ -32,6 +32,18 @@ def test_crps_energy_ensemble():
     np.testing.assert_allclose(result, good_result, atol=1e-5)
 
 
+def test_ensemble_bias():
+
+    tf.random.set_seed(1234)
+    fct_dist = tfp.distributions.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
+    fct_dist = tfp.distributions.Independent(fct_dist, reinterpreted_batch_ndims=1)
+    fct_dist.shape = (*fct_dist.batch_shape, *fct_dist.event_shape)
+    obs = tf.zeros((3, 1))
+    result = metrics.ensemble_bias(obs, fct_dist)
+    assert result.ndim == 1
+    assert len(result) == 3
+
+
 @pytest.mark.parametrize(
     "metric, scaling, weights",
     (
