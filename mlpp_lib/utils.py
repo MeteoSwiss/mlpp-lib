@@ -4,7 +4,7 @@ from typing import Any, Callable, Union
 import xarray as xr
 import tensorflow as tf
 
-from mlpp_lib import metrics, models
+from mlpp_lib import losses, models
 
 
 LOGGER = logging.getLogger(__name__)
@@ -45,9 +45,9 @@ def get_loss(loss: Union[str, dict]) -> Callable:
     else:
         loss_name = loss
 
-    if hasattr(metrics, loss_name):
+    if hasattr(losses, loss_name):
         LOGGER.info(f"Using custom-defined mlpp metric: {loss_name}")
-        loss_obj = getattr(metrics, loss_name)
+        loss_obj = getattr(losses, loss_name)
         loss = loss_obj(**loss_options) if isinstance(loss_obj, type) else loss_obj
     elif hasattr(tf.keras.losses, loss_name):
         LOGGER.info(f"Using keras built-in metric: {loss_name}")
