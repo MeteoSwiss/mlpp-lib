@@ -90,9 +90,7 @@ def crps_energy(
 
 class WeightedCRPSEnergy(tf.keras.losses.Loss):
     """
-    Compute threshold-weighted CRPS using its kernel score represenation.
-
-    Currently only weight function w(x) = 1{x > t} is permitted, where t is a threshold of interest.
+    Compute threshold-weighted CRPS using its kernel score representation.
 
     Parameters
     ----------
@@ -100,6 +98,10 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
         The threshold to be used within the weight function of the threshold-weighted CRPS
     **kwargs:
         (Optional) Additional keyword arguments to be passed to the parent `Loss` class.
+
+    Notes
+    -----
+    Currently only weight function w(x) = 1{x > t} is permitted, where t is a threshold of interest.
     """
     def __init__(
         self,
@@ -130,7 +132,6 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
             Values representing the ground truth.
         y_pred: array_like or tfp.Distribution
             Predicted values or distributions.
-
         """
 
         n_samples = 1000
