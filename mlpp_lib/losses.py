@@ -120,7 +120,7 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
     def get_config(self) -> None:
         config = {
             "threshold": self.threshold,
-            "n_samples": self.n_samplea,
+            "n_samples": self.n_samples,
         }
         base_config = super().get_config()
         return dict(list(base_config.items()) + list(config.items()))
