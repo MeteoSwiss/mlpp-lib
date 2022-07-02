@@ -109,7 +109,7 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
     ) -> None:
         super(WeightedCRPSEnergy, self).__init__()
 
-        self.threshold = tf.constant(threshold)
+        self.threshold = tf.constant(threshold, dtype="float32")
 
     def get_config(self) -> None:
         config = {
