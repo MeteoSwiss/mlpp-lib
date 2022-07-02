@@ -139,7 +139,7 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
         y_true = tf.debugging.check_numerics(y_true, "Target values")
         v_obs = tf.math.maximum(y_true, self.threshold)
 
-        if tf.is_tensor(y_pred) or type(y_pred).__module__ == np.__name__:
+        if tf.is_tensor(y_pred) or isinstance(y_pred, np.ndarray):
 
             v_ens = tf.math.maximum(y_pred, self.threshold)
 
