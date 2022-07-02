@@ -110,8 +110,9 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
         self,
         threshold: float,
         n_samples: int = 1000,
+        **kwargs,
     ) -> None:
-        super(WeightedCRPSEnergy, self).__init__()
+        super(WeightedCRPSEnergy, self).__init__(**kwargs)
 
         self.threshold = tf.constant(threshold, dtype="float32")
         self.n_samples = int(n_samples)
