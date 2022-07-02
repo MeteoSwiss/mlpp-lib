@@ -105,10 +105,11 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
     -----
     Currently only weight function w(x) = 1{x > t} is permitted, where t is a threshold of interest.
     """
+
     def __init__(
         self,
-        threshold: float, 
-        n_samples: int = 1000, 
+        threshold: float,
+        n_samples: int = 1000,
     ) -> None:
         super(WeightedCRPSEnergy, self).__init__()
 
@@ -153,21 +154,23 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
             E_2 = tf.abs(v_ens[None, :] - v_ens[:, None])
             E_2 = tf.reduce_mean(E_2, axis=(0, 1))
 
-        else: 
-            
+        else:
+
             # first term
             E_1 = tfp.monte_carlo.expectation(
-                f=lambda x: tf.abs(x - v_obs[None, :]), 
-                samples=tf.math.maximum(y_pred.sample(self.n_samples), self.threshold)
+                f=lambda x: tf.abs(x - v_obs[None, :]),
+                samples=tf.math.maximum(y_pred.sample(self.n_samples), self.threshold),
             )
 
             # second term
             E_2 = tfp.monte_carlo.expectation(
-                f=lambda x: tf.abs(x[0] - x[1]), 
-                samples=[tf.math.maximum(y_pred.sample(self.n_samples), self.threshold), 
-                tf.math.maximum(y_pred.sample(self.n_samples), self.threshold)],
+                f=lambda x: tf.abs(x[0] - x[1]),
+                samples=[
+                    tf.math.maximum(y_pred.sample(self.n_samples), self.threshold),
+                    tf.math.maximum(y_pred.sample(self.n_samples), self.threshold),
+                ],
             )
-        
+
         twcrps = E_1 - (E_2 / 2)
 
         return twcrps
