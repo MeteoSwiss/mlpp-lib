@@ -88,6 +88,95 @@ def crps_energy(
     return crps
 
 
+class WeightedCRPSEnergy(tf.keras.losses.Loss):
+    """
+    Compute threshold-weighted CRPS using its kernel score representation.
+
+    Parameters
+    ----------
+    threshold: float
+        The threshold to be used within the weight function of the threshold-weighted CRPS.
+    n_samples: int
+        Number of samples used to compute the Monte Carlo expectations.
+    **kwargs:
+        (Optional) Additional keyword arguments to be passed to the parent `Loss` class.
+
+    Notes
+    -----
+    Currently only weight function w(x) = 1{x > t} is permitted, where t is a threshold of interest.
+    """
+
+    def __init__(
+        self,
+        threshold: float,
+        n_samples: int = 1000,
+        **kwargs,
+    ) -> None:
+        super(WeightedCRPSEnergy, self).__init__(**kwargs)
+
+        self.threshold = tf.constant(threshold, dtype="float32")
+        self.n_samples = int(n_samples)
+
+    def get_config(self) -> None:
+        config = {
+            "threshold": self.threshold,
+            "n_samples": self.n_samples,
+        }
+        base_config = super().get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    def call(
+        self,
+        y_true: Union[tf.Tensor, np.ndarray],
+        y_pred: Union[tf.Tensor, np.ndarray, tfp.distributions.Distribution],
+    ) -> tf.Tensor:
+        """
+        Compute the loss.
+
+        Parameters
+        ----------
+        y_true: array-like
+            Values representing the ground truth.
+        y_pred: array_like or tfp.Distribution
+            Predicted values or distributions.
+        """
+
+        y_true = tf.debugging.check_numerics(y_true, "Target values")
+        v_obs = tf.math.maximum(y_true, self.threshold)
+
+        if tf.is_tensor(y_pred) or isinstance(y_pred, np.ndarray):
+
+            v_ens = tf.math.maximum(y_pred, self.threshold)
+
+            # first term
+            E_1 = tf.abs(v_ens - v_obs[None, :])
+
+            # second term
+            E_2 = tf.abs(v_ens[None, :] - v_ens[:, None])
+            E_2 = tf.reduce_mean(E_2, axis=(0, 1))
+
+        else:
+
+            # first term
+            E_1 = tfp.monte_carlo.expectation(
+                f=lambda x: tf.abs(x - v_obs[None, :]),
+                samples=tf.math.maximum(y_pred.sample(self.n_samples), self.threshold),
+            )
+
+            # second term
+            E_2 = tfp.monte_carlo.expectation(
+                f=lambda x: tf.abs(x[0] - x[1]),
+                samples=[
+                    tf.math.maximum(y_pred.sample(self.n_samples), self.threshold),
+                    tf.math.maximum(y_pred.sample(self.n_samples), self.threshold),
+                ],
+            )
+
+        twcrps = E_1 - (E_2 / 2)
+
+        return twcrps
+
+
 class MultivariateLoss(tf.keras.losses.Loss):
     """
     Compute losses for multivariate data.
