@@ -33,13 +33,11 @@ def test_crps_energy_ensemble():
     np.testing.assert_allclose(result, good_result, atol=1e-5)
 
 
-def test_weighted_crps():
+def test_weighted_crps_dtypes():
+    """Test various input data types"""
 
     tf.random.set_seed(1234)
-
-    threshold = 1
-    loss = losses.WeightedCRPSEnergy(threshold)
-
+    loss = losses.WeightedCRPSEnergy(threshold=1)
     y_pred_dist = tfd.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
     y_pred_ens = y_pred_dist.sample(100)
     y_true = tf.zeros((3, 1))
@@ -65,10 +63,30 @@ def test_weighted_crps():
     np.testing.assert_allclose(result, loss(y_true.numpy(), y_pred_ens.numpy()))
 
 
+def test_weighted_crps_high_threshold():
+    """Using a very threshold should set the loss to zero"""
+    tf.random.set_seed(1234)
+    loss = losses.WeightedCRPSEnergy(threshold=1e6)
+    fct_dist = tfd.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
+    obs = tf.zeros((3, 1))
+    result = loss(obs, fct_dist)
+    assert result == 0
+
+
+def test_weighted_crps_no_reduction():
+    """Passing reduction='none' should return a loss value per sample"""
+    tf.random.set_seed(1234)
+    loss = losses.WeightedCRPSEnergy(threshold=0, reduction="none")
+    fct_dist = tfd.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
+    obs = tf.zeros((3, 1))
+    result = loss(obs, fct_dist)
+    assert result.shape == obs.shape
+
+
 def test_weighted_crps_zero_sample_weights():
     """Passing an array of all zeros as sample weights set the total loss to zero"""
-    loss = losses.WeightedCRPSEnergy(threshold=0)
     tf.random.set_seed(1234)
+    loss = losses.WeightedCRPSEnergy(threshold=0)
     fct_dist = tfd.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
     obs = tf.zeros((3, 1))
     sample_weights = tf.zeros((3, 1))
