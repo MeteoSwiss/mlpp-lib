@@ -64,7 +64,7 @@ def test_weighted_crps_dtypes():
 
 
 def test_weighted_crps_high_threshold():
-    """Using a very threshold should set the loss to zero"""
+    """Using a very large threshold should set the loss to zero"""
     tf.random.set_seed(1234)
     loss = losses.WeightedCRPSEnergy(threshold=1e6)
     fct_dist = tfd.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
