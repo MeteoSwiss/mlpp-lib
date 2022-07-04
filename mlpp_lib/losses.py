@@ -98,6 +98,8 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
         The threshold to be used within the weight function of the threshold-weighted CRPS.
     n_samples: int
         Number of samples used to compute the Monte Carlo expectations.
+    correct_crps: bool
+        Whether to bias correct the CRPS following Eq. 4 in Fricker et al. (2013).
     **kwargs:
         (Optional) Additional keyword arguments to be passed to the parent `Loss` class.
 
@@ -110,17 +112,20 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
         self,
         threshold: float,
         n_samples: int = 1000,
+        correct_crps: bool = True,
         **kwargs,
     ) -> None:
         super(WeightedCRPSEnergy, self).__init__(**kwargs)
 
         self.threshold = tf.constant(threshold, dtype="float32")
         self.n_samples = int(n_samples)
+        self.bias_correction = n_samples / (n_samples - 1) if correct_crps else 1.0
 
     def get_config(self) -> None:
         config = {
             "threshold": self.threshold,
             "n_samples": self.n_samples,
+            "bias_correction": self.bias_correction,
         }
         base_config = super().get_config()
         return dict(list(base_config.items()) + list(config.items()))
@@ -172,7 +177,7 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
                 ],
             )
 
-        twcrps = E_1 - (E_2 / 2)
+        twcrps = E_1 - self.bias_correction * E_2 / 2
 
         return twcrps
 
