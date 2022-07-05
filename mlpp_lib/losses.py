@@ -114,16 +114,17 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
     ) -> None:
         super(WeightedCRPSEnergy, self).__init__(**kwargs)
 
-        self.threshold = tf.constant(threshold, dtype="float32")
+        self.threshold = float(threshold)
         self.n_samples = int(n_samples)
 
     def get_config(self) -> None:
-        config = {
+        custom_config = {
             "threshold": self.threshold,
             "n_samples": self.n_samples,
         }
-        base_config = super().get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+        config = super().get_config()
+        config.update(custom_config)
+        return config
 
     def call(
         self,
@@ -141,12 +142,13 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
             Predicted values or distributions.
         """
 
+        threshold = tf.constant(self.threshold, dtype=y_true.dtype)
         y_true = tf.debugging.check_numerics(y_true, "Target values")
-        v_obs = tf.math.maximum(y_true, self.threshold)
+        v_obs = tf.math.maximum(y_true, threshold)
 
         if tf.is_tensor(y_pred) or isinstance(y_pred, np.ndarray):
 
-            v_ens = tf.math.maximum(y_pred, self.threshold)
+            v_ens = tf.math.maximum(y_pred, threshold)
 
             # first term
             E_1 = tf.abs(v_ens - v_obs[None, :])
@@ -160,15 +162,15 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
             # first term
             E_1 = tfp.monte_carlo.expectation(
                 f=lambda x: tf.abs(x - v_obs[None, :]),
-                samples=tf.math.maximum(y_pred.sample(self.n_samples), self.threshold),
+                samples=tf.math.maximum(y_pred.sample(self.n_samples), threshold),
             )
 
             # second term
             E_2 = tfp.monte_carlo.expectation(
                 f=lambda x: tf.abs(x[0] - x[1]),
                 samples=[
-                    tf.math.maximum(y_pred.sample(self.n_samples), self.threshold),
-                    tf.math.maximum(y_pred.sample(self.n_samples), self.threshold),
+                    tf.math.maximum(y_pred.sample(self.n_samples), threshold),
+                    tf.math.maximum(y_pred.sample(self.n_samples), threshold),
                 ],
             )
 
