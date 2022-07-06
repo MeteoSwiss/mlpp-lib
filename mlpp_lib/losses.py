@@ -119,13 +119,14 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
 
         self.threshold = float(threshold)
         self.n_samples = int(n_samples)
+        self.correct_crps = bool(correct_crps)
         self.bias_correction = n_samples / (n_samples - 1) if correct_crps else 1.0
 
     def get_config(self) -> None:
         custom_config = {
             "threshold": self.threshold,
             "n_samples": self.n_samples,
-            "bias_correction": self.bias_correction,
+            "correct_crps": self.correct_crps,
         }
         config = super().get_config()
         config.update(custom_config)
