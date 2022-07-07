@@ -69,4 +69,4 @@ def test_probabilistic_model_predict(layer, features_dataset, targets_dataset):
     out = model(features.values).sample(num_samples).numpy()
     assert out.shape[0] == num_samples
     assert out.shape[1] == features.sizes["sample"]
-    assert out.shape[2] == targets.sizes["target"]
+    assert out.shape[2] == targets.sizes["variable"]
