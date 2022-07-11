@@ -1,7 +1,9 @@
 from inspect import getmembers, isclass
 
+import numpy as np
 import pytest
 import tensorflow as tf
+import tensorflow_probability as tfp
 from keras.engine.functional import Functional
 
 from mlpp_lib import models
@@ -65,8 +67,22 @@ def test_probabilistic_model_predict(layer, features_dataset, targets_dataset):
     model = models.fully_connected_network(
         input_shape, output_size, hidden_layers=[3], probabilistic_layer=layer
     )
-    num_samples = 10
-    out = model(features.values).sample(num_samples).numpy()
-    assert out.shape[0] == num_samples
-    assert out.shape[1] == features.sizes["sample"]
-    assert out.shape[2] == targets.sizes["variable"]
+    out_predict = model.predict(features.values)
+    assert isinstance(out_predict, np.ndarray)
+    assert out_predict.ndim == 2
+    assert out_predict.shape[0] == features.sizes["sample"]
+    assert out_predict.shape[1] == targets.sizes["variable"]
+    out_distr = model(features.values)
+    assert isinstance(out_distr, tfp.distributions.Distribution)
+    num_samples = 2
+    out_samples = out_distr.sample(num_samples)
+    assert isinstance(out_samples, tf.Tensor)
+    assert out_samples.ndim == 3
+    assert out_samples.shape[0] == num_samples
+    assert out_samples.shape[1] == features.sizes["sample"]
+    assert out_samples.shape[2] == targets.sizes["variable"]
+    out_mean = out_distr.mean()
+    assert isinstance(out_samples, tf.Tensor)
+    assert out_mean.ndim == 2
+    assert out_mean.shape[0] == features.sizes["sample"]
+    assert out_mean.shape[1] == targets.sizes["variable"]
