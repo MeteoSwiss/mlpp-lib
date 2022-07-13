@@ -118,7 +118,7 @@ def equidistant_resampling(
         Same as input_dataset, but with dimension 'realization' reduced to ens_size.
     """
     sel_ranks = np.arange(ens_size) + 1
-    sel_ranks = (sel_ranks + b) / (ens_size + 1 - 2 * b)
+    sel_ranks = (sel_ranks - b) / (ens_size + 1 - 2 * b)
     if shuffle:
         np.random.shuffle(sel_ranks)
     output_dataset = xr.Dataset()
