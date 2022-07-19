@@ -3,7 +3,6 @@ name = "mlpp-lib"
 version = "0.1.0"
 description = ""
 authors = ["Daniele Nerini <daniele.nerini@meteoswiss.ch>"]
-packages = [{ include = "mlpp_wind" }]
 include = ["LICENSE", "README.rst"]
 
 [tool.poetry.dependencies]
