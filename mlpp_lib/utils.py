@@ -1,6 +1,7 @@
 import logging
-from typing import Any, Callable, Union
+from typing import Any, Callable, Union, Optional
 
+import numpy as np
 import xarray as xr
 import tensorflow as tf
 
@@ -11,21 +12,14 @@ LOGGER = logging.getLogger(__name__)
 
 
 def get_model(
-    data: tuple[xr.DataArray],
-    event_dims: list,
+    input_shape: tuple[int],
+    output_shape: tuple[int],
     model_config: dict[str, Any],
 ) -> tf.keras.Model:
     """Get the keras model."""
 
     model_name = list(model_config.keys())[0]
     model_options = model_config[model_name]
-    input_shape = data[0].shape[1:]
-    output_shape = data[1].shape[1:]
-
-    out_bias_init = model_options.get("out_bias_init", "zeros")
-    if out_bias_init == "mean":
-        out_bias_init = data[1].mean(dim=["sample", *event_dims]).values
-    model_options["out_bias_init"] = out_bias_init
 
     LOGGER.info(f"Using model: {model_name}")
     LOGGER.info(f"Input shape: {input_shape}, output shape: {output_shape}")
@@ -57,3 +51,15 @@ def get_loss(loss: Union[str, dict]) -> Callable:
         raise KeyError(f"The provided metric {loss} is not available.")
 
     return loss
+
+
+def process_out_bias_init(
+    data: xr.DataArray,
+    out_bias_init: Optional[Union[str, np.ndarray[Any, float]]],
+    event_dims: list,
+) -> Union[str, np.ndarray[Any, float]]:
+    """If needed, pre-compute the initial bias for the output layer."""
+    out_bias_init = out_bias_init if out_bias_init else "zeros"
+    if out_bias_init == "mean":
+        out_bias_init = data.mean(dim=["sample", *event_dims]).values
+    return out_bias_init
