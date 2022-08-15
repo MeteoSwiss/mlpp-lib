@@ -13,7 +13,7 @@ LOGGER = logging.getLogger(__name__)
 
 def get_model(
     input_shape: tuple[int],
-    output_shape: tuple[int],
+    output_shape: Union[int, tuple[int]],
     model_config: dict[str, Any],
 ) -> tf.keras.Model:
     """Get the keras model."""
@@ -24,7 +24,8 @@ def get_model(
     LOGGER.info(f"Using model: {model_name}")
     LOGGER.info(f"Input shape: {input_shape}, output shape: {output_shape}")
     LOGGER.debug(model_options)
-
+    if isinstance(output_shape, int):
+        output_shape = (output_shape,)
     model = getattr(models, model_name)(input_shape, output_shape[-1], **model_options)
 
     return model
