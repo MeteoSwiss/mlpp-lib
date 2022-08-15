@@ -63,3 +63,64 @@ def process_out_bias_init(
     if out_bias_init == "mean":
         out_bias_init = data.mean(dim=["sample", *event_dims]).values
     return out_bias_init
+
+
+def as_weather(dataset: xr.Dataset) -> xr.Dataset:
+    """Adjust/convert/process weather data to physical values. It removes nonphysical
+    values (e.g. negative wind speeds) and converts sine/cosine values to wind directions,
+    as well as northward/eastward components to speed and direction.
+
+    It deals with both <var_name> and <source:var_name> notations.
+    """
+    new_set = xr.Dataset()
+    for source_var in dataset.data_vars:
+
+        try:
+            source, var = source_var.split(":")
+        except ValueError:
+            source = ""
+            var = source_var
+
+        if var in ["wind_speed_of_gust", "wind_speed"]:
+            new_set[source_var] = xr.where(
+                dataset[source_var] < 0, 0, dataset[source_var]
+            )
+
+        elif var == "sin_wind_from_direction":
+            new_set[f"{source}:wind_from_direction".strip(":")] = (
+                np.arctan2(
+                    dataset[f"{source}:sin_wind_from_direction".strip(":")],
+                    dataset[f"{source}:cos_wind_from_direction".strip(":")],
+                )
+                * 180
+                / np.pi
+                + 2 * 360
+            ) % 360
+
+        elif var == "cos_wind_from_direction":
+            continue
+
+        elif var == "northward_wind":
+            # Transform wind components to scalars
+            new_set[f"{source}:wind_speed".strip(":")] = np.sqrt(
+                np.square(dataset[f"{source}:northward_wind".strip(":")])
+                + np.square(dataset[f"{source}:eastward_wind".strip(":")])
+            )
+            new_set[f"{source}:wind_from_direction".strip(":")] = (
+                270
+                - 180
+                / np.pi
+                * np.arctan2(
+                    dataset[f"{source}:northward_wind".strip(":")],
+                    dataset[f"{source}:eastward_wind".strip(":")],
+                )
+                + 2 * 360
+            ) % 360
+
+        elif var == "eastward_wind":
+            continue
+
+        else:
+            new_set[source_var] = dataset[source_var]
+
+    return new_set
