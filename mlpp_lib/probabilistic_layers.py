@@ -27,7 +27,7 @@ class MultivariateNormalTriL(tfpl.MultivariateNormalTriL):
     def __init__(
         self,
         event_size,
-        convert_to_tensor_fn=tfd.Distribution.sample,
+        convert_to_tensor_fn=tfd.Distribution.mean,
         validate_args=False,
         **kwargs
     ):
@@ -71,7 +71,7 @@ class IndependentGamma(tfpl.DistributionLambda):
     def __init__(
         self,
         event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.sample,
+        convert_to_tensor_fn=tfd.Distribution.mean,
         validate_args=False,
         **kwargs
     ):
@@ -81,7 +81,7 @@ class IndependentGamma(tfpl.DistributionLambda):
             draw from this distribution.
         convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
             instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.sample`.
+            Default value: `tfd.Distribution.mean`.
         validate_args: Python `bool`, default `False`. When `True` distribution
             parameters are checked for validity despite possibly degrading runtime
             performance. When `False` invalid inputs may silently render incorrect
@@ -176,7 +176,7 @@ class IndependentLogNormal(tfpl.DistributionLambda):
     def __init__(
         self,
         event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.sample,
+        convert_to_tensor_fn=tfd.Distribution.mean,
         validate_args=False,
         **kwargs
     ):
@@ -186,7 +186,7 @@ class IndependentLogNormal(tfpl.DistributionLambda):
             draw from this distribution.
         convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
             instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.sample`.
+            Default value: `tfd.Distribution.mean`.
         validate_args: Python `bool`, default `False`. When `True` distribution
             parameters are checked for validity despite possibly degrading runtime
             performance. When `False` invalid inputs may silently render incorrect
@@ -279,7 +279,7 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
     def __init__(
         self,
         event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.sample,
+        convert_to_tensor_fn=tfd.Distribution.mean,
         validate_args=False,
         **kwargs
     ):
@@ -289,7 +289,7 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
             draw from this distribution.
         convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
             instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.sample`.
+            Default value: `tfd.Distribution.mean`.
         validate_args: Python `bool`, default `False`. When `True` distribution
             parameters are checked for validity despite possibly degrading runtime
             performance. When `False` invalid inputs may silently render incorrect
@@ -384,7 +384,7 @@ class IndependentWeibull(tfpl.DistributionLambda):
     def __init__(
         self,
         event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.sample,
+        convert_to_tensor_fn=tfd.Distribution.mean,
         validate_args=False,
         **kwargs
     ):
@@ -394,7 +394,7 @@ class IndependentWeibull(tfpl.DistributionLambda):
             draw from this distribution.
         convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
             instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.sample`.
+            Default value: `tfd.Distribution.mean`.
         validate_args: Python `bool`, default `False`. When `True` distribution
             parameters are checked for validity despite possibly degrading runtime
             performance. When `False` invalid inputs may silently render incorrect
