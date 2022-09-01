@@ -94,6 +94,20 @@ def test_weighted_crps_zero_sample_weights():
     assert result == 0
 
 
+def test_energy_score():
+    n_events, n_dims = 10, 3
+    loss = losses.EnergyScore(reduction=tf.keras.losses.Reduction.NONE)
+    fct_dist = tfd.MultivariateNormalDiag(
+        loc=tf.zeros((n_events, n_dims)),
+        scale_diag=tf.ones((n_events, n_dims)),
+    )
+    obs = tf.zeros((n_events, n_dims))
+    result = loss(obs, fct_dist)
+    assert tf.is_tensor(result)
+    assert result.dtype == "float32"
+    assert result.shape == obs.shape[0]
+
+
 @pytest.mark.parametrize(
     "metric, scaling, weights",
     (

@@ -185,6 +185,74 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
         return twcrps
 
 
+class EnergyScore(tf.keras.losses.Loss):
+    """
+    Compute Energy Score.
+
+    Parameters
+    ----------
+    threshold: float
+        The threshold to be used within the weight function of the Energy Score.
+    n_samples: int
+        Number of samples used to compute the Monte Carlo expectations.
+    **kwargs:
+        (Optional) Additional keyword arguments to be passed to the parent `Loss` class.
+    """
+
+    def __init__(
+        self,
+        n_samples: int = 1000,
+        **kwargs,
+    ) -> None:
+        super(EnergyScore, self).__init__(**kwargs)
+
+        self.n_samples = int(n_samples)
+
+    def get_config(self) -> None:
+        custom_config = {
+            "n_samples": self.n_samples,
+        }
+        config = super().get_config()
+        config.update(custom_config)
+        return config
+
+    def call(
+        self,
+        y_true: Union[tf.Tensor, np.ndarray],
+        y_pred: tfp.distributions.Distribution,
+    ) -> tf.Tensor:
+        """
+        Compute the loss.
+
+        Parameters
+        ----------
+        y_true: array-like
+            Values representing the ground truth.
+        y_pred: tfp.Distribution
+            Predicted distributions.
+        """
+
+        y_true = tf.debugging.check_numerics(y_true, "Target values")
+
+        # first term
+        E_1 = tfp.monte_carlo.expectation(
+            f=lambda x: tf.norm(x - y_true[None, ...], axis=-1),
+            samples=y_pred.sample(self.n_samples),
+        )
+
+        E_2 = tfp.monte_carlo.expectation(
+            f=lambda x: tf.norm(x[0] - x[1], axis=-1),
+            samples=[
+                y_pred.sample(self.n_samples),
+                y_pred.sample(self.n_samples),
+            ],
+        )
+
+        energy_score = E_1 - E_2 / 2
+
+        return energy_score
+
+
 class MultivariateLoss(tf.keras.losses.Loss):
     """
     Compute losses for multivariate data.
