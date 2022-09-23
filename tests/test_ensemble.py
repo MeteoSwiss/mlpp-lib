@@ -18,7 +18,16 @@ def test_sortby():
 def test_equidistant_resampling():
     test_ds = xr.DataArray(
         np.random.random((3, 20)), dims=("a", "realization")
-    ).to_dataset("a")
+    ).to_dataset(name="var")
+    out = ens.equidistant_resampling(test_ds, 5)
+    assert isinstance(out, xr.Dataset)
+    assert out.sizes["realization"] == 5
+
+
+def test_equidistant_resampling_circular():
+    test_ds = xr.DataArray(
+        np.random.randint(0, 360, (3, 20)), dims=("a", "realization")
+    ).to_dataset(name="var_direction")
     out = ens.equidistant_resampling(test_ds, 5)
     assert isinstance(out, xr.Dataset)
     assert out.sizes["realization"] == 5

@@ -90,7 +90,6 @@ def equidistant_resampling(
     ens_size: int,
     loop_dim: Optional[str] = None,
     b: float = 0.0,
-    circular: bool = False,
     shuffle: bool = False,
 ) -> xr.Dataset:
     """Equidistant resampling of an ensemble to a lower ensemble size.
@@ -107,8 +106,6 @@ def equidistant_resampling(
     b: float, optional
         b parameter in the plotting positions formula. The default b=0 is equivalent to
         the Weibull method.
-    circular: bool, optional
-        Set to True in case of circular variables (default is False).
     shuffle: bool
         If False, it the output samples are sorted (default is False).
 
@@ -123,6 +120,10 @@ def equidistant_resampling(
         np.random.shuffle(sel_ranks)
     output_dataset = xr.Dataset()
     for name, data_array in input_dataset.data_vars.items():
+        if "direction" in name:
+            circular = True
+        else:
+            circular = False
         da_sorted = sortby(
             data_array,
             dim="realization",
