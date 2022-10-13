@@ -43,22 +43,27 @@ class Standardizer:
         dataset = xr.where(dataset > self.fillvalue, dataset, np.nan)
         return (dataset * self.std + self.mean).astype("float32")
 
-    def save_json(self, out_fn: str) -> None:
+    def to_dict(self) -> dict:
         if self.mean is None:
             raise ValueError("Standardizer wasn't fit to data")
-
         out_dict = {
             "mean": self.mean.to_dict(),
             "std": self.std.to_dict(),
             "fillvalue": self.fillvalue,
         }
+        return out_dict
+
+    def from_dict(self, in_dict: dict) -> None:
+        self.mean = xr.Dataset.from_dict(in_dict["mean"])
+        self.std = xr.Dataset.from_dict(in_dict["std"])
+        self.fillvalue = in_dict["fillvalue"]
+
+    def save_json(self, out_fn: str) -> None:
+        out_dict = self.to_dict()
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
 
     def load_json(self, in_fn: str) -> None:
         with open(in_fn, "r") as f:
             in_dict = json.load(f)
-
-        self.mean = xr.Dataset.from_dict(in_dict["mean"])
-        self.std = xr.Dataset.from_dict(in_dict["std"])
-        self.fillvalue = in_dict["fillvalue"]
+        self.from_dict(in_dict)
