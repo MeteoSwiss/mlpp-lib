@@ -17,7 +17,7 @@ def get_tensor_dataset(
     *datasets: xr.Dataset or None, event_dims: list
 ) -> list[xr.DataArray or None]:
     """Convert xarray datasets into tensors and filter out samples with missing values.
-    If provided as inputs, None as persisted in the output list."""
+    If provided as an input, a None object is persisted in the output list."""
 
     tensors = []
     mask = True
