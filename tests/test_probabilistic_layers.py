@@ -8,7 +8,7 @@ from keras.engine.functional import Functional
 
 from mlpp_lib import models
 from mlpp_lib import probabilistic_layers
-from mlpp_lib.batching import get_tensor_dataset
+from mlpp_lib.datasets import get_tensor_dataset
 
 
 LAYERS = [obj[0] for obj in getmembers(probabilistic_layers, isclass)]

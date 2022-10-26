@@ -1,7 +1,7 @@
 import pytest
 import xarray as xr
 
-from mlpp_lib.batching import get_tensor_dataset, split_dataset
+from mlpp_lib.datasets import get_tensor_dataset, split_dataset
 
 
 @pytest.mark.parametrize("event_dims,", [[], ["t"]])
