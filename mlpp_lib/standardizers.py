@@ -1,6 +1,8 @@
 import json
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import xarray as xr
@@ -67,3 +69,23 @@ class Standardizer:
         with open(in_fn, "r") as f:
             in_dict = json.load(f)
         self.from_dict(in_dict)
+
+
+def standardize_split_dataset(
+    split_dataset: dict[str, xr.Dataset],
+    save_to_json: Optional[Path] = None,
+    fit_kwargs: Optional[dict] = None,
+) -> dict[str, xr.Dataset]:
+    """Fit standardizer to the train set and applies it to all
+    the sets. Optionally exports the standardizer as a json."""
+    if fit_kwargs is None:
+        fit_kwargs = {}
+    standardizer = Standardizer()
+    standardizer.fit(split_dataset["train"], **fit_kwargs)
+    if save_to_json:
+        standardizer.save_json(save_to_json)
+
+    for split in split_dataset:
+        split_dataset[split] = standardizer.transform(split_dataset[split])
+
+    return split_dataset
