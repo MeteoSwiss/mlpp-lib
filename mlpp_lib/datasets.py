@@ -1,3 +1,5 @@
+from typing import Optional, Union
+
 import numpy as np
 import xarray as xr
 
@@ -14,8 +16,8 @@ def dataset_to_tensor(dataset: xr.Dataset, event_dims: list = []) -> xr.DataArra
 
 
 def get_tensor_dataset(
-    *datasets: xr.Dataset or None, event_dims: list
-) -> list[xr.DataArray or None]:
+    *datasets: Union[xr.Dataset, None], event_dims: list
+) -> list[Union[xr.DataArray, None]]:
     """Convert xarray datasets into tensors and filter out samples with missing values.
     If provided as an input, a None object is persisted in the output list."""
 
@@ -40,7 +42,7 @@ def get_tensor_dataset(
 def split_dataset(
     dataset: xr.Dataset,
     splits: dict[str, dict],
-    thinning: dict[str, int] or None = None,
+    thinning: Optional[dict[str, int]] = None,
 ) -> dict[str, xr.Dataset]:
     """Split the dataset, optionally make the input dataset thinner."""
     if thinning:
