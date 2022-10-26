@@ -1,7 +1,7 @@
 import pytest
 import xarray as xr
 
-from mlpp_lib.batching import get_tensor_dataset
+from mlpp_lib.batching import get_tensor_dataset, split_dataset
 
 
 @pytest.mark.parametrize("event_dims,", [[], ["t"]])
@@ -30,3 +30,18 @@ def test_get_tensor_dataset_with_None(features_dataset, targets_dataset):
         features_dataset, None, targets_dataset, event_dims=[]
     )
     assert tensor_dataset[1] is None
+
+
+def test_split_dataset(features_dataset):
+    """"""
+    splits = dict(
+        a=dict(station=["AAA", "BBB"]),
+        b=dict(t=slice(0, 1)),
+        c=dict(t=slice(0, 1), station=["AAA", "BBB"]),
+    )
+    out = split_dataset(features_dataset, splits)
+    dims_in = features_dataset.dims
+    assert list(out.keys()) == ["a", "b", "c"]
+    assert out["a"].dims == dict(dims_in, station=2)
+    assert out["b"].dims == dict(dims_in, t=2)
+    assert out["c"].dims == dict(dims_in, t=2, station=2)

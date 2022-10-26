@@ -35,3 +35,18 @@ def get_tensor_dataset(
         tensors[j] = tensor[mask]
 
     return tensors
+
+
+def split_dataset(
+    dataset: xr.Dataset,
+    splits: dict[str, dict],
+    thinning: dict[str, int] or None = None,
+) -> dict[str, xr.Dataset]:
+    """Split the dataset, optionally make the input dataset thinner."""
+    if thinning:
+        indexers = {dim: slice(None, None, step) for dim, step in thinning.items()}
+    else:
+        indexers = None
+    return {
+        key: dataset.sel(values).isel(indexers).load() for key, values in splits.items()
+    }
