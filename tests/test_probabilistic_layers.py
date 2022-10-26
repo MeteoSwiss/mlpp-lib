@@ -8,7 +8,7 @@ from keras.engine.functional import Functional
 
 from mlpp_lib import models
 from mlpp_lib import probabilistic_layers
-from mlpp_lib.batching import get_tensor_dataset
+from mlpp_lib.datasets import get_tensor_dataset
 
 
 LAYERS = [obj[0] for obj in getmembers(probabilistic_layers, isclass)]
@@ -59,7 +59,9 @@ def test_probabilistic_model(layer):
 
 @pytest.mark.parametrize("layer", LAYERS)
 def test_probabilistic_model_predict(layer, features_dataset, targets_dataset):
-    features, targets = get_tensor_dataset(features_dataset, targets_dataset, [])
+    features, targets = get_tensor_dataset(
+        features_dataset, targets_dataset, event_dims=[]
+    )
     x_shape = features.shape
     y_shape = targets.shape
     input_shape = x_shape[1]
