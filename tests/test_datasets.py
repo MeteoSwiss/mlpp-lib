@@ -45,3 +45,14 @@ def test_split_dataset(features_dataset):
     assert out["a"].dims == dict(dims_in, station=2)
     assert out["b"].dims == dict(dims_in, t=2)
     assert out["c"].dims == dict(dims_in, t=2, station=2)
+
+
+def test_split_dataset_missing_dims(features_dataset):
+    """"""
+    splits = dict(
+        a=dict(station=["AAA", "BBB"], asd=[1, 2, 3]),
+    )
+    with pytest.raises(KeyError):
+        out = split_dataset(features_dataset, splits, ignore_missing_dims=False)
+    out = split_dataset(features_dataset, splits, ignore_missing_dims=True)
+    assert list(out.keys()) == ["a"]

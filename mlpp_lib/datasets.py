@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 import numpy as np
 import xarray as xr
@@ -40,11 +40,19 @@ def get_tensor_dataset(
 
 
 def split_dataset(
-    dataset: xr.Dataset,
+    dataset: Union[xr.Dataset, xr.DataArray],
     splits: dict[str, dict],
     thinning: Optional[dict[str, int]] = None,
-) -> dict[str, xr.Dataset]:
+    ignore_missing_dims: bool = False,
+) -> dict[str, Union[xr.Dataset, xr.DataArray]]:
     """Split the dataset, optionally make the input dataset thinner."""
+    if ignore_missing_dims:
+        if thinning:
+            thinning = {dim: v for dim, v in thinning.items() if dim in dataset.dims}
+        splits = {
+            k: {dim: w for dim, w in v.items() if dim in dataset.dims}
+            for k, v in splits.items()
+        }
     if thinning:
         indexers = {dim: slice(None, None, step) for dim, step in thinning.items()}
     else:
