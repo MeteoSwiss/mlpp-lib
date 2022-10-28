@@ -22,31 +22,31 @@ def get_tensor_dataset(
     If provided as an input, a None object is persisted in the output list."""
 
     tensors = []
-    mask = True
+    is_valid = True
     for i, dataset in enumerate(datasets):
         if dataset is None:
             tensors.append(None)
             continue
         tensors.append(dataset_to_tensor(dataset, event_dims))
         mask_dataset_dims = [dim for dim in tensors[i].dims if dim != "sample"]
-        mask *= np.isfinite(tensors[i]).all(dim=mask_dataset_dims)
+        is_valid *= np.isfinite(tensors[i]).all(dim=mask_dataset_dims)
 
     for j, tensor in enumerate(tensors):
         if tensor is None:
             continue
-        tensors[j] = tensor[mask]
+        tensors[j] = tensor[is_valid]
 
     return tensors
 
 
 def split_dataset(
-    dataset: Union[xr.Dataset, xr.DataArray],
+    dataset: Union[xr.Dataset, xr.DataArray, None],
     splits: dict[str, dict],
     thinning: Optional[dict[str, int]] = None,
     ignore_missing_dims: bool = False,
 ) -> dict[str, Union[xr.Dataset, xr.DataArray]]:
     """Split the dataset, optionally make the input dataset thinner."""
-    if ignore_missing_dims:
+    if ignore_missing_dims and dataset is not None:
         if thinning:
             thinning = {dim: v for dim, v in thinning.items() if dim in dataset.dims}
         splits = {
@@ -57,6 +57,10 @@ def split_dataset(
         indexers = {dim: slice(None, None, step) for dim, step in thinning.items()}
     else:
         indexers = None
-    return {
-        key: dataset.sel(values).isel(indexers).load() for key, values in splits.items()
-    }
+    if dataset is None:
+        return {key: None for key in splits.keys()}
+    else:
+        return {
+            key: dataset.sel(values).isel(indexers).load()
+            for key, values in splits.items()
+        }

@@ -56,3 +56,16 @@ def test_split_dataset_missing_dims(features_dataset):
         out = split_dataset(features_dataset, splits, ignore_missing_dims=False)
     out = split_dataset(features_dataset, splits, ignore_missing_dims=True)
     assert list(out.keys()) == ["a"]
+
+
+@pytest.mark.parametrize("ignore_missing_dims,", (True, False))
+def test_split_dataset_None(ignore_missing_dims):
+    """"""
+    splits = dict(
+        a=dict(station=["AAA", "BBB"]),
+        b=dict(t=slice(0, 1)),
+        c=dict(t=slice(0, 1), station=["AAA", "BBB"]),
+    )
+    out = split_dataset(None, splits, ignore_missing_dims=ignore_missing_dims)
+    assert list(out.keys()) == ["a", "b", "c"]
+    assert list(out.values()) == [None, None, None]
