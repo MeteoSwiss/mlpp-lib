@@ -32,6 +32,20 @@ def test_get_tensor_dataset_with_None(features_dataset, targets_dataset):
     assert tensor_dataset[1] is None
 
 
+def test_get_tensor_dataset_fit(
+    features_dataset, targets_dataset, get_dummy_keras_model
+):
+    """Test that output can be used to fit keras model"""
+    tensors = get_tensor_dataset(features_dataset, targets_dataset, None, event_dims=[])
+    model = get_dummy_keras_model(tensors[0].shape[1], tensors[1].shape[1])
+    model.fit(
+        x=tensors[0],
+        y=tensors[1],
+        sample_weight=tensors[2],
+        epochs=1,
+    )
+
+
 def test_split_dataset(features_dataset):
     """"""
     splits = dict(

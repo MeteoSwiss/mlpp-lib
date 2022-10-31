@@ -1,7 +1,9 @@
 import numpy as np
 import pandas as pd
 import pytest
+import tensorflow as tf
 import xarray as xr
+from tensorflow import keras
 
 
 LEADTIMES = np.arange(24)
@@ -56,3 +58,20 @@ def targets_dataset() -> xr.Dataset:
     )
 
     return targets
+
+
+@pytest.fixture
+def get_dummy_keras_model() -> tf.keras.Model:
+    def _model(n_inputs, n_outpus):
+        inputs = tf.keras.Input(shape=(n_inputs,))
+        x = tf.keras.layers.Dense(4, activation=tf.nn.relu)(inputs)
+        outputs = tf.keras.layers.Dense(n_outpus, activation=tf.nn.softmax)(x)
+        model = tf.keras.Model(inputs=inputs, outputs=outputs)
+        model.compile(
+            optimizer=keras.optimizers.RMSprop(learning_rate=1e-3),
+            loss=keras.losses.CategoricalCrossentropy(),
+        )
+
+        return model
+
+    return _model
