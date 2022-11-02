@@ -3,6 +3,7 @@ from typing import Literal, Union
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
+from tensorflow_probability import distributions as tfd
 
 from mlpp_lib.decorators import with_attrs
 
@@ -73,19 +74,31 @@ def crps_energy(
 
     obs = tf.debugging.check_numerics(obs, "Target values")
 
+    use_reparameterization = (
+        fct_dist.reparameterization_type == tfd.FULLY_REPARAMETERIZED
+    )
+
+    samples_1 = fct_dist.sample(n_samples)
+    samples_2 = fct_dist.sample(n_samples)
+
     # first term
     E_1 = tfp.monte_carlo.expectation(
-        f=lambda x: tf.abs(x - obs[None, :]), samples=fct_dist.sample(n_samples)
+        f=lambda x: tf.norm(x - obs[None, :], ord=1, axis=-1),
+        samples=samples_1,
+        log_prob=fct_dist.log_prob,
+        use_reparameterization=use_reparameterization,
     )
 
     # second term
     E_2 = tfp.monte_carlo.expectation(
-        f=lambda x: tf.abs(x[0] - x[1]),
-        samples=[fct_dist.sample(n_samples), fct_dist.sample(n_samples)],
+        f=lambda x: tf.norm(x - samples_2, ord=1, axis=-1),
+        samples=samples_1,
+        log_prob=fct_dist.log_prob,
+        use_reparameterization=use_reparameterization,
     )
     crps = E_1 - E_2 / 2
 
-    return crps
+    return crps[..., None]
 
 
 class WeightedCRPSEnergy(tf.keras.losses.Loss):
@@ -165,24 +178,32 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
 
         else:
 
+            use_reparameterization = (
+                y_pred.reparameterization_type == tfd.FULLY_REPARAMETERIZED
+            )
+
+            samples_1 = tf.math.maximum(y_pred.sample(self.n_samples), threshold)
+            samples_2 = tf.math.maximum(y_pred.sample(self.n_samples), threshold)
+
             # first term
             E_1 = tfp.monte_carlo.expectation(
-                f=lambda x: tf.abs(x - v_obs[None, :]),
-                samples=tf.math.maximum(y_pred.sample(self.n_samples), threshold),
+                f=lambda x: tf.norm(x - v_obs[None, :], ord=1, axis=-1),
+                samples=samples_1,
+                log_prob=y_pred.log_prob,
+                use_reparameterization=use_reparameterization,
             )
 
             # second term
             E_2 = tfp.monte_carlo.expectation(
-                f=lambda x: tf.abs(x[0] - x[1]),
-                samples=[
-                    tf.math.maximum(y_pred.sample(self.n_samples), threshold),
-                    tf.math.maximum(y_pred.sample(self.n_samples), threshold),
-                ],
+                f=lambda x: tf.norm(x - samples_2, ord=1, axis=-1),
+                samples=samples_1,
+                log_prob=y_pred.log_prob,
+                use_reparameterization=use_reparameterization,
             )
 
         twcrps = E_1 - self.bias_correction * E_2 / 2
 
-        return twcrps
+        return twcrps[..., None]
 
 
 class EnergyScore(tf.keras.losses.Loss):
@@ -234,18 +255,26 @@ class EnergyScore(tf.keras.losses.Loss):
 
         y_true = tf.debugging.check_numerics(y_true, "Target values")
 
+        use_reparameterization = (
+            y_pred.reparameterization_type == tfd.FULLY_REPARAMETERIZED
+        )
+
+        samples_1 = y_pred.sample(self.n_samples)
+        samples_2 = y_pred.sample(self.n_samples)
+
         # first term
         E_1 = tfp.monte_carlo.expectation(
-            f=lambda x: tf.norm(x - y_true[None, ...], axis=-1),
-            samples=y_pred.sample(self.n_samples),
+            f=lambda x: tf.norm(x - y_true[None, ...], ord=1, axis=-1),
+            samples=samples_1,
+            log_prob=y_pred.log_prob,
+            use_reparameterization=use_reparameterization,
         )
 
         E_2 = tfp.monte_carlo.expectation(
-            f=lambda x: tf.norm(x[0] - x[1], axis=-1),
-            samples=[
-                y_pred.sample(self.n_samples),
-                y_pred.sample(self.n_samples),
-            ],
+            f=lambda x: tf.norm(x - samples_2, ord=1, axis=-1),
+            samples=samples_1,
+            log_prob=y_pred.log_prob,
+            use_reparameterization=use_reparameterization,
         )
 
         energy_score = E_1 - E_2 / 2
