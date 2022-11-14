@@ -126,6 +126,11 @@ class IndependentGamma(tfpl.DistributionLambda):
         base_config = super(IndependentGamma, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @property
+    def output(self):
+        """This allows the use of this layer with the shap package."""
+        return super(IndependentGamma, self).output[0]
+
 
 @tf.keras.utils.register_keras_serializable()
 class IndependentLogNormal(tfpl.DistributionLambda):
@@ -228,6 +233,11 @@ class IndependentLogNormal(tfpl.DistributionLambda):
         }
         base_config = super(IndependentLogNormal, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+    @property
+    def output(self):
+        """This allows the use of this layer with the shap package."""
+        return super(IndependentLogNormal, self).output[0]
 
 
 @tf.keras.utils.register_keras_serializable()
@@ -333,6 +343,11 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
         }
         base_config = super(IndependentTruncatedNormal, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+    @property
+    def output(self):
+        """This allows the use of this layer with the shap package."""
+        return super(IndependentTruncatedNormal, self).output[0]
 
 
 @tf.keras.utils.register_keras_serializable()
@@ -440,6 +455,11 @@ class IndependentWeibull(tfpl.DistributionLambda):
         base_config = super(IndependentWeibull, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @property
+    def output(self):
+        """This allows the use of this layer with the shap package."""
+        return super(IndependentWeibull, self).output[0]
+
 
 @tf.keras.utils.register_keras_serializable()
 class MultivariateNormalDiag(tfpl.DistributionLambda):
@@ -531,6 +551,11 @@ class MultivariateNormalDiag(tfpl.DistributionLambda):
         base_config = super(MultivariateNormalDiag, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @property
+    def output(self):
+        """This allows the use of this layer with the shap package."""
+        return super(MultivariateNormalDiag, self).output[0]
+
 
 @tf.keras.utils.register_keras_serializable()
 class MultivariateNormalTriL(tfpl.MultivariateNormalTriL):
@@ -572,3 +597,8 @@ class MultivariateNormalTriL(tfpl.MultivariateNormalTriL):
         }
         base_config = super(MultivariateNormalTriL, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+    @property
+    def output(self):
+        """This allows the use of this layer with the shap package."""
+        return super(MultivariateNormalTriL, self).output[0]
