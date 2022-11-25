@@ -74,6 +74,7 @@ class Standardizer:
 def standardize_split_dataset(
     split_dataset: dict[str, xr.Dataset],
     save_to_json: Optional[Path] = None,
+    return_standardizer: bool = False,
     fit_kwargs: Optional[dict] = None,
 ) -> dict[str, xr.Dataset]:
     """Fit standardizer to the train set and applies it to all
@@ -88,4 +89,7 @@ def standardize_split_dataset(
     for split in split_dataset:
         split_dataset[split] = standardizer.transform(split_dataset[split])
 
-    return split_dataset
+    if return_standardizer:
+        return split_dataset, standardizer
+    else:
+        return split_dataset
