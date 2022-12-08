@@ -45,6 +45,7 @@ def train(
     sample_weights: Optional[xr.Dataset] = None,
     targets_mask: Optional[xr.DataArray] = None,
     features_mask: Optional[xr.DataArray] = None,
+    callbacks: Optional[list] = None,
 ) -> tuple:
 
     # run parameters
@@ -116,7 +117,8 @@ def train(
     model.summary(print_fn=LOGGER.info)
 
     # prepare training
-    callbacks = []
+    if callbacks is None:
+        callbacks = []
     if patience:
         callbacks.append(
             tf.keras.callbacks.EarlyStopping(
