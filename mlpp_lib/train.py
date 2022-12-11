@@ -25,7 +25,10 @@ def get_log_params(param_run: dict) -> dict:
             for name, value in param_run["data_partitioning"][dimension].items()
         }
         log_params.update(params)
-    log_params["features_names"] = param_run["features"]
+    # log_params["features_names"] = param_run["features"]
+    # Note to future self: the list of features can easily exceed the maximum length for
+    # a logged parameter, so we excluded it. Instead, this is logged as an artifact
+    # together with the input run parameters.
     log_params["targets_names"] = param_run["targets"]
     log_params["sample_weights"] = param_run.get("sample_weights")
     log_params["event_dims"] = param_run["batching"]["event_dims"]
