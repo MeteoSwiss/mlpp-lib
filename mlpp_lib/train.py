@@ -53,7 +53,6 @@ def train(
 
     # run parameters
     LOGGER.debug(f"run params:\n{pformat(param_run)}")
-    sample_weights = param_run.get("sample_weights")
     event_dims = param_run["batching"]["event_dims"]
     batch_size = param_run["batching"]["batch_size"]
     shuffle = param_run["batching"]["shuffle"]
