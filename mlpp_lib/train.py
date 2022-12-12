@@ -73,6 +73,8 @@ def train(
             f"Will keep {features_mask.sum() / features_mask.size * 100:.1f}% of features."
         )
         features = features.assign_coords(is_valid=features_mask)
+    else:
+        features = features.assign_coords(is_valid=True)
 
     # split datasets
     features = split_dataset(features, splits=splits_train_val, thinning=thinning)
