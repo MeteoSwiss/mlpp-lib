@@ -9,23 +9,13 @@ RUNS = [
     {
         "features": ["coe:x1"],
         "targets": ["obs:y1"],
-        "batching": {
-            "event_dims": [],
-            "batch_size": 1000,
-            "shuffle": True,
-        },
         "model": {
             "fully_connected_network": {
-                "hidden_layers": [3, 2, 1],
-                "activations": "relu",
-                "dropout": [0.5, 0.0, 0.0],
-                "probabilistic_layer": "IndependentGamma",
+                "hidden_layers": [10],
+                "probabilistic_layer": "IndependentNormal",
             }
         },
-        "loss": {"WeightedCRPSEnergy": {"threshold": 0}},
-        "optimizer": "Adam",
-        "learning_rate": 0.01,
-        "epochs": 1,
+        "loss": "crps_energy",
     },
 ]
 

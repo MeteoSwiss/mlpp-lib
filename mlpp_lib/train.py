@@ -51,13 +51,20 @@ def train(
     callbacks: Optional[list] = None,
 ) -> tuple:
 
-    # run parameters
     LOGGER.debug(f"run params:\n{pformat(param_run)}")
-    event_dims = param_run["batching"]["event_dims"]
-    batch_size = param_run["batching"]["batch_size"]
-    shuffle = param_run["batching"]["shuffle"]
+    # required parameters
+    model = param_run["model"]
+    loss = param_run["loss"]
+    # optional parameters
+    event_dims = param_run.get("batching", {}).get("event_dims", [])
+    batch_size = param_run.get("batching", {}).get("batch_size")
+    shuffle = param_run.get("batching", {}).get("shuffle", True)
+    out_bias_init = param_run.get("out_bias_init")
     patience = param_run.get("patience")
     thinning = param_run.get("thinning")
+    optimizer = param_run.get("optimizer", "Adam")
+    learning_rate = param_run.get("learning_rate", 0.001)
+    epochs = param_run.get("epochs", 1)
 
     # load data and filter measurements
     if targets_mask is not None:
@@ -107,16 +114,13 @@ def train(
             data[split_key][2] = np.prod(data[split_key][2], axis=var_axis)
 
     # prepare model
-    out_bias_init = param_run.get("out_bias_init")
     out_bias_init = process_out_bias_init(data["train"][1], out_bias_init, event_dims)
-    param_run["out_bias_init"] = out_bias_init
+    model[list(model)[0]].update({"out_bias_init": out_bias_init})
     input_shape = data["train"][0].shape[1:]
     output_shape = data["train"][1].shape[1:]
-    model = get_model(input_shape, output_shape, param_run["model"])
-    loss = get_loss(param_run["loss"])
-    optimizer = getattr(tf.keras.optimizers, param_run["optimizer"])(
-        learning_rate=param_run["learning_rate"]
-    )
+    model = get_model(input_shape, output_shape, model)
+    loss = get_loss(loss)
+    optimizer = getattr(tf.keras.optimizers, optimizer)(learning_rate=learning_rate)
     model.compile(optimizer=optimizer, loss=loss)
     model.summary(print_fn=LOGGER.info)
 
@@ -150,7 +154,7 @@ def train(
         x=x_train_data,
         y=y_train_data,
         sample_weight=w_train_data,
-        epochs=param_run["epochs"],
+        epochs=epochs,
         validation_data=(x_val_data, y_val_data),
         callbacks=callbacks,
         shuffle=shuffle,
@@ -160,10 +164,10 @@ def train(
     LOGGER.info("Done! \U0001F40D")
 
     custom_objects = tf.keras.layers.serialize(model)
-    if isinstance(param_run["loss"], dict):
-        loss_name = list(param_run["loss"].keys())[0]
+    if isinstance(loss, dict):
+        loss_name = list(loss.keys())[0]
     else:
-        loss_name = param_run["loss"]
+        loss_name = loss
     custom_objects[loss_name] = loss
     history = history.history
     history["time"] = time_callback.times
