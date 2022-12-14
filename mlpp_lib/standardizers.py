@@ -82,7 +82,16 @@ def standardize_split_dataset(
     if fit_kwargs is None:
         fit_kwargs = {}
     standardizer = Standardizer()
-    standardizer.fit(split_dataset["train"], **fit_kwargs)
+
+    # Subsample reftimes and stations to speed up fitting of standardizer
+    reftimes = split_dataset["train"].forecast_reference_time.values
+    stations = split_dataset["train"].station.values
+    reftimes = reftimes[: min(365 * 2, len(reftimes)) : 7]
+    stations = stations[: min(100, len(stations))]
+    subset = split_dataset["train"].sel(
+        forecast_reference_time=reftimes, station=stations
+    )
+    standardizer.fit(subset, **fit_kwargs)
     if save_to_json:
         standardizer.save_json(save_to_json)
 
