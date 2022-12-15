@@ -1,7 +1,6 @@
-from ast import Assert
 import tensorflow as tf
 from typing import Optional, Union, Any
-from tensorflow.keras.layers import Layer, Dense, Dropout
+from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras import Model, initializers
 
 from mlpp_lib.physical_layers import *

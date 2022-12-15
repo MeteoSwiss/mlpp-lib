@@ -61,6 +61,23 @@ def targets_dataset() -> xr.Dataset:
 
 
 @pytest.fixture
+def splits_train_val() -> dict:
+    """ """
+    splits = {
+        "train": {
+            "forecast_reference_time": REFTIMES[: len(REFTIMES) // 2],
+            "station": STATIONS[: len(STATIONS) // 2],
+        },
+        "val": {
+            "forecast_reference_time": REFTIMES[len(REFTIMES) // 2 :],
+            "station": STATIONS[len(STATIONS) // 2 :],
+        },
+    }
+
+    return splits
+
+
+@pytest.fixture
 def get_dummy_keras_model() -> tf.keras.Model:
     def _model(n_inputs, n_outpus):
         inputs = tf.keras.Input(shape=(n_inputs,))
