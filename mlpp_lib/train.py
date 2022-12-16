@@ -53,8 +53,8 @@ def train(
 
     LOGGER.debug(f"run params:\n{pformat(param_run)}")
     # required parameters
-    model = param_run["model"]
-    loss = param_run["loss"]
+    model_config = param_run["model"]
+    loss_config = param_run["loss"]
     # optional parameters
     event_dims = param_run.get("batching", {}).get("event_dims", [])
     batch_size = param_run.get("batching", {}).get("batch_size")
@@ -115,11 +115,11 @@ def train(
 
     # prepare model
     out_bias_init = process_out_bias_init(data["train"][1], out_bias_init, event_dims)
-    model[list(model)[0]].update({"out_bias_init": out_bias_init})
+    model_config[list(model_config)[0]].update({"out_bias_init": out_bias_init})
     input_shape = data["train"][0].shape[1:]
     output_shape = data["train"][1].shape[1:]
-    model = get_model(input_shape, output_shape, model)
-    loss = get_loss(loss)
+    model = get_model(input_shape, output_shape, model_config)
+    loss = get_loss(loss_config)
     optimizer = getattr(tf.keras.optimizers, optimizer)(learning_rate=learning_rate)
     model.compile(optimizer=optimizer, loss=loss)
     model.summary(print_fn=LOGGER.info)
@@ -164,10 +164,10 @@ def train(
     LOGGER.info("Done! \U0001F40D")
 
     custom_objects = tf.keras.layers.serialize(model)
-    if isinstance(loss, dict):
-        loss_name = list(loss.keys())[0]
+    if isinstance(loss_config, dict):
+        loss_name = list(loss_config.keys())[0]
     else:
-        loss_name = loss
+        loss_name = loss_config
     custom_objects[loss_name] = loss
     history = history.history
     history["time"] = time_callback.times
