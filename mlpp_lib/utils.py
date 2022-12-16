@@ -39,6 +39,7 @@ def get_loss(loss: Union[str, dict]) -> Callable:
         loss_options = loss[loss_name]
     else:
         loss_name = loss
+        loss_options = {}
 
     if hasattr(losses, loss_name):
         LOGGER.info(f"Using custom-defined mlpp metric: {loss_name}")

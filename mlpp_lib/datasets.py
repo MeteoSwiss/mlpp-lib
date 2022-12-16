@@ -61,6 +61,5 @@ def split_dataset(
         return {key: None for key in splits.keys()}
     else:
         return {
-            key: dataset.sel(values).isel(indexers).load()
-            for key, values in splits.items()
+            key: dataset.sel(values).isel(indexers) for key, values in splits.items()
         }

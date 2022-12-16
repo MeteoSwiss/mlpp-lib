@@ -1,6 +1,6 @@
-from ast import Assert
 import tensorflow as tf
 from typing import Optional, Union, Any
+
 from tensorflow.keras.layers import (
     Layer,
     Dense,
@@ -8,6 +8,7 @@ from tensorflow.keras.layers import (
     BatchNormalization,
     Activation,
 )
+
 from tensorflow.keras import Model, initializers
 
 from mlpp_lib.physical_layers import *

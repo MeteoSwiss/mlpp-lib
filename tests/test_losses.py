@@ -1,36 +1,75 @@
+from inspect import getmembers, isclass
+
 import numpy as np
 import pytest
 import tensorflow as tf
 from tensorflow_probability import distributions as tfd
 
 from mlpp_lib import losses
+from mlpp_lib import probabilistic_layers
+
+
+LAYERS = [obj[0] for obj in getmembers(probabilistic_layers, isclass)]
+
+
+def crps_closed_form_gaussian(obs, mu, sigma):
+    loc = (obs - mu) / sigma
+    phi = 1.0 / np.sqrt(2.0 * np.pi) * tf.math.exp(-tf.math.square(loc) / 2.0)
+    Phi = 0.5 * (1.0 + tf.math.erf(loc / np.sqrt(2.0)))
+    crps_closed_form = tf.math.sqrt(tf.math.square(sigma)) * (
+        loc * (2.0 * Phi - 1.0) + 2 * phi - 1.0 / tf.math.sqrt(np.pi)
+    )
+    return crps_closed_form
 
 
 def test_crps_energy():
-
+    batch_size = 100
     tf.random.set_seed(1234)
-    fct_dist = tfd.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
+    mu = tf.zeros((batch_size, 1))
+    sigma = tf.ones((batch_size, 1))
+    fct_dist = tfd.Normal(loc=mu, scale=sigma)
     fct_dist = tfd.Independent(fct_dist, reinterpreted_batch_ndims=1)
-    fct_dist.shape = (*fct_dist.batch_shape, *fct_dist.event_shape)
-    obs = tf.zeros((3, 1))
+    fct_dist.shape = fct_dist.batch_shape + fct_dist.event_shape
+    obs = tf.zeros((batch_size, 1))
 
     result = losses.crps_energy(obs, fct_dist)
-    good_result = tf.constant([[0.284208], [0.280653], [0.206382]])
+    good_result = crps_closed_form_gaussian(obs, mu, sigma)
 
-    np.testing.assert_allclose(result, good_result, atol=1e-5)
+    np.testing.assert_allclose(
+        tf.reduce_mean(result), tf.reduce_mean(good_result), atol=1e-2
+    )
 
 
 def test_crps_energy_ensemble():
-
+    batch_size = 100
     tf.random.set_seed(1234)
-    fct_dist = tfd.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
-    fct_ensemble = fct_dist.sample(100)
-    obs = tf.zeros((3, 1))
+    mu = tf.zeros((batch_size, 1))
+    sigma = tf.ones((batch_size, 1))
+    fct_dist = tfd.Normal(loc=mu, scale=sigma)
+    fct_ensemble = fct_dist.sample(1000)
+    obs = tf.zeros((batch_size, 1))
 
     result = losses.crps_energy_ensemble(obs, fct_ensemble)
-    good_result = tf.constant([[0.22706872], [0.22341758], [0.21489006]])
+    good_result = crps_closed_form_gaussian(obs, mu, sigma)
 
-    np.testing.assert_allclose(result, good_result, atol=1e-5)
+    np.testing.assert_allclose(
+        tf.reduce_mean(result), tf.reduce_mean(good_result), atol=1e-2
+    )
+
+
+@pytest.mark.parametrize("layer", LAYERS)
+def test_weighted_crps_layers(layer):
+    event_shape = (1,)
+    batch_shape = (10,)
+    event_size = event_shape[0]
+    layer_class = getattr(probabilistic_layers, layer)
+    prob_layer = layer_class(event_size)
+    y_pred_dist = prob_layer(
+        np.random.random(batch_shape + (layer_class.params_size(event_size),))
+    )
+    loss = losses.WeightedCRPSEnergy(threshold=0, reduction="none")
+    result = loss(tf.zeros(batch_shape + event_shape), y_pred_dist)
+    assert result.shape == batch_shape + event_shape
 
 
 def test_weighted_crps_dtypes():
