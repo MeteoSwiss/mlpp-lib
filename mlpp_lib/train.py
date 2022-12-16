@@ -165,7 +165,7 @@ def train(
 
     custom_objects = tf.keras.layers.serialize(model)
     if isinstance(loss_config, dict):
-        loss_name = list(loss_config.keys())[0]
+        loss_name = list(loss_config)[0]
     else:
         loss_name = loss_config
     custom_objects[loss_name] = loss
