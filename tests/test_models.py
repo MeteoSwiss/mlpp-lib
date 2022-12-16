@@ -21,12 +21,18 @@ FCN_SCENARIOS = [
     for x in itertools.product(*FCN_OPTIONS.values())
 ]
 
+DCN_SCENARIOS = [
+    dict(zip(list(FCN_OPTIONS.keys()), x))
+    for x in itertools.product(*FCN_OPTIONS.values())
+]
+
 
 @pytest.mark.parametrize("scenario_kwargs", FCN_SCENARIOS)
 def test_fully_connected_network(scenario_kwargs):
 
     input_shape = scenario_kwargs.pop("input_shape")
     output_size = scenario_kwargs.pop("output_size")
+    dummy_input = np.random.randn(32, *input_shape)
 
     # check that correct errors are raised for some scenarios
     if isinstance(scenario_kwargs["out_bias_init"], np.ndarray):
@@ -35,10 +41,40 @@ def test_fully_connected_network(scenario_kwargs):
                 models.fully_connected_network(
                     input_shape, output_size, **scenario_kwargs
                 )
-            pass
+            return
+        else:
+            model = models.fully_connected_network(
+                input_shape, output_size, **scenario_kwargs
+            )
 
     else:
         model = models.fully_connected_network(
             input_shape, output_size, **scenario_kwargs
         )
         assert isinstance(model, Functional)
+
+    assert model(dummy_input).shape == (32, output_size)
+
+
+@pytest.mark.parametrize("scenario_kwargs", DCN_SCENARIOS)
+def test_deep_cross_network(scenario_kwargs):
+
+    input_shape = scenario_kwargs.pop("input_shape")
+    output_size = scenario_kwargs.pop("output_size")
+    dummy_input = np.random.randn(32, *input_shape)
+    # check that correct errors are raised for some scenarios
+    if isinstance(scenario_kwargs["out_bias_init"], np.ndarray):
+        if scenario_kwargs["out_bias_init"].shape[-1] != output_size:
+            with pytest.raises(AssertionError):
+                models.deep_cross_network(input_shape, output_size, **scenario_kwargs)
+            return
+        else:
+            model = models.deep_cross_network(
+                input_shape, output_size, **scenario_kwargs
+            )
+
+    else:
+        model = models.deep_cross_network(input_shape, output_size, **scenario_kwargs)
+        assert isinstance(model, Functional)
+
+    assert model(dummy_input).shape == (32, output_size)
