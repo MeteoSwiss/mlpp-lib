@@ -1,6 +1,14 @@
 import tensorflow as tf
 from typing import Optional, Union, Any
-from tensorflow.keras.layers import Dense, Dropout
+
+from tensorflow.keras.layers import (
+    Layer,
+    Dense,
+    Dropout,
+    BatchNormalization,
+    Activation,
+)
+
 from tensorflow.keras import Model, initializers
 
 from mlpp_lib.physical_layers import *
@@ -107,6 +115,115 @@ def fully_connected_network(
 
     model = Model(inputs=inputs, outputs=outputs)
 
+    return model
+
+
+def deep_cross_network(
+    input_shape: tuple[int],
+    output_size: int,
+    hidden_layers: list,
+    activations: Optional[Union[str, list[str]]] = "relu",
+    dropout: Optional[Union[float, list[float]]] = None,
+    out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
+    probabilistic_layer: Optional[str] = None,
+):
+    """
+    Build a Deep and Cross Network (see https://arxiv.org/abs/1708.05123).
+
+    Parameters
+    ----------
+    input_shape: tuple[int]
+        Shape of the input samples (not including batch size)
+    output_size: int
+        Number of target predictands.
+    hidden_layers: list[int]
+        List that is used to define the fully connected block. Each element creates
+        a Dense layer with the corresponding units.
+    activations: str | list[str]
+        (Optional) Activation function(s) for the Dense layer(s). See https://keras.io/api/layers/activations/#relu-function.
+        If a string is passed, the same activation is used for all layers. Default is `relu`.
+    dropout: float | list[float]
+        (Optional) Dropout rate for the optional dropout layers. If a `float` is passed,
+        dropout layers with the given rate are created after each Dense layer, except before the output layer.
+        Default is None.
+    out_bias_init: str | np.ndarray
+        (Optional) Specifies the initialization of the output layer bias. If a string is passed,
+        it must be a valid Keras built-in initializer (see https://keras.io/api/layers/initializers/).
+        If an array is passed, it must match the `output_size` argument.
+    probabilistic_layer: str
+        (Optional) Name of a probabilistic layer defined in `mlpp_lib.probabilistic_layers`, which is
+        used as output layer of the keras `Model`. Default is None.
+
+    Return
+    ------
+    model: keras Functional model
+        The built (but not yet compiled) model.
+    """
+    if isinstance(dropout, list):
+        assert len(dropout) == len(hidden_layers)
+    elif isinstance(dropout, float):
+        dropout = [dropout] * (len(hidden_layers))
+    else:
+        dropout = []
+
+    if isinstance(activations, list):
+        assert len(activations) == len(hidden_layers)
+    elif isinstance(activations, str):
+        activations = [activations] * len(hidden_layers)
+
+    if isinstance(out_bias_init, np.ndarray):
+        out_bias_init_shape = out_bias_init.shape[-1]
+        assert out_bias_init.shape[-1] == output_size, (
+            f"Bias initialization array is shape {out_bias_init_shape}"
+            f"but output size is {output_size}"
+        )
+
+    # cross part
+    inputs = tf.keras.layers.Input(shape=input_shape)
+    cross = inputs
+    for _ in hidden_layers:
+        units_ = cross.shape[-1]
+        x = Dense(units_)(cross)
+        cross = inputs * x + cross
+    cross = BatchNormalization()(cross)
+    # cross = tf.keras.Model(inputs=inputs, outputs=cross, name="crossblock")
+
+    # deep part
+    deep = inputs
+    for i, u in enumerate(hidden_layers):
+        deep = Dense(u)(deep)
+        deep = BatchNormalization()(deep)
+        deep = Activation(activations[i])(deep)
+        if i < len(dropout) and 0.0 < dropout[i] < 1.0:
+            deep = Dropout(dropout[i])(deep)
+    # deep = tf.keras.Model(inputs=inputs, outputs=deep, name="deepblock")
+
+    # merge
+    merge = tf.keras.layers.Concatenate()([cross, deep])
+
+    # probabilistic prediction
+    if probabilistic_layer:
+        probabilistic_layer = globals()[probabilistic_layer]
+        n_params = probabilistic_layer.params_size(output_size)
+        if isinstance(out_bias_init, np.ndarray):
+            out_bias_init = np.hstack(
+                [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
+            )
+            out_bias_init = initializers.Constant(out_bias_init)
+
+        x = Dense(n_params, bias_initializer=out_bias_init, name="dist_params")(merge)
+        outputs = probabilistic_layer(output_size, name="output")(x)
+
+    # deterministic prediction
+    else:
+        if isinstance(out_bias_init, np.ndarray):
+            out_bias_init = initializers.Constant(out_bias_init)
+
+        outputs = Dense(output_size, bias_initializer=out_bias_init, name="output")(
+            merge
+        )
+
+    model = Model(inputs=inputs, outputs=outputs, name="deep_cross_network")
     return model
 
 
