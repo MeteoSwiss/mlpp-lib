@@ -161,7 +161,7 @@ def train(
         shuffle=shuffle,
         batch_size=batch_size,
         steps_per_epoch=steps_per_epoch,
-        verbose=1,
+        verbose=2,
     )
     LOGGER.info("Done! \U0001F40D")
 
