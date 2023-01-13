@@ -65,6 +65,7 @@ def train(
     optimizer = param_run.get("optimizer", "Adam")
     learning_rate = param_run.get("learning_rate", 0.001)
     epochs = param_run.get("epochs", 1)
+    steps_per_epoch = param_run.get("steps_per_epoch")
 
     # load data and filter measurements
     if targets_mask is not None:
@@ -159,6 +160,7 @@ def train(
         callbacks=callbacks,
         shuffle=shuffle,
         batch_size=batch_size,
+        steps_per_epoch=steps_per_epoch,
         verbose=1,
     )
     LOGGER.info("Done! \U0001F40D")
