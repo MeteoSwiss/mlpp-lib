@@ -4,6 +4,7 @@ from keras.engine.functional import Functional
 from mlpp_lib import train
 from mlpp_lib.standardizers import Standardizer
 
+
 RUNS = [
     # minimal set of parameters
     {
@@ -29,6 +30,19 @@ RUNS = [
         },
         "loss": {"WeightedCRPSEnergy": {"threshold": 0, "n_samples": 5}},
     },
+    # compute metrics using thresholds
+    {
+        "features": ["coe:x1"],
+        "targets": ["obs:y1"],
+        "model": {
+            "fully_connected_network": {
+                "hidden_layers": [10],
+                "probabilistic_layer": "IndependentNormal",
+            }
+        },
+        "loss": "crps_energy",
+        "metrics": {"thresholds": [1, 2, 3]},
+    },
 ]
 
 
@@ -41,10 +55,10 @@ def test_train(param_run, features_dataset, targets_dataset, splits_train_val):
         splits_train_val,
     )
     assert len(results) == 4
-    assert isinstance(results[0], Functional)
-    assert isinstance(results[1], dict)
-    assert isinstance(results[2], Standardizer)
-    assert isinstance(results[3], dict)
+    assert isinstance(results[0], Functional)  # model
+    assert isinstance(results[1], dict)  # custom_objects
+    assert isinstance(results[2], Standardizer)  # standardizer
+    assert isinstance(results[3], dict)  # history
 
     if isinstance(param_run["loss"], str):
         loss_name = param_run["loss"]

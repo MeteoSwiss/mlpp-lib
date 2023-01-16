@@ -750,6 +750,22 @@ dev = ["pre-commit", "tox"]
 testing = ["pytest", "pytest-benchmark"]
 
 [[package]]
+name = "properscoring"
+version = "0.1"
+description = "Proper scoring rules in Python"
+category = "main"
+optional = false
+python-versions = "*"
+files = [
+    {file = "properscoring-0.1-py2.py3-none-any.whl", hash = "sha256:f84d5b06c13549d0171ce52ad7b45c6f5726ac44b733d24af5c60654cbb821dc"},
+    {file = "properscoring-0.1.tar.gz", hash = "sha256:b0cc4963cc218b728d6c5f77b3259c8f835ae00e32e82678cdf6936049b93961"},
+]
+
+[package.dependencies]
+numpy = "*"
+scipy = "*"
+
+[[package]]
 name = "protobuf"
 version = "3.19.6"
 description = "Protocol Buffers"
@@ -1359,4 +1375,4 @@ testing = ["flake8 (<5)", "func-timeout", "jaraco.functools", "jaraco.itertools"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9, <3.11"
-content-hash = "e8883081c5b5ab3dceb3c445bb09a73df49af82c6b80528a445f0cf92ceb3157"
+content-hash = "124ef0f0dd70654f4a574b723304e63f329e138187a7cc12268dff7b3d4f70ad"

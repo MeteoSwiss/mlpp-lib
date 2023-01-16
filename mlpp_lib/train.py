@@ -5,9 +5,10 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import tensorflow_probability as tfp
 import xarray as xr
 
-from mlpp_lib.callbacks import TimeHistory
+from mlpp_lib.callbacks import TimeHistory, ComputeProbabilisticMetrics
 from mlpp_lib.datasets import get_tensor_dataset, split_dataset
 from mlpp_lib.standardizers import standardize_split_dataset
 from mlpp_lib.utils import get_loss, get_model, process_out_bias_init
@@ -66,6 +67,7 @@ def train(
     learning_rate = param_run.get("learning_rate", 0.001)
     epochs = param_run.get("epochs", 1)
     steps_per_epoch = param_run.get("steps_per_epoch")
+    metrics_kwargs = param_run.get("metrics", {})
 
     # load data and filter measurements
     if targets_mask is not None:
@@ -147,12 +149,19 @@ def train(
     y_val_data = data["val"][1].values
     w_train_data = data["train"][2]
 
+    if isinstance(model.layers[-1], tfp.layers.DistributionLambda):
+        metrics_callback = ComputeProbabilisticMetrics(
+            validation_data=(x_val_data, y_val_data),
+            **metrics_kwargs,
+        )
+        callbacks.append(metrics_callback)
+
     # see https://github.com/keras-team/keras/pull/16177
     if w_train_data is not None:
         w_train_data = pd.Series(w_train_data)
 
     LOGGER.info("Start training.")
-    history = model.fit(
+    res = model.fit(
         x=x_train_data,
         y=y_train_data,
         sample_weight=w_train_data,
@@ -172,7 +181,6 @@ def train(
     else:
         loss_name = loss_config
     custom_objects[loss_name] = loss
-    history = history.history
-    history["time"] = time_callback.times
+    history = res.history
 
     return model, custom_objects, standardizer, history

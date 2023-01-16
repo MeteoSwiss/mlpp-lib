@@ -5,6 +5,8 @@ import tensorflow as tf
 import xarray as xr
 from tensorflow import keras
 
+from mlpp_lib.utils import get_loss, get_model
+
 
 LEADTIMES = np.arange(24)
 REFTIMES = pd.date_range("2018-01-01", "2018-03-31", freq="24H")
@@ -89,6 +91,26 @@ def get_dummy_keras_model() -> tf.keras.Model:
             loss=keras.losses.CategoricalCrossentropy(),
         )
 
+        return model
+
+    return _model
+
+
+@pytest.fixture
+def get_prob_model() -> tf.keras.Model:
+    def _model(n_inputs, n_outputs):
+        model_config = {
+            "fully_connected_network": {
+                "hidden_layers": [1],
+                "probabilistic_layer": "IndependentNormal",
+            }
+        }
+        model = get_model(n_inputs, n_outputs, model_config)
+        loss = get_loss("crps_energy")
+        model.compile(
+            optimizer=keras.optimizers.RMSprop(learning_rate=0.1),
+            loss=loss,
+        )
         return model
 
     return _model
