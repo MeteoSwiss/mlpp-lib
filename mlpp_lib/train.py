@@ -134,6 +134,7 @@ def train(
                 patience=patience,
                 monitor="val_loss",
                 restore_best_weights=True,
+                verbose=1,
             )
         )
 
