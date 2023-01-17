@@ -182,4 +182,9 @@ def train(
     custom_objects[loss_name] = loss
     history = res.history
 
+    # for some reasons, 'lr' is provided as float32
+    # and needs to be casted in order to be serialized
+    if "lr" in history:
+        history["lr"] = list(map(float, history["lr"]))
+
     return model, custom_objects, standardizer, history

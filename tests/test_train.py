@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from keras.engine.functional import Functional
 
@@ -44,7 +46,12 @@ RUNS = [
         "loss": "crps_energy",
         "metrics": ["bias"],
         "callbacks": {
-            "EarlyStopping": {"patience": 10, "restore_best_weights": True},
+            "EarlyStopping": {
+                "patience": 10,
+                "restore_best_weights": True,
+                "verbose": 1,
+            },
+            "ReduceLROnPlateau": {"patience": 1, "verbose": 1},
             "ProperScores": {"thresholds": [0, 1, 2]},
         },
     },
@@ -52,7 +59,10 @@ RUNS = [
 
 
 @pytest.mark.parametrize("param_run", RUNS)
-def test_train(param_run, features_dataset, targets_dataset, splits_train_val):
+def test_train(
+    param_run, features_dataset, targets_dataset, splits_train_val, tmp_path
+):
+    param_run.update({"epochs": 3})
     results = train.train(
         param_run,
         features_dataset[param_run["features"]],
@@ -64,6 +74,10 @@ def test_train(param_run, features_dataset, targets_dataset, splits_train_val):
     assert isinstance(results[1], dict)  # custom_objects
     assert isinstance(results[2], Standardizer)  # standardizer
     assert isinstance(results[3], dict)  # history
+
+    # try to dump fit history to json
+    with open(tmp_path / "history.json", "w") as f:
+        json.dump(results[3], f, indent=2)
 
     if isinstance(param_run["loss"], str):
         loss_name = param_run["loss"]
