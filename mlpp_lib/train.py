@@ -64,7 +64,7 @@ def train(
     loss_config = param_run["loss"]
     # optional parameters
     metrics_config = param_run.get("metrics", [])
-    callbacks_config = param_run.get("callbacks", [])
+    callbacks_config = param_run.get("callbacks", {})
     event_dims = param_run.get("batching", {}).get("event_dims", [])
     batch_size = param_run.get("batching", {}).get("batch_size")
     shuffle = param_run.get("batching", {}).get("shuffle", True)
