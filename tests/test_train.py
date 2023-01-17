@@ -30,7 +30,7 @@ RUNS = [
             }
         },
         "loss": {"WeightedCRPSEnergy": {"threshold": 0, "n_samples": 5}},
-        "metrics": ["bias"],
+        "metrics": ["bias", "mean_absolute_error", {"MAEBusts": {"threshold": 0.5}}],
     },
     {
         "features": ["coe:x1"],

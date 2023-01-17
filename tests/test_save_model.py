@@ -27,6 +27,7 @@ ALL_LOSSES = [
     for obj in getmembers(losses, isfunction) + getmembers(losses, isclass)
     if _belongs_here(obj, losses)
 ]
+
 ALL_METRICS = [
     obj[0]
     for obj in getmembers(metrics, isfunction) + getmembers(metrics, isclass)
@@ -39,6 +40,12 @@ TEST_LOSSES = [
     "crps_energy",
     {"WeightedCRPSEnergy": {"threshold": 0}},
     {"MultivariateLoss": {"metric": "mse"}},
+]
+
+TEST_METRICS = [
+    "bias",
+    "mean_absolute_error",
+    {"MAEBusts": {"threshold": 0.5}},
 ]
 
 
@@ -60,7 +67,7 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
     )
     assert isinstance(model.from_config(model.get_config()), Functional)
     loss = get_loss(loss)
-    metrics = [get_metric(metric) for metric in ALL_METRICS]
+    metrics = [get_metric(metric) for metric in TEST_METRICS]
     model.compile(loss=loss, metrics=metrics)
     model.save(tmp_path, save_traces=save_traces)
 
