@@ -37,7 +37,7 @@ def get_log_params(param_run: dict) -> dict:
     # a logged parameter, so we excluded it. Instead, this is logged as an artifact
     # together with the input run parameters.
     log_params["targets_names"] = param_run["targets"]
-    log_params["sample_weights"] = param_run.get("sample_weights")
+    log_params["sample_weights_names"] = param_run.get("sample_weights")
     log_params["event_dims"] = param_run["batching"]["event_dims"]
     log_params["thinning"] = param_run.get("thinning")
     log_params.update(param_run["filter"])
