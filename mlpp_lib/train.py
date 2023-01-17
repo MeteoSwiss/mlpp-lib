@@ -8,10 +8,16 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import xarray as xr
 
-from mlpp_lib.callbacks import TimeHistory, ComputeProbabilisticMetrics
+from mlpp_lib.callbacks import TimeHistory, ProperScores
 from mlpp_lib.datasets import get_tensor_dataset, split_dataset
 from mlpp_lib.standardizers import standardize_split_dataset
-from mlpp_lib.utils import get_loss, get_model, process_out_bias_init
+from mlpp_lib.utils import (
+    get_callback,
+    get_loss,
+    get_metric,
+    get_model,
+    process_out_bias_init,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -57,17 +63,17 @@ def train(
     model_config = param_run["model"]
     loss_config = param_run["loss"]
     # optional parameters
+    metrics_config = param_run.get("metrics", [])
+    callbacks_config = param_run.get("callbacks", [])
     event_dims = param_run.get("batching", {}).get("event_dims", [])
     batch_size = param_run.get("batching", {}).get("batch_size")
     shuffle = param_run.get("batching", {}).get("shuffle", True)
     out_bias_init = param_run.get("out_bias_init")
-    patience = param_run.get("patience")
     thinning = param_run.get("thinning")
     optimizer = param_run.get("optimizer", "Adam")
     learning_rate = param_run.get("learning_rate", 0.001)
     epochs = param_run.get("epochs", 1)
     steps_per_epoch = param_run.get("steps_per_epoch")
-    metrics_kwargs = param_run.get("metrics", {})
 
     # load data and filter measurements
     if targets_mask is not None:
@@ -116,49 +122,42 @@ def train(
             var_axis = data[split_key][2].dims.index("variable")
             data[split_key][2] = np.prod(data[split_key][2], axis=var_axis)
 
-    # prepare model
-    out_bias_init = process_out_bias_init(data["train"][1], out_bias_init, event_dims)
-    model_config[list(model_config)[0]].update({"out_bias_init": out_bias_init})
-    input_shape = data["train"][0].shape[1:]
-    output_shape = data["train"][1].shape[1:]
-    model = get_model(input_shape, output_shape, model_config)
-    loss = get_loss(loss_config)
-    optimizer = getattr(tf.keras.optimizers, optimizer)(learning_rate=learning_rate)
-    model.compile(optimizer=optimizer, loss=loss)
-    model.summary(print_fn=LOGGER.info)
-
-    # prepare training
-    if callbacks is None:
-        callbacks = []
-    if patience:
-        callbacks.append(
-            tf.keras.callbacks.EarlyStopping(
-                patience=patience,
-                monitor="val_loss",
-                restore_best_weights=True,
-                verbose=1,
-            )
-        )
-
-    time_callback = TimeHistory()
-    callbacks.append(time_callback)
-
     x_train_data = data["train"][0].values
     y_train_data = data["train"][1].values
     x_val_data = data["val"][0].values
     y_val_data = data["val"][1].values
     w_train_data = data["train"][2]
-
-    if isinstance(model.layers[-1], tfp.layers.DistributionLambda):
-        metrics_callback = ComputeProbabilisticMetrics(
-            validation_data=(x_val_data, y_val_data),
-            **metrics_kwargs,
-        )
-        callbacks.append(metrics_callback)
-
     # see https://github.com/keras-team/keras/pull/16177
     if w_train_data is not None:
         w_train_data = pd.Series(w_train_data)
+    del data
+
+    # prepare model
+    out_bias_init = process_out_bias_init(y_train_data, out_bias_init, event_dims)
+    model_config[list(model_config)[0]].update({"out_bias_init": out_bias_init})
+    input_shape = x_train_data.shape[1:]
+    output_shape = y_train_data.shape[1:]
+    model = get_model(input_shape, output_shape, model_config)
+    loss = get_loss(loss_config)
+    metrics = [get_metric(metric) for metric in metrics_config]
+    optimizer = getattr(tf.keras.optimizers, optimizer)(learning_rate=learning_rate)
+    model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+    model.summary(print_fn=LOGGER.info)
+
+    # callbacks
+    if callbacks is None:
+        callbacks = []
+
+    for callback in callbacks_config.items():
+        callback_instance = get_callback({callback[0]: callback[1]})
+
+        if isinstance(callback_instance, ProperScores):
+            callback_instance.add_validation_data((x_val_data, y_val_data))
+
+        callbacks.append(callback_instance)
+
+    time_callback = TimeHistory()
+    callbacks.append(time_callback)
 
     LOGGER.info("Start training.")
     res = model.fit(

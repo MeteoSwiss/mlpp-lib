@@ -17,6 +17,7 @@ RUNS = [
             }
         },
         "loss": "crps_energy",
+        "callbacks": {"EarlyStopping": {"patience": 10, "restore_best_weights": True}},
     },
     # use a more complicated loss function
     {
@@ -29,8 +30,8 @@ RUNS = [
             }
         },
         "loss": {"WeightedCRPSEnergy": {"threshold": 0, "n_samples": 5}},
+        "metrics": ["bias"],
     },
-    # compute metrics using thresholds
     {
         "features": ["coe:x1"],
         "targets": ["obs:y1"],
@@ -41,7 +42,11 @@ RUNS = [
             }
         },
         "loss": "crps_energy",
-        "metrics": {"thresholds": [1, 2, 3]},
+        "metrics": ["bias"],
+        "callbacks": {
+            "EarlyStopping": {"patience": 10, "restore_best_weights": True},
+            "ProperScores": {"thresholds": [0, 1, 2]},
+        },
     },
 ]
 

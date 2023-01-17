@@ -27,10 +27,9 @@ class TestCallbacks(object):
             callbacks=[custom_callback],
         )
 
-    def test_ComputeProbabilisticMetrics(self):
-        custom_callback = callbacks.ComputeProbabilisticMetrics(
-            self.validation_data, thresholds=[0, 1]
-        )
+    def test_ProperScores(self):
+        custom_callback = callbacks.ProperScores(thresholds=[0, 1])
+        custom_callback.add_validation_data(self.validation_data)
         res = self._train_with_callback(custom_callback)
         assert "val_crps" in res.history
         assert "val_crps_0" in res.history

@@ -7,24 +7,30 @@ import tensorflow as tf
 from keras.engine.functional import Functional
 
 from mlpp_lib import models
-from mlpp_lib import losses
+from mlpp_lib import losses, metrics
 from mlpp_lib import probabilistic_layers
-from mlpp_lib.utils import get_loss
+from mlpp_lib.utils import get_loss, get_metric
 
 
 def _belongs_here(obj, module):
     return obj[1].__module__ == module.__name__
 
 
+ALL_LAYERS = [
+    obj[0]
+    for obj in getmembers(probabilistic_layers, isclass)
+    if _belongs_here(obj, probabilistic_layers)
+]
+
 ALL_LOSSES = [
     obj[0]
     for obj in getmembers(losses, isfunction) + getmembers(losses, isclass)
     if _belongs_here(obj, losses)
 ]
-ALL_LAYERS = [
+ALL_METRICS = [
     obj[0]
-    for obj in getmembers(probabilistic_layers, isclass)
-    if _belongs_here(obj, probabilistic_layers)
+    for obj in getmembers(metrics, isfunction) + getmembers(metrics, isclass)
+    if _belongs_here(obj, metrics)
 ]
 
 
@@ -54,7 +60,8 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
     )
     assert isinstance(model.from_config(model.get_config()), Functional)
     loss = get_loss(loss)
-    model.compile(loss=loss)
+    metrics = [get_metric(metric) for metric in ALL_METRICS]
+    model.compile(loss=loss, metrics=metrics)
     model.save(tmp_path, save_traces=save_traces)
 
     # test trying to load the model from a new process
