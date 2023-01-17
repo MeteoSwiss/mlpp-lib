@@ -5,12 +5,6 @@ def bias(y_true, y_pred):
     return tf.reduce_mean(y_pred - y_true, axis=-1)
 
 
-def mae_busts(y_true, y_pred):
-    threshold = 10
-    absolute_difference = tf.cast(tf.abs(y_pred - y_true) > threshold, tf.float32)
-    return tf.reduce_mean(absolute_difference, axis=-1)
-
-
 class MAEBusts(tf.keras.metrics.Metric):
     """Compute frequency of occurrence of absolute errors > thr"""
 
