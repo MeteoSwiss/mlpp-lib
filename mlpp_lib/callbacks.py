@@ -42,4 +42,4 @@ class TimeHistory(callbacks.Callback):
         self.epoch_time_start = time.monotonic()
 
     def on_epoch_end(self, epoch, logs):
-        logs["time"] = time.monotonic() - self.epoch_time_start
+        logs["epoch_time"] = time.monotonic() - self.epoch_time_start

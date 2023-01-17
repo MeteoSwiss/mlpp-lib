@@ -40,4 +40,4 @@ class TestCallbacks(object):
     def test_TimeHistory(self):
         custom_callback = callbacks.TimeHistory()
         res = self._train_with_callback(custom_callback)
-        assert "time" in res.history
+        assert "epoch_time" in res.history
