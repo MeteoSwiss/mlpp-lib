@@ -1,5 +1,6 @@
 import json
 
+import cloudpickle
 import pytest
 from keras.engine.functional import Functional
 
@@ -59,9 +60,7 @@ RUNS = [
 
 
 @pytest.mark.parametrize("param_run", RUNS)
-def test_train(
-    param_run, features_dataset, targets_dataset, splits_train_val, tmp_path
-):
+def test_train(param_run, features_dataset, targets_dataset, splits_train_val):
     param_run.update({"epochs": 3})
     results = train.train(
         param_run,
@@ -75,12 +74,8 @@ def test_train(
     assert isinstance(results[2], Standardizer)  # standardizer
     assert isinstance(results[3], dict)  # history
 
-    # try to dump fit history to json
-    with open(tmp_path / "history.json", "w") as f:
-        json.dump(results[3], f, indent=2)
+    # try to pickle the custom objects
+    cloudpickle.dumps(results[1])
 
-    if isinstance(param_run["loss"], str):
-        loss_name = param_run["loss"]
-    else:
-        loss_name = list(param_run["loss"])[0]
-    assert loss_name in results[1]
+    # try to dump fit history to json
+    json.dumps(results[3])
