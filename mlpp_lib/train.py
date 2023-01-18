@@ -1,11 +1,11 @@
 import logging
+from inspect import getmembers, isfunction, isclass
 from pprint import pformat
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import tensorflow_probability as tfp
 import xarray as xr
 
 from mlpp_lib.callbacks import TimeHistory, ProperScores
@@ -21,6 +21,13 @@ from mlpp_lib.utils import (
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+_isclassorfunc = lambda x: isclass(x) or isfunction(x)
+KERAS_LOSSES = [name for name, _ in getmembers(tf.keras.losses, _isclassorfunc)]
+KERAS_METRICS = [name for name, _ in getmembers(tf.keras.metrics, _isclassorfunc)]
+KERAS_CALLBACKS = [name for name, _ in getmembers(tf.keras.callbacks, _isclassorfunc)]
+KERAS_OBJECTS = KERAS_LOSSES + KERAS_METRICS + KERAS_CALLBACKS
 
 
 def get_log_params(param_run: dict) -> dict:
@@ -45,6 +52,18 @@ def get_log_params(param_run: dict) -> dict:
     log_params.update(param_run["model"][log_params["model_name"]])
     log_params["loss"] = param_run["loss"]
     return log_params
+
+
+def register_custom_objects(*objects):
+    custom_objects = {}
+    for custom_object in objects:
+        try:
+            object_name = custom_object.__name__
+        except AttributeError:
+            object_name = custom_object.__class__.__name__
+        if object_name not in KERAS_OBJECTS:
+            custom_objects[object_name] = custom_object
+    return custom_objects
 
 
 def train(
@@ -175,11 +194,8 @@ def train(
     LOGGER.info("Done! \U0001F40D")
 
     custom_objects = tf.keras.layers.serialize(model)
-    if isinstance(loss_config, dict):
-        loss_name = list(loss_config)[0]
-    else:
-        loss_name = loss_config
-    custom_objects[loss_name] = loss
+    custom_objects.update(register_custom_objects(loss, *metrics, *callbacks))
+
     history = res.history
 
     # for some reasons, 'lr' is provided as float32

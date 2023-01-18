@@ -38,7 +38,7 @@ def get_callback(callback: Union[str, dict]) -> Callable:
             else callback_obj
         )
     else:
-        raise KeyError(f"The callback {callback} is not available.")
+        raise KeyError(f"The callback {callback_name} is not available.")
 
     return callback
 
@@ -82,7 +82,7 @@ def get_loss(loss: Union[str, dict]) -> Callable:
         loss_obj = getattr(tf.keras.losses, loss_name)
         loss = loss_obj(**loss_options) if isinstance(loss_obj, type) else loss_obj
     else:
-        raise KeyError(f"The loss {loss} is not available.")
+        raise KeyError(f"The loss {loss_name} is not available.")
 
     return loss
 
@@ -110,7 +110,7 @@ def get_metric(metric: Union[str, dict]) -> Callable:
             metric_obj(**metric_options) if isinstance(metric_obj, type) else metric_obj
         )
     else:
-        raise KeyError(f"The metric {metric} is not available.")
+        raise KeyError(f"The metric {metric_name} is not available.")
 
     return metric
 
