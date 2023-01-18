@@ -14,7 +14,7 @@ pandas = "^1.4.1"
 scipy = "^1.8.0"
 xarray = "^2022.3.0"
 properscoring = "^0.1"
-numba = "^0.56.4"
+numba = {version = "^0.56.4", optional = true}
 
 [tool.poetry.dev-dependencies]
 pytest = "^7"
