@@ -5,10 +5,42 @@ import numpy as np
 import xarray as xr
 import tensorflow as tf
 
-from mlpp_lib import losses, models
+from mlpp_lib import callbacks, losses, metrics, models
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def get_callback(callback: Union[str, dict]) -> Callable:
+    """Get the callback, either keras built-in or mlpp custom."""
+
+    if isinstance(callback, dict):
+        callback_name = list(callback.keys())[0]
+        callback_options = callback[callback_name]
+    else:
+        callback_name = callback
+        callback_options = {}
+
+    if hasattr(callbacks, callback_name):
+        LOGGER.info(f"Using custom mlpp callback: {callback_name}")
+        callback_obj = getattr(callbacks, callback_name)
+        callback = (
+            callback_obj(**callback_options)
+            if isinstance(callback_obj, type)
+            else callback_obj
+        )
+    elif hasattr(tf.keras.callbacks, callback_name):
+        LOGGER.info(f"Using keras built-in callback: {callback_name}")
+        callback_obj = getattr(tf.keras.callbacks, callback_name)
+        callback = (
+            callback_obj(**callback_options)
+            if isinstance(callback_obj, type)
+            else callback_obj
+        )
+    else:
+        raise KeyError(f"The callback {callback_name} is not available.")
+
+    return callback
 
 
 def get_model(
@@ -42,17 +74,45 @@ def get_loss(loss: Union[str, dict]) -> Callable:
         loss_options = {}
 
     if hasattr(losses, loss_name):
-        LOGGER.info(f"Using custom-defined mlpp metric: {loss_name}")
+        LOGGER.info(f"Using custom mlpp loss: {loss_name}")
         loss_obj = getattr(losses, loss_name)
         loss = loss_obj(**loss_options) if isinstance(loss_obj, type) else loss_obj
     elif hasattr(tf.keras.losses, loss_name):
-        LOGGER.info(f"Using keras built-in metric: {loss_name}")
+        LOGGER.info(f"Using keras built-in loss: {loss_name}")
         loss_obj = getattr(tf.keras.losses, loss_name)
         loss = loss_obj(**loss_options) if isinstance(loss_obj, type) else loss_obj
     else:
-        raise KeyError(f"The provided metric {loss} is not available.")
+        raise KeyError(f"The loss {loss_name} is not available.")
 
     return loss
+
+
+def get_metric(metric: Union[str, dict]) -> Callable:
+    """Get the metric function, either keras built-in or mlpp custom."""
+
+    if isinstance(metric, dict):
+        metric_name = list(metric.keys())[0]
+        metric_options = metric[metric_name]
+    else:
+        metric_name = metric
+        metric_options = {}
+
+    if hasattr(metrics, metric_name):
+        LOGGER.info(f"Using custom mlpp metric: {metric_name}")
+        metric_obj = getattr(metrics, metric_name)
+        metric = (
+            metric_obj(**metric_options) if isinstance(metric_obj, type) else metric_obj
+        )
+    elif hasattr(tf.keras.metrics, metric_name):
+        LOGGER.info(f"Using keras built-in metric: {metric_name}")
+        metric_obj = getattr(tf.keras.metrics, metric_name)
+        metric = (
+            metric_obj(**metric_options) if isinstance(metric_obj, type) else metric_obj
+        )
+    else:
+        raise KeyError(f"The metric {metric_name} is not available.")
+
+    return metric
 
 
 def process_out_bias_init(
