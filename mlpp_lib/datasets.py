@@ -13,6 +13,7 @@ import xarray as xr
 from typing_extensions import Self
 
 from .model_selection import DataSplitter
+from .standardizers import Standardizer
 
 
 class DataModule:
@@ -468,62 +469,3 @@ class DataFilter:
 
         x_mask = xr.apply_ufunc(np.product, x_mask, kwargs={"axis": 0})
         return x, y
-
-
-@dataclass
-class Standardizer:
-    """
-    Standardizes data in a xarray.Dataset object.
-    """
-
-    mean: xr.Dataset
-    std: xr.Dataset
-    fillvalue: dict[str, float] = field(default=-5)
-
-    def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
-        self.mean = dataset.mean(dims).copy(deep=True).compute()
-        self.std = dataset.std(dims).copy(deep=True).compute()
-        self.fillvalue = -5
-        # Check for near-zero standard deviations and set them equal to one
-        self.std = xr.where(self.std < 1e-6, 1, self.std)
-
-    def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
-        if self.mean is None:
-            raise ValueError("Standardizer wasn't fit to data")
-
-        def f(ds: xr.Dataset):
-            for var in ds.data_vars:
-                assert var in self.mean.data_vars, f"{var} not in Standardizer"
-            return ((ds - self.mean) / self.std).astype("float32")
-
-        return tuple([f(ds) for ds in datasets])
-
-    def inverse_transform(self, dataset: xr.Dataset) -> xr.Dataset:
-        if self.mean is None:
-            raise ValueError("Standardizer wasn't fit to data")
-        for var in dataset.data_vars:
-            assert var in self.mean.data_vars, f"{var} not in Standardizer"
-        dataset = xr.where(dataset > self.fillvalue, dataset, np.nan)
-        return (dataset * self.std + self.mean).astype("float32")
-
-    def save_json(self, out_fn: str) -> None:
-        if self.mean is None:
-            raise ValueError("Standardizer wasn't fit to data")
-
-        out_dict = {
-            "mean": self.mean.to_dict(),
-            "std": self.std.to_dict(),
-            "fillvalue": self.fillvalue,
-        }
-        with open(out_fn, "w") as outfile:
-            json.dump(out_dict, outfile, indent=4)
-
-    @classmethod
-    def from_json(cls, in_fn: str) -> Self:
-        with open(in_fn, "r") as f:
-            in_dict = json.load(f)
-
-        mean = xr.Dataset.from_dict(in_dict["mean"])
-        std = xr.Dataset.from_dict(in_dict["std"])
-        fillvalue = in_dict["fillvalue"]
-        return cls(mean, std, fillvalue=fillvalue)

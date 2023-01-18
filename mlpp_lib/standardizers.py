@@ -6,6 +6,7 @@ from typing import Optional
 
 import numpy as np
 import xarray as xr
+from typing_extensions import Self
 
 LOGGER = logging.getLogger(__name__)
 
@@ -16,59 +17,64 @@ class Standardizer:
     Standardizes data in a xarray.Dataset object.
     """
 
-    mean: dict[str, float] = field(init=False)
-    std: dict[str, float] = field(init=False)
-    fillvalue: dict[str, float] = field(init=False)
+    mean: xr.Dataset = field(default=None)
+    std: xr.Dataset = field(default=None)
+    fillvalue: dict[str, float] = field(default=-5)
 
-    def fit(self, dataset: xr.Dataset, dims: list = None):
-        LOGGER.info("Calculating mean and standard deviation")
-        self.mean = dataset.mean(dims).persist()
-        self.std = dataset.std(dims).persist()
+    def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
+
+        self.mean = dataset.mean(dims).copy(deep=True).compute()
+        self.std = dataset.std(dims).copy(deep=True).compute()
         self.fillvalue = -5
         # Check for near-zero standard deviations and set them equal to one
         self.std = xr.where(self.std < 1e-6, 1, self.std)
 
-    def transform(self, dataset: xr.Dataset) -> xr.Dataset:
+    def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         if self.mean is None:
             raise ValueError("Standardizer wasn't fit to data")
-        for var in dataset.data_vars:
-            assert var in self.mean.data_vars, f"{var} not in Standardizer"
-        return (
-            ((dataset - self.mean) / self.std).astype("float32").fillna(self.fillvalue)
-        )
 
-    def inverse_transform(self, dataset: xr.Dataset) -> xr.Dataset:
-        if self.mean is None:
-            raise ValueError("Standardizer wasn't fit to data")
-        for var in dataset.data_vars:
-            assert var in self.mean.data_vars, f"{var} not in Standardizer"
-        dataset = xr.where(dataset > self.fillvalue, dataset, np.nan)
-        return (dataset * self.std + self.mean).astype("float32")
+        def f(ds: xr.Dataset):
+            for var in ds.data_vars:
+                assert var in self.mean.data_vars, f"{var} not in Standardizer"
+            return (
+                ((ds - self.mean) / self.std).astype("float32").fillna(self.fillvalue)
+            )
 
-    def to_dict(self) -> dict:
+        return tuple(f(ds) for ds in datasets)
+
+    def inverse_transform(self, *datasets: xr.Dataset) -> xr.Dataset:
         if self.mean is None:
             raise ValueError("Standardizer wasn't fit to data")
+
+        def f(ds: xr.Dataset) -> xr.Dataset:
+            for var in ds.data_vars:
+                assert var in self.mean.data_vars, f"{var} not in Standardizer"
+            ds = xr.where(ds > self.fillvalue, ds, np.nan)
+            return (ds * self.std + self.mean).astype("float32")
+
+        return tuple(f(ds) for ds in datasets)
+
+    def save_json(self, out_fn: str) -> None:
+        if self.mean is None:
+            raise ValueError("Standardizer wasn't fit to data")
+
         out_dict = {
             "mean": self.mean.to_dict(),
             "std": self.std.to_dict(),
             "fillvalue": self.fillvalue,
         }
-        return out_dict
-
-    def from_dict(self, in_dict: dict) -> None:
-        self.mean = xr.Dataset.from_dict(in_dict["mean"])
-        self.std = xr.Dataset.from_dict(in_dict["std"])
-        self.fillvalue = in_dict["fillvalue"]
-
-    def save_json(self, out_fn: str) -> None:
-        out_dict = self.to_dict()
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
 
-    def load_json(self, in_fn: str) -> None:
+    @classmethod
+    def from_json(cls, in_fn: str) -> Self:
         with open(in_fn, "r") as f:
             in_dict = json.load(f)
-        self.from_dict(in_dict)
+
+        mean = xr.Dataset.from_dict(in_dict["mean"])
+        std = xr.Dataset.from_dict(in_dict["std"])
+        fillvalue = in_dict["fillvalue"]
+        return cls(mean, std, fillvalue=fillvalue)
 
 
 def standardize_split_dataset(
