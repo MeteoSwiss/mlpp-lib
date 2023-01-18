@@ -215,6 +215,8 @@ class DataSplitter:
                 dim: coord[slice(None, None, thinning.get(dim, None))]
                 for dim, coord in self.partitions[partition].items()
             }
+        else:
+            indexers = self.partitions[partition]
 
         res = tuple(ds.sel(indexers) for ds in args)
         for ds in args:
