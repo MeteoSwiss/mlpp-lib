@@ -4,7 +4,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Hashable, Mapping, Optional, Sequence, Union
+from typing import Any, Hashable, Mapping, Optional, Sequence, Union, Callable
 
 import dask.array as da
 import numpy as np
@@ -18,7 +18,7 @@ from .model_selection import DataSplitter
 class DataModule:
     """A class to encapsulate everything involved in mlpp data processing.
 
-    1. Load `xarray` objects from `.zarr` archives
+    1. Load `xarray` objects from `.zarr` archives and select variables.
     2. Filter, split, standardize.
     3. Load into mlpp `Dataset`
     4. Reshape/mask as needed.
@@ -48,14 +48,21 @@ class DataModule:
         splitter: DataSplitter,
         filter: Optional[DataFilter] = None,
         standardizer: Optional[Standardizer] = None,
-        device: str = "/GPU:0",
+        sample_weighting: Optional[Sequence[Hashable] | Hashable] = None,
+        thinning: Optional[Mapping[str, Sequence]] = None,
+        device: Optional[str] = None,
     ):
 
         self.data_dir = data_dir
         self.features = features
         self.targets = targets
+        self.batch_dims = batch_dims
         self.splitter = splitter
+        self.filter = filter
         self.standardizer = standardizer
+        self.sample_weighting = (
+            list(sample_weighting) if sample_weighting is not None else None
+        )
         self.thinning = thinning
         self.device = device
 
@@ -64,7 +71,7 @@ class DataModule:
         # load and preproc
         self.load_raw()
         self.select_splits(stage=stage)
-        # self.apply_filter()
+        # self.apply_filter(stage=stage)
         self.standardize(stage=stage)
 
         # as datasets
@@ -88,7 +95,26 @@ class DataModule:
             .astype(np.float32)
         )
 
+        if w := self.sample_weighting:
+            try:
+                self.w = (
+                    xr.open_zarr(self.data_dir + "features.zarr")[w]
+                    .isel(t=slice(0, 2))
+                    .reset_coords(drop=True)
+                    .astype(np.float32)
+                )
+            except KeyError:
+                self.w = (
+                    xr.open_zarr(self.data_dir + "targets.zarr")[w]
+                    .isel(t=slice(0, 2))
+                    .reset_coords(drop=True)
+                    .astype(np.float32)
+                )
+        else:
+            self.w = None
+
     def select_splits(self, stage=None):
+        args = (self.x, self.y, self.w) if self.w is not None else (self.x, self.y)
         if stage == "fit" or stage is None:
             self.train = self.splitter.get_partition(
                 *args, partition="train", thinning=self.thinning
@@ -97,8 +123,16 @@ class DataModule:
                 *args, partition="val", thinning=self.thinning
             )
         elif stage == "test" or stage is None:
-            self.test = self.splitter.get_partition(*args, partition="test", thinning=self.thinning)
+            self.test = self.splitter.get_partition(
+                *args, partition="test", thinning=self.thinning
+            )
 
+    # def apply_filter(self, stage=None):
+    #     if stage == "fit" or stage is None:
+    #         self.train = self.filter.apply_filters(*self.train)
+    #         self.val = self.filter.apply_filters(*self.val)
+    #     if stage == "test" or stage is None:
+    #         self.test = self.filter.apply_filters(*self.test)
 
     def standardize(self, stage=None):
 
@@ -172,10 +206,12 @@ class Dataset:
         coords: dict[str, Sequence],
         features: Optional[Sequence[Hashable]] = None,
         targets: Optional[Sequence[Hashable]] = None,
+        w: Optional[np.ndarray] = None,
     ):
 
         self.x = x
         self.y = y
+        self.w = w
         self.dims = dims
         self.coords = coords
         self.features = features
@@ -183,7 +219,9 @@ class Dataset:
         self._is_stacked = True if "s" in dims else False
 
     @classmethod
-    def from_xarray_datasets(cls: Self, x: xr.Dataset, y: xr.Dataset) -> Self:
+    def from_xarray_datasets(
+        cls: Self, x: xr.Dataset, y: xr.Dataset, w: Optional[xr.Dataset] = None
+    ) -> Self:
         """
         Create a mlpp `Dataset` from `xr.Datasets`.
 
@@ -202,30 +240,38 @@ class Dataset:
         targets = list(y.data_vars)
         x = x.to_array("v").transpose(..., "v").values
         y = y.to_array("v").transpose(..., "v").values
-        return cls(x, y, dims, coords, features, targets)
+        if w is not None:
+            w = w.to_array("v").transpose(..., "v").values
+            w = np.prod(w, axis=-1)
+        return cls(x, y, dims, coords, features, targets, w=w)
 
     def stack(self, batch_dims: Optional[Sequence[Hashable]] = None) -> Self:
         """Stack batch dimensions along the first axis"""
-        x, y = self._as_variables()
+        x, y, w = self._as_variables()
         dims = ["s"] + [dim for dim in x.dims if dim not in batch_dims]
         x = x.stack(s=batch_dims).transpose("s", ...).values.copy(order="C")
         y = y.stack(s=batch_dims).transpose("s", ...).values.copy(order="C")
-        ds = Dataset(x, y, dims, self.coords, self.features, self.targets)
+        if w is not None:
+            w = w.stack(s=batch_dims).transpose("s", ...).values.copy(order="C")
+        ds = Dataset(x, y, dims, self.coords, self.features, self.targets, w=w)
         ds.batch_dims = batch_dims
         ds._is_stacked = True
-        del x, y
+        del x, y, w
         return ds
 
     def unstack(self) -> Self:
         """Unstack batch dimensions"""
-        x, y = self._as_variables()
-        x = x.unstack(s={dim: len(coord) for dim, coord in self.coords.items()})
-        y = y.unstack(s={dim: len(coord) for dim, coord in self.coords.items()})
-        ds = Dataset(
-            x.values, y.values, x.dims, self.coords, self.features, self.targets
-        )
+        x, y, w = self._as_variables()
+        unstack_info = {dim: len(coord) for dim, coord in self.coords.items()}
+        x = x.unstack(s=unstack_info).values
+        y = y.unstack(s=unstack_info).values
+        dims = [*self.coords.keys(), "v"]
+        if w is not None:
+            w = w.unstack(s=unstack_info).values
+        ds = Dataset(x, y, dims, self.coords, self.features, self.targets, w=w)
         ds.batch_dims = self.batch_dims
         ds._is_stacked = False
+        del x, y, w
         return ds
 
     @staticmethod
@@ -258,30 +304,37 @@ class Dataset:
         ycoords = None if self.coords is None else self.coords | targets
         x = xr.DataArray(self.x, coords=xcoords, dims=list(xcoords.keys()))
         y = xr.DataArray(self.y, coords=ycoords, dims=list(ycoords.keys()))
-        return x, y
+        if self.w:
+            w = xr.DataArray(self.w, coords=self.coords, dims=list(self.coords))
+        else:
+            w = None
+        return x, y, w
 
     def _as_variables(self) -> tuple[xr.Variable, ...]:
         x = xr.Variable(self.dims, self.x)
         y = xr.Variable(self.dims, self.y)
-        return x, y
+        w = xr.Variable(self.dims[:-1], self.w) if self.w is not None else None
+        return x, y, w
 
     def drop_nans(self):
 
         x = da.from_array(self.x, name="x")
-        y = da.from_array(self.y, name="x")
+        y = da.from_array(self.y, name="y")
+        w = da.from_array(self.y, name="w") if self.w is not None else None
         self.mask = ~(
             da.any(da.isnan(x), axis=-1) | da.any(da.isnan(y), axis=-1)
         ).compute()
 
         self.x = x[self.mask].compute()
         self.y = y[self.mask].compute()
+        self.w = w[self.mask].compute() if w is not None else None
 
     def get_multiindex(self) -> pd.MultiIndex:
         return pd.MultiIndex.from_product(
             list(self.coords.values), names=list(self.coords.keys())
         )
 
-    def dataset_from_predictions(self, preds: np.ndarray):
+    def dataset_from_predictions(self, preds: np.ndarray) -> xr.Dataset:
         out = np.full_like(self.y, fill_value=np.nan)
         out[self.mask] = preds
         out = xr.Variable(self.dims, out)
@@ -383,25 +436,38 @@ class DataFilter:
     Parameters
     ----------
     qa_filter: string-like, optional
-        Path to the `filtered_measurements.nc` file. Bad measurements are set to NaNs.
-    idx_keep: dict
-        Mapping of xarray's indexers with labels that will be selected.
-    idx_drop: dict
-        Mapping of xarray's indexers with labels that will be dropped.
-
+        Path to the `filtered_measurements.nc` file. Bad measurements (y) will be set to NaNs.
+    x_filter: callable
+        Function that takes the input features `xr.Dataset` object as input and return a
+        boolean mask in form of a `xr.DataArray`.
+    y_filter: callable
+        Function that takes the input features `xr.Dataset` object as input and return a
+        boolean mask in form of a `xr.DataArray`.
     """
 
     def __init__(
         self,
         qa_filter: Optional[str] = None,
-        idx_keep: Optional[dict[str, Any]] = None,
-        idx_drop: Optional[dict[str, Any]] = None,
+        x_filter: Optional[Callable] = None,
+        y_filter: Optional[Callable] = None,
     ):
 
         self.qa_mask = xr.load_dataarray(qa_filter) if qa_filter is not None else None
+        self.x_filter = x_filter
+        self.y_filter = y_filter
 
-    def apply_filters(self, x: xr.Dataset, y: xr.Dataset):
-        y = y.where(~self.qa_mask)
+    def apply_filters(
+        self, x: xr.Dataset, y: xr.Dataset, w: Optional[xr.Dataset] = None
+    ):
+
+        if self.x_filter:
+            x = x.where(self.x_filter(x))
+
+        if self.qa_mask:
+            y = y.where(~self.qa_mask)
+
+        x_mask = xr.apply_ufunc(np.product, x_mask, kwargs={"axis": 0})
+        return x, y
 
 
 @dataclass
@@ -410,9 +476,9 @@ class Standardizer:
     Standardizes data in a xarray.Dataset object.
     """
 
-    mean: xr.Dataset = field(init=False)
-    std: xr.Dataset = field(init=False)
-    fillvalue: dict[str, float] = field(init=False)
+    mean: xr.Dataset
+    std: xr.Dataset
+    fillvalue: dict[str, float] = field(default=-5)
 
     def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
         self.mean = dataset.mean(dims).copy(deep=True).compute()
@@ -452,10 +518,12 @@ class Standardizer:
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
 
-    def load_json(self, in_fn: str) -> None:
+    @classmethod
+    def from_json(cls, in_fn: str) -> Self:
         with open(in_fn, "r") as f:
             in_dict = json.load(f)
 
-        self.mean = xr.Dataset.from_dict(in_dict["mean"])
-        self.std = xr.Dataset.from_dict(in_dict["std"])
-        self.fillvalue = in_dict["fillvalue"]
+        mean = xr.Dataset.from_dict(in_dict["mean"])
+        std = xr.Dataset.from_dict(in_dict["std"])
+        fillvalue = in_dict["fillvalue"]
+        return cls(mean, std, fillvalue=fillvalue)
