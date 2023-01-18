@@ -56,7 +56,7 @@ class DataModule:
         self.targets = targets
         self.splitter = splitter
         self.standardizer = standardizer
-        self.batch_dims = batch_dims
+        self.thinning = thinning
         self.device = device
 
     def setup(self, stage=None):
@@ -90,10 +90,15 @@ class DataModule:
 
     def select_splits(self, stage=None):
         if stage == "fit" or stage is None:
-            self.train = self.splitter.get_partition(self.x, self.y, partition="train")
-            self.val = self.splitter.get_partition(self.x, self.y, partition="val")
+            self.train = self.splitter.get_partition(
+                *args, partition="train", thinning=self.thinning
+            )
+            self.val = self.splitter.get_partition(
+                *args, partition="val", thinning=self.thinning
+            )
         elif stage == "test" or stage is None:
-            self.test = self.splitter.get_partition(self.x, self.y, partition="test")
+            self.test = self.splitter.get_partition(*args, partition="test", thinning=self.thinning)
+
 
     def standardize(self, stage=None):
 
