@@ -166,7 +166,7 @@ class DataSplitter:
         return splitter
 
     def get_partition(
-        self, *args: xr.Dataset, partition=None
+        self, *args: xr.Dataset, partition=None, thinning: Optional[Mapping] = None
     ) -> tuple[xr.Dataset, ...]:
         """
         Select and return a partition based on the current values in
@@ -184,6 +184,9 @@ class DataSplitter:
         partition: tuple of `xr.Dataset`
             Subsets of the input datasets.
         """
+
+        if partition is None:
+            raise ValueError("Keyword argument `partition` must be provided.")
 
         self.time_index = args[0].forecast_reference_time.values.copy()
         self.station_index = args[0].station.values.copy()
@@ -206,8 +209,14 @@ class DataSplitter:
             np.array(station_idx)[np.argsort(idx_loc)]
         )
 
-        f = lambda ds: ds.sel(self.partitions[partition])
-        res = tuple(f(ds) for ds in args)
+        # apply thinning
+        if thinning:
+            indexers = {
+                dim: coord[slice(None, None, thinning.get(dim, None))]
+                for dim, coord in self.partitions[partition].items()
+            }
+
+        res = tuple(ds.sel(indexers) for ds in args)
         for ds in args:
             ds.close()
         del args
