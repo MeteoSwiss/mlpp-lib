@@ -1,4 +1,5 @@
 import logging
+from inspect import getmembers, isfunction, isclass
 from pprint import pformat
 from typing import Optional
 
@@ -7,10 +8,21 @@ import pandas as pd
 import tensorflow as tf
 import xarray as xr
 
+<<<<<<< HEAD
 from mlpp_lib.callbacks import TimeHistory
 from mlpp_lib.datasets import get_tensor_dataset, split_dataset, DataModule, Dataset
+=======
+from mlpp_lib.callbacks import TimeHistory, ProperScores
+from mlpp_lib.datasets import get_tensor_dataset, split_dataset
+>>>>>>> main
 from mlpp_lib.standardizers import standardize_split_dataset
-from mlpp_lib.utils import get_loss, get_model, process_out_bias_init
+from mlpp_lib.utils import (
+    get_callback,
+    get_loss,
+    get_metric,
+    get_model,
+    process_out_bias_init,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -30,7 +42,7 @@ def get_log_params(param_run: dict) -> dict:
     # a logged parameter, so we excluded it. Instead, this is logged as an artifact
     # together with the input run parameters.
     log_params["targets_names"] = param_run["targets"]
-    log_params["sample_weights"] = param_run.get("sample_weights")
+    log_params["sample_weights_names"] = param_run.get("sample_weights")
     log_params["event_dims"] = param_run["batching"]["event_dims"]
     log_params["thinning"] = param_run.get("thinning")
     log_params.update(param_run["filter"])
@@ -85,6 +97,34 @@ def train(
     # see https://github.com/keras-team/keras/pull/16177
     if w_train_data is not None:
         w_train_data = pd.Series(w_train_data)
+    del data
+
+    # prepare model
+    out_bias_init = process_out_bias_init(y_train_data, out_bias_init, event_dims)
+    model_config[list(model_config)[0]].update({"out_bias_init": out_bias_init})
+    input_shape = x_train_data.shape[1:]
+    output_shape = y_train_data.shape[1:]
+    model = get_model(input_shape, output_shape, model_config)
+    loss = get_loss(loss_config)
+    metrics = [get_metric(metric) for metric in metrics_config]
+    optimizer = getattr(tf.keras.optimizers, optimizer)(learning_rate=learning_rate)
+    model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+    model.summary(print_fn=LOGGER.info)
+
+    # callbacks
+    if callbacks is None:
+        callbacks = []
+
+    for callback in callbacks_config.items():
+        callback_instance = get_callback({callback[0]: callback[1]})
+
+        if isinstance(callback_instance, ProperScores):
+            callback_instance.add_validation_data((x_val_data, y_val_data))
+
+        callbacks.append(callback_instance)
+
+    time_callback = TimeHistory()
+    callbacks.append(time_callback)
 
     LOGGER.info("Start training.")
     history = model.fit(
@@ -101,13 +141,15 @@ def train(
     )
     LOGGER.info("Done! \U0001F40D")
 
+    # we don't need to export loss and metric functions for deployments
+    model.compile(optimizer=optimizer, loss=None, metrics=None)
+
     custom_objects = tf.keras.layers.serialize(model)
-    if isinstance(loss_config, dict):
-        loss_name = list(loss_config)[0]
-    else:
-        loss_name = loss_config
-    custom_objects[loss_name] = loss
-    history = history.history
-    history["time"] = time_callback.times
+
+    history = res.history
+    # for some reasons, 'lr' is provided as float32
+    # and needs to be casted in order to be serialized
+    if "lr" in history:
+        history["lr"] = list(map(float, history["lr"]))
 
     return model, custom_objects, datamodule.standardizer, history
