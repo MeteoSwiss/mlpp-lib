@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from typing_extensions import Self
+import tensorflow as tf
 
 from .model_selection import DataSplitter
 from .standardizers import Standardizer
@@ -419,8 +420,6 @@ class DataLoader:
         Size of each batch.
     shuffle: bool
         Enable or disable shuffling before each iteration.
-    nan_handling: string
-        How to handle missing values. Current options are "drop"
 
 
     Example:
@@ -428,7 +427,6 @@ class DataLoader:
     ...    train_dataset,
     ...    batch_size = 2056,
     ...    shuffle = True,
-    ...    device = "/GPU:0",
     ... )
     ... for x, y in train_dataloader:
     ...     pred = model(x)
@@ -443,55 +441,39 @@ class DataLoader:
     ):
 
         self.dataset = dataset
-
-        self._drop_nans()
-
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.num_samples = len(self.dataset.x)
         self.num_batches = self.num_samples // batch_size
-        # self._indices = tf.range(self.num_samples)
+        self._indices = tf.range(self.num_samples)
         self._seed = 0
-
-        # if device:
-        #     self._to_device(device)
-
         self._reset()
 
     def __len__(self) -> int:
         return self.num_batches
 
-    def __getitem__(self, index):  # -> tuple[tf.Tensor, ...]:
+    def __getitem__(self, index) -> tuple[tf.Tensor, ...]:
         if index >= self.num_batches:
-            # self._reset()
+            self._reset()
             raise IndexError
         start = index * self.batch_size
         end = index * self.batch_size + self.batch_size
         return self.dataset.x[start:end], self.dataset.y[start:end]
 
-    # def _reset(self):
-    #     """Reset iterator and shuffles data if needed"""
-    #     self.index = 0
-    #     if self.shuffle:
-    #         self._indices = tf.random.shuffle(self._indices, seed=self._seed)
-    #         self.dataset.x = tf.gather(self.dataset.x, self._indices)
-    #         self.dataset.y = tf.gather(self.dataset.y, self._indices)
-    #         self._seed += 1
+    def _reset(self):
+        """Reset iterator and shuffles data if needed"""
+        self.index = 0
+        if self.shuffle:
+            self._indices = tf.random.shuffle(self._indices, seed=self._seed)
+            self.dataset.x = tf.gather(self.dataset.x, self._indices)
+            self.dataset.y = tf.gather(self.dataset.y, self._indices)
+            self._seed += 1
 
-    # def _to_device(self, device):
-    #     """Transfer data to a device"""
-    #     with tf.device(device):
-    #         self.dataset.x = tf.constant(self.dataset.x)
-    #         self.dataset.y = tf.constant(self.dataset.y)
-
-    def _drop_nans(self):
-        self.mask = ~(
-            da.any(da.isnan(self.dataset.x), axis=-1)
-            | da.any(da.isnan(self.dataset.y), axis=-1)
-        )
-
-        self.dataset.x = self.dataset.x[self.mask].compute()
-        self.dataset.y = self.dataset.y[self.mask].compute()
+    def _to_device(self, device):
+        """Transfer data to a device"""
+        with tf.device(device):
+            self.dataset.x = tf.constant(self.dataset.x)
+            self.dataset.y = tf.constant(self.dataset.y)
 
 
 class DataFilter:
