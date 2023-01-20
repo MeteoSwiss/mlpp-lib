@@ -23,8 +23,8 @@ class Standardizer:
 
     def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
 
-        self.mean = dataset.mean(dims).copy(deep=True).compute()
-        self.std = dataset.std(dims).copy(deep=True).compute()
+        self.mean = dataset.mean(dims).compute().copy()
+        self.std = dataset.std(dims).compute().copy()
         self.fillvalue = -5
         # Check for near-zero standard deviations and set them equal to one
         self.std = xr.where(self.std < 1e-6, 1, self.std)
@@ -40,7 +40,10 @@ class Standardizer:
                 ((ds - self.mean) / self.std).astype("float32").fillna(self.fillvalue)
             )
 
-        return tuple(f(ds) for ds in datasets)
+        if len(datasets) == 1:
+            return f(datasets[0])
+        else:
+            return tuple(f(ds) for ds in datasets)
 
     def inverse_transform(self, *datasets: xr.Dataset) -> xr.Dataset:
         if self.mean is None:
@@ -52,7 +55,10 @@ class Standardizer:
             ds = xr.where(ds > self.fillvalue, ds, np.nan)
             return (ds * self.std + self.mean).astype("float32")
 
-        return tuple(f(ds) for ds in datasets)
+        if len(datasets) == 1:
+            return f(datasets[0])
+        else:
+            return tuple(f(ds) for ds in datasets)
 
     def save_json(self, out_fn: str) -> None:
         if self.mean is None:
