@@ -40,10 +40,7 @@ class Standardizer:
                 ((ds - self.mean) / self.std).astype("float32").fillna(self.fillvalue)
             )
 
-        if len(datasets) == 1:
-            return f(datasets[0])
-        else:
-            return tuple(f(ds) for ds in datasets)
+        return tuple(f(ds) for ds in datasets)
 
     def inverse_transform(self, *datasets: xr.Dataset) -> xr.Dataset:
         if self.mean is None:
@@ -55,10 +52,7 @@ class Standardizer:
             ds = xr.where(ds > self.fillvalue, ds, np.nan)
             return (ds * self.std + self.mean).astype("float32")
 
-        if len(datasets) == 1:
-            return f(datasets[0])
-        else:
-            return tuple(f(ds) for ds in datasets)
+        return tuple(f(ds) for ds in datasets)
 
     def save_json(self, out_fn: str) -> None:
         if self.mean is None:
