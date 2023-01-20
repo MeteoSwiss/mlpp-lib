@@ -446,8 +446,8 @@ class Dataset:
 
     def __repr__(self) -> str:
         x, y, w = self._as_variables()
-        wsize = w.sizes if w is not None else None 
-        out = f"Dataset(x={dict(x.sizes)}, y={dict(y.sizes)}, w={dict(wsize)})"
+        wsize = dict(w.sizes) if w is not None else None 
+        out = f"Dataset(x={dict(x.sizes)}, y={dict(y.sizes)}, w={wsize})"
         return out 
 
 class DataLoader:
