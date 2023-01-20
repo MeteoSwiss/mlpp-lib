@@ -17,7 +17,7 @@ def test_fit(features_dataset):
 def test_transform(features_dataset):
     standardizer = Standardizer()
     standardizer.fit(features_dataset)
-    ds = standardizer.transform(features_dataset)
+    ds = standardizer.transform(features_dataset)[0]
     assert all(var in ds.data_vars for var in features_dataset.data_vars)
     assert all(np.isclose(ds[var].mean().values, 0) for var in ds.data_vars)
     assert all(np.isclose(ds[var].std().values, 1) for var in ds.data_vars)
@@ -26,8 +26,8 @@ def test_transform(features_dataset):
 def test_inverse_transform(features_dataset):
     standardizer = Standardizer()
     standardizer.fit(features_dataset)
-    ds = standardizer.transform(features_dataset)
-    inv_ds = standardizer.inverse_transform(ds)
+    ds = standardizer.transform(features_dataset)[0]
+    inv_ds = standardizer.inverse_transform(ds)[0]
     assert all(
         np.allclose(inv_ds[var].values, features_dataset[var].values)
         for var in features_dataset.data_vars
