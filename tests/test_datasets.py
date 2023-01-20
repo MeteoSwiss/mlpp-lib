@@ -1,36 +1,83 @@
+import os
+from pathlib import Path
+
 import pytest
 import xarray as xr
+import numpy as np
 
-from mlpp_lib.datasets import get_tensor_dataset, split_dataset
-
-
-@pytest.mark.parametrize("event_dims,", [[], ["t"]])
-def test_get_tensor_dataset(features_dataset, targets_dataset, event_dims):
-
-    tensors = get_tensor_dataset(
-        features_dataset, targets_dataset, event_dims=event_dims
-    )
-
-    assert all([isinstance(tensor, xr.DataArray) for tensor in tensors])
-
-    event_dims_size = [features_dataset.dims.mapping[dim] for dim in event_dims]
-    expected_batch_x_shape = (None, *event_dims_size, len(features_dataset.data_vars))
-    expected_batch_y_shape = (None, *event_dims_size, len(targets_dataset.data_vars))
-
-    x_shape = tensors[0].shape
-    y_shape = tensors[1].shape
-
-    assert x_shape[1:] == expected_batch_x_shape[1:]
-    assert y_shape[1:] == expected_batch_y_shape[1:]
+from mlpp_lib.datasets import Dataset, DataModule
+from mlpp_lib.model_selection import DataSplitter
+from mlpp_lib.standardizers import Standardizer
+from .test_model_selection import ValidDataSplitterOptions
 
 
-def test_get_tensor_dataset_with_None(features_dataset, targets_dataset):
+class TestDataModule:
 
-    tensor_dataset = get_tensor_dataset(
-        features_dataset, None, targets_dataset, event_dims=[]
-    )
-    assert tensor_dataset[1] is None
+    features = ["coe:x1", "obs:x3", "dem:x4"]
+    targets = ["obs:y1"]
+    batch_dims = ["forecast_reference_time", "t", "station"]
 
+    splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
+    splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
+
+    @pytest.fixture
+    def standardizer(self, features_dataset):
+        standardizer = Standardizer()
+        standardizer.fit(features_dataset)
+        return standardizer
+
+    @pytest.fixture  # https://docs.pytest.org/en/6.2.x/tmpdir.html
+    def write_datasets_zarr(self, tmp_path, features_dataset, targets_dataset):
+        features_dataset.to_zarr(tmp_path / "features.zarr", mode="w")
+        targets_dataset.to_zarr(tmp_path / "targets.zarr", mode="w")
+
+
+    @pytest.mark.usefixtures("write_datasets_zarr")
+    def test_setup_fit_default(self, tmp_path: Path):
+        dm = DataModule(
+            tmp_path.as_posix() + "/",
+            self.features,
+            self.targets,
+            self.batch_dims,
+            self.splitter,
+        )
+        dm.setup("fit")
+
+    @pytest.mark.usefixtures("write_datasets_zarr")
+    def test_setup_test_default(self, tmp_path: Path, standardizer):
+        dm = DataModule(
+            tmp_path.as_posix() + "/",
+            self.features,
+            self.targets,
+            self.batch_dims,
+            self.splitter,
+            standardizer=standardizer,
+        )
+        dm.setup("test")
+
+    @pytest.mark.usefixtures("write_datasets_zarr")
+    def test_setup_fit_thinning(self, tmp_path: Path):
+        dm = DataModule(
+            tmp_path.as_posix() + "/",
+            self.features,
+            self.targets,
+            self.batch_dims,
+            self.splitter,
+            thinning={"forecast_reference_time": 2}
+        )
+        dm.setup("fit")
+
+    @pytest.mark.usefixtures("write_datasets_zarr")
+    def test_setup_fit_weights(self, tmp_path: Path):
+        dm = DataModule(
+            tmp_path.as_posix() + "/",
+            self.features,
+            self.targets,
+            self.batch_dims,
+            self.splitter,
+            sample_weighting=["coe:x1"]
+        )
+        dm.setup("fit")
 
 def test_get_tensor_dataset_fit(
     features_dataset, targets_dataset, get_dummy_keras_model

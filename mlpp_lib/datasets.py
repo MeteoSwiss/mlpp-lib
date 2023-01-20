@@ -72,17 +72,27 @@ class DataModule:
         # load and preproc
         self.load_raw()
         self.select_splits(stage=stage)
-        # self.apply_filter(stage=stage)
+        if self.filter is not None:
+            self.apply_filter(stage=stage)
         self.standardize(stage=stage)
 
-        # as datasets
         if stage == "fit" or stage is None:
-            self.train = Dataset.from_xarray_datasets(*self.train).stack(
-                self.batch_dims
+            self.train = (
+                Dataset.from_xarray_datasets(*self.train)
+                .stack(self.batch_dims)
+                .drop_nans()
             )
-            self.val = Dataset.from_xarray_datasets(*self.val).stack(self.batch_dims)
+            self.val = (
+                Dataset.from_xarray_datasets(*self.val)
+                .stack(self.batch_dims)
+                .drop_nans()
+            )
         elif stage == "test" or stage is None:
-            self.test = Dataset.from_xarray_datasets(*self.test).stack(self.batch_dims)
+            self.test = (
+                Dataset.from_xarray_datasets(*self.test)
+                .stack(self.batch_dims)
+                .drop_nans()
+            )
 
     def load_raw(self):
         self.x = (
@@ -100,14 +110,12 @@ class DataModule:
             try:
                 self.w = (
                     xr.open_zarr(self.data_dir + "features.zarr")[w]
-                    .isel(t=slice(0, 2))
                     .reset_coords(drop=True)
                     .astype(np.float32)
                 )
             except KeyError:
                 self.w = (
                     xr.open_zarr(self.data_dir + "targets.zarr")[w]
-                    .isel(t=slice(0, 2))
                     .reset_coords(drop=True)
                     .astype(np.float32)
                 )
@@ -128,16 +136,19 @@ class DataModule:
                 *args, partition="test", thinning=self.thinning
             )
 
-    # def apply_filter(self, stage=None):
-    #     if stage == "fit" or stage is None:
-    #         self.train = self.filter.apply_filters(*self.train)
-    #         self.val = self.filter.apply_filters(*self.val)
-    #     if stage == "test" or stage is None:
-    #         self.test = self.filter.apply_filters(*self.test)
+    def apply_filter(self, stage=None):
+        if stage == "fit" or stage is None:
+            self.train = self.filter.apply(*self.train)
+            self.val = self.filter.apply(*self.val)
+        if stage == "test" or stage is None:
+            self.test = self.filter.apply(*self.test)
 
     def standardize(self, stage=None):
 
         if self.standardizer is None:
+            if stage == "test":
+                raise ValueError("Must provide standardizer for `test` stage.")
+
             self.standardizer = Standardizer()
             self.standardizer.fit(self.train[0])
 
