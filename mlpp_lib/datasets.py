@@ -502,34 +502,29 @@ class DataFilter:
     ----------
     qa_filter: string-like, optional
         Path to the `filtered_measurements.nc` file. Bad measurements (y) will be set to NaNs.
-    x_filter: callable
+    x_filter: callable, optional
         Function that takes the input features `xr.Dataset` object as input and return a
-        boolean mask in form of a `xr.DataArray`.
-    y_filter: callable
-        Function that takes the input features `xr.Dataset` object as input and return a
-        boolean mask in form of a `xr.DataArray`.
+        boolean mask in form of a `xr.DataArray`, which will be attached to the input dataset
+        as a new coordinate called `is_valid`.
     """
 
     def __init__(
         self,
         qa_filter: Optional[str] = None,
         x_filter: Optional[Callable] = None,
-        y_filter: Optional[Callable] = None,
     ):
 
         self.qa_mask = xr.load_dataarray(qa_filter) if qa_filter is not None else None
         self.x_filter = x_filter
-        self.y_filter = y_filter
 
-    def apply_filters(
-        self, x: xr.Dataset, y: xr.Dataset, w: Optional[xr.Dataset] = None
-    ):
+    def apply(self, x: xr.Dataset, y: xr.Dataset, w: Optional[xr.Dataset] = None):
 
-        if self.x_filter:
-            x = x.where(self.x_filter(x))
-
-        if self.qa_mask:
+        if self.qa_mask is not None:
             y = y.where(~self.qa_mask)
 
-        x_mask = xr.apply_ufunc(np.product, x_mask, kwargs={"axis": 0})
-        return x, y
+        if self.x_filter is not None:
+            x = x.assign_coords(is_valid=self.x_filter(x))
+
+        out = (x, y) if w is None else (x, y, w)
+
+        return out
