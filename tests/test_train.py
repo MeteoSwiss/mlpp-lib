@@ -6,6 +6,9 @@ from keras.engine.functional import Functional
 
 from mlpp_lib import train
 from mlpp_lib.standardizers import Standardizer
+from mlpp_lib.datasets import DataModule, DataSplitter
+
+from .test_model_selection import ValidDataSplitterOptions
 
 
 RUNS = [
@@ -59,15 +62,23 @@ RUNS = [
 ]
 
 
-@pytest.mark.parametrize("param_run", RUNS)
-def test_train(param_run, features_dataset, targets_dataset, splits_train_val):
-    param_run.update({"epochs": 3})
-    results = train.train(
-        param_run,
-        features_dataset[param_run["features"]],
-        targets_dataset[param_run["targets"]],
-        splits_train_val,
-    )
+@pytest.fixture  # https://docs.pytest.org/en/6.2.x/tmpdir.html
+def write_datasets_zarr(tmp_path, features_dataset, targets_dataset):
+    features_dataset.to_zarr(tmp_path / "features.zarr", mode="w")
+    targets_dataset.to_zarr(tmp_path / "targets.zarr", mode="w")
+
+
+@pytest.mark.usefixtures("write_datasets_zarr")
+@pytest.mark.parametrize("cfg", RUNS)
+def test_train(tmp_path, cfg):
+    cfg.update({"epochs": 3})
+
+    splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
+    splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
+    batch_dims = ["forecast_reference_time","t","station"]
+    datamodule = DataModule(tmp_path.as_posix() + "/", cfg["features"], cfg["targets"], batch_dims, splitter)
+    results = train.train(cfg, datamodule)
+
     assert len(results) == 4
     assert isinstance(results[0], Functional)  # model
     assert isinstance(results[1], dict)  # custom_objects

@@ -8,14 +8,9 @@ import pandas as pd
 import tensorflow as tf
 import xarray as xr
 
-<<<<<<< HEAD
 from mlpp_lib.callbacks import TimeHistory
-from mlpp_lib.datasets import get_tensor_dataset, split_dataset, DataModule, Dataset
-=======
+from mlpp_lib.datasets import DataModule, Dataset
 from mlpp_lib.callbacks import TimeHistory, ProperScores
-from mlpp_lib.datasets import get_tensor_dataset, split_dataset
->>>>>>> main
-from mlpp_lib.standardizers import standardize_split_dataset
 from mlpp_lib.utils import (
     get_callback,
     get_loss,
@@ -65,49 +60,15 @@ def train(
     loss_config = cfg["loss"]
 
     # prepare model
-    out_bias_init = process_out_bias_init(
-        datamodule.train.x, cfg.get("out_bias_init", "zeros"), cfg["event_dims"]
-    )
+    event_dims = list(set(datamodule.x.dims) - set(datamodule.batch_dims))
+    out_bias_init = process_out_bias_init(datamodule.train.x, cfg.get("out_bias_init", "zeros"), event_dims)
     model_config[list(model_config)[0]].update({"out_bias_init": out_bias_init})
     input_shape = datamodule.train.x.shape[1:]
     output_shape = datamodule.train.y.shape[1:]
-    model: tf.keras.Model = get_model(input_shape, output_shape, model_config)
-    loss = get_loss(loss_config)
-    optimizer = getattr(tf.keras.optimizers, optimizer)(
-        learning_rate=cfg.get("learning_rate", 0.001)
-    )
-    model.compile(optimizer=optimizer, loss=loss)
-    model.summary(print_fn=LOGGER.info)
-
-    # prepare training
-    if callbacks is None:
-        callbacks = []
-    if cfg.get("patience", None):
-        callbacks.append(
-            tf.keras.callbacks.EarlyStopping(
-                patience=cfg["patience"],
-                monitor="val_loss",
-                restore_best_weights=True,
-            )
-        )
-
-    time_callback = TimeHistory()
-    callbacks.append(time_callback)
-
-    # see https://github.com/keras-team/keras/pull/16177
-    if w_train_data is not None:
-        w_train_data = pd.Series(w_train_data)
-    del data
-
-    # prepare model
-    out_bias_init = process_out_bias_init(y_train_data, out_bias_init, event_dims)
-    model_config[list(model_config)[0]].update({"out_bias_init": out_bias_init})
-    input_shape = x_train_data.shape[1:]
-    output_shape = y_train_data.shape[1:]
     model = get_model(input_shape, output_shape, model_config)
     loss = get_loss(loss_config)
-    metrics = [get_metric(metric) for metric in metrics_config]
-    optimizer = getattr(tf.keras.optimizers, optimizer)(learning_rate=learning_rate)
+    metrics = [get_metric(metric) for metric in cfg.get("metrics_config", [])]
+    optimizer = getattr(tf.keras.optimizers, cfg.get("optimizer", "Adam"))(learning_rate=cfg.get("learning_rate", 0.001))
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
     model.summary(print_fn=LOGGER.info)
 
@@ -115,11 +76,11 @@ def train(
     if callbacks is None:
         callbacks = []
 
-    for callback in callbacks_config.items():
+    for callback in cfg.get("callbacks", {}).items():
         callback_instance = get_callback({callback[0]: callback[1]})
 
         if isinstance(callback_instance, ProperScores):
-            callback_instance.add_validation_data((x_val_data, y_val_data))
+            callback_instance.add_validation_data((datamodule.val.x, datamodule.val.y))
 
         callbacks.append(callback_instance)
 
@@ -127,10 +88,10 @@ def train(
     callbacks.append(time_callback)
 
     LOGGER.info("Start training.")
-    history = model.fit(
+    res = model.fit(
         x=datamodule.train.x,
         y=datamodule.train.y,
-        # sample_weight=datamodule.train.w,
+        sample_weight=datamodule.train.w,
         epochs=cfg.get("epochs", 1),
         validation_data=(datamodule.val.x, datamodule.val.y),
         callbacks=callbacks,
@@ -149,7 +110,7 @@ def train(
     history = res.history
     # for some reasons, 'lr' is provided as float32
     # and needs to be casted in order to be serialized
-    if "lr" in history:
-        history["lr"] = list(map(float, history["lr"]))
+    for k in history:
+        history[k] =  list(map(float, history[k]))
 
     return model, custom_objects, datamodule.standardizer, history
