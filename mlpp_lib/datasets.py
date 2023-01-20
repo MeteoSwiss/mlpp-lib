@@ -207,7 +207,6 @@ class Dataset:
         Names of the target predictands.
     """
 
-    mask: Optional[np.ndarray | da.Array]
     batch_dims: Sequence[Hashable]
 
     def __init__(
@@ -219,11 +218,13 @@ class Dataset:
         features: Optional[Sequence[Hashable]] = None,
         targets: Optional[Sequence[Hashable]] = None,
         w: Optional[np.ndarray] = None,
+        mask: Optional[np.ndarray] = None,
     ):
 
         self.x = x
         self.y = y
         self.w = w
+        self.mask = mask
         self.dims = dims
         self.coords = coords
         self.features = features
@@ -246,6 +247,8 @@ class Dataset:
         """
         x = x.compute()
         y = y.compute()
+        if "is_valid" in list(x._coord_names):
+            x = x.where(x.coords["is_valid"])  # TODO: this can be optimized
         dims, coords = cls._check_coords(x, y)
         dims.append("v")
         features = list(x.data_vars)
@@ -272,19 +275,29 @@ class Dataset:
         return ds
 
     def unstack(self) -> Self:
-        """Unstack batch dimensions"""
-        x, y, w = self._as_variables()
-        unstack_info = {dim: len(coord) for dim, coord in self.coords.items()}
-        x = x.unstack(s=unstack_info).values
-        y = y.unstack(s=unstack_info).values
-        dims = [*self.coords.keys(), "v"]
-        if w is not None:
-            w = w.unstack(s=unstack_info).values
-        ds = Dataset(x, y, dims, self.coords, self.features, self.targets, w=w)
-        ds.batch_dims = self.batch_dims
-        ds._is_stacked = False
-        del x, y, w
-        return ds
+        """Unstack batch dimensions TODO: this is messy"""
+        if not self._is_stacked:
+            raise ValueError("Nothing to unstack!")
+
+        if self.mask is not None:
+            x, y, w = self._undrop_nans()
+            dims = (*self.coords.keys(), "v")
+            ds = Dataset(x, y, dims, self.coords, self.features, self.targets, w=w)
+            del x, y, w 
+            return ds 
+        else:
+            x, y, w = self._as_variables()
+            unstack_info = {dim: len(coord) for dim, coord in self.coords.items()}
+            x = x.unstack(s=unstack_info).transpose(..., "v").values
+            y = y.unstack(s=unstack_info).transpose(..., "v").values
+            dims = (*self.coords.keys(), "v")
+            if w is not None:
+                w = w.unstack(s=unstack_info).values
+            ds = Dataset(x, y, dims, self.coords, self.features, self.targets, w=w)
+            ds.batch_dims = self.batch_dims
+            ds._is_stacked = False
+            del x, y, w
+            return ds
 
     @staticmethod
     def _check_coords(x: xr.Dataset | xr.DataArray, y: xr.Dataset | xr.DataArray):
@@ -329,17 +342,50 @@ class Dataset:
         return x, y, w
 
     def drop_nans(self):
+        if not self._is_stacked:
+            raise ValueError("Dataset shoud be stacked before dropping samples.")
 
-        x = da.from_array(self.x, name="x")
-        y = da.from_array(self.y, name="y")
-        w = da.from_array(self.y, name="w") if self.w is not None else None
-        self.mask = ~(
-            da.any(da.isnan(x), axis=-1) | da.any(da.isnan(y), axis=-1)
+        x, y, w = self._get_copies()
+
+        mask = ~(
+            da.any(da.isnan(da.from_array(x, name="x")), axis=-1) 
+            | da.any(da.isnan(da.from_array(y, name="y")), axis=-1)
         ).compute()
 
-        self.x = x[self.mask].compute()
-        self.y = y[self.mask].compute()
-        self.w = w[self.mask].compute() if w is not None else None
+        x = x[mask]
+        y = y[mask]
+        w = w[mask] if w is not None else None
+
+        ds = Dataset(
+            x, y, self.dims, self.coords, self.features, self.targets, w=w, mask=mask
+        )
+        ds._is_stacked = self._is_stacked
+        ds.batch_dims = self.batch_dims
+        del x, y, w, mask
+        return ds
+
+    def _undrop_nans(self):
+
+        original_shape = tuple(len(c) for c in self.coords.values())
+        x, y, w = self._get_copies()
+        x_tmp = np.full((*original_shape, len(self.features)), fill_value=np.nan)
+        y_tmp = np.full((*original_shape, len(self.targets)), fill_value=np.nan)
+        mask = self.mask.reshape(*original_shape).copy()
+        x_tmp[mask] = x
+        y_tmp[mask] = y
+        x = x_tmp
+        y = y_tmp
+        del x_tmp, y_tmp
+
+        if w is not None:
+            w_tmp = np.full(
+                original_shape, fill_value=np.nan
+            )  # https://github.com/dask/dask/issues/8460
+            w_tmp[mask] = w
+            w = w_tmp.copy()
+            del w_tmp
+        
+        return x, y, w 
 
     def get_multiindex(self) -> pd.MultiIndex:
         return pd.MultiIndex.from_product(
@@ -353,6 +399,13 @@ class Dataset:
         out = out.unstack(s={dim: len(coord) for dim, coord in self.coords.items()})
         out = xr.DataArray(out, coords=self.coords | {"v": self.targets})
         return out.to_dataset("v")
+
+    def _get_copies(self):
+        x = self.x.copy()
+        y = self.y.copy()
+        w = self.w.copy() if self.w is not None else None
+        del self.x, self.y, self.w
+        return x, y, w 
 
 
 class DataLoader:

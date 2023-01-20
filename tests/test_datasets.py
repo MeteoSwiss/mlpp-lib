@@ -79,54 +79,104 @@ class TestDataModule:
         )
         dm.setup("fit")
 
-def test_get_tensor_dataset_fit(
-    features_dataset, targets_dataset, get_dummy_keras_model
-):
-    """Test that output can be used to fit keras model"""
-    tensors = get_tensor_dataset(features_dataset, targets_dataset, None, event_dims=[])
-    model = get_dummy_keras_model(tensors[0].shape[1], tensors[1].shape[1])
-    model.fit(
-        x=tensors[0],
-        y=tensors[1],
-        sample_weight=tensors[2],
-        epochs=1,
+    
+
+
+class TestDataset:
+    @pytest.fixture
+    def dataset(self, features_dataset: xr.Dataset, targets_dataset: xr.Dataset):
+        return Dataset.from_xarray_datasets(features_dataset, targets_dataset)
+
+    @pytest.fixture
+    def coords(self, features_dataset):
+        dims = list(features_dataset.dims)
+        return {dim: features_dataset.coords[dim] for dim in dims}
+
+    @pytest.fixture
+    def dims(self, features_dataset):
+        return list(features_dataset.dims)
+
+    @pytest.fixture
+    def features(self, features_dataset):
+        return list(features_dataset.data_vars)
+
+    @pytest.fixture
+    def targets(self, targets_dataset):
+        return list(targets_dataset.data_vars)
+
+    def test_from_xarray_datasets(self, dataset, dims, coords, features, targets):
+        assert dataset.x.shape == (
+            *tuple(len(c) for c in coords.values()),
+            len(features),
+        )
+        assert dataset.y.shape == (
+            *tuple(len(c) for c in coords.values()),
+            len(targets),
+        )
+        assert dataset.dims == [*dims, "v"]
+        assert dataset.coords.keys() == coords.keys()
+        assert [len(c) for c in dataset.coords] == [len(c) for c in coords]
+        assert dataset.features == features
+        assert dataset.targets == targets
+
+    @pytest.mark.parametrize(
+        "batch_dims",
+        [
+            ("forecast_reference_time", "t", "station"),
+            ("forecast_reference_time", "station"),
+        ],
+        ids=lambda x: repr(x),
     )
+    def test_stack(self, dataset, dims, coords, features, targets, batch_dims):
+        ds = dataset.stack(batch_dims)
+        event_dims = tuple(set(dims) - set(batch_dims))
+        n_samples = np.prod([len(c) for d, c in coords.items() if d in batch_dims])
+        assert ds.x.shape == (
+            n_samples,
+            *tuple(len(coords[d]) for d in event_dims),
+            len(features),
+        )
+        assert ds.y.shape == (
+            n_samples,
+            *tuple(len(coords[d]) for d in event_dims),
+            len(targets),
+        )
+        assert ds.dims == ["s", *event_dims, "v"]
+        assert ds.coords.keys() == coords.keys()
+        assert [len(c) for c in ds.coords] == [len(c) for c in coords]
 
+    @pytest.mark.parametrize("drop_nans", [True, False], ids=lambda x: f"drop_nans={x}")
+    def test_unstack(self, dataset, dims, coords, features, targets, drop_nans):
+        batch_dims = ("forecast_reference_time", "t", "station")
+        if drop_nans:
+            ds = dataset.stack(batch_dims).drop_nans()
+        else:
+            ds = dataset.stack(batch_dims)
 
-def test_split_dataset(features_dataset):
-    """"""
-    splits = dict(
-        a=dict(station=["AAA", "BBB"]),
-        b=dict(t=slice(0, 1)),
-        c=dict(t=slice(0, 1), station=["AAA", "BBB"]),
-    )
-    out = split_dataset(features_dataset, splits)
-    dims_in = features_dataset.dims
-    assert list(out.keys()) == ["a", "b", "c"]
-    assert out["a"].dims == dict(dims_in, station=2)
-    assert out["b"].dims == dict(dims_in, t=2)
-    assert out["c"].dims == dict(dims_in, t=2, station=2)
+        ds = ds.unstack()
+        assert ds.x.shape == (*tuple(len(c) for c in coords.values()), len(features))
+        assert ds.y.shape == (*tuple(len(c) for c in coords.values()), len(targets))
+        assert ds.dims == (*dims, "v")
+        assert ds.coords.keys() == coords.keys()
+        assert [len(c) for c in ds.coords] == [len(c) for c in coords]
+        assert ds.features == features
+        assert ds.targets == targets
 
-
-def test_split_dataset_missing_dims(features_dataset):
-    """"""
-    splits = dict(
-        a=dict(station=["AAA", "BBB"], asd=[1, 2, 3]),
-    )
-    with pytest.raises(KeyError):
-        out = split_dataset(features_dataset, splits, ignore_missing_dims=False)
-    out = split_dataset(features_dataset, splits, ignore_missing_dims=True)
-    assert list(out.keys()) == ["a"]
-
-
-@pytest.mark.parametrize("ignore_missing_dims,", (True, False))
-def test_split_dataset_None(ignore_missing_dims):
-    """"""
-    splits = dict(
-        a=dict(station=["AAA", "BBB"]),
-        b=dict(t=slice(0, 1)),
-        c=dict(t=slice(0, 1), station=["AAA", "BBB"]),
-    )
-    out = split_dataset(None, splits, ignore_missing_dims=ignore_missing_dims)
-    assert list(out.keys()) == ["a", "b", "c"]
-    assert list(out.values()) == [None, None, None]
+    def test_drop_nans(self, dataset, dims, coords, features, targets):
+        batch_dims = ("forecast_reference_time", "t", "station")
+        ds = dataset.stack(batch_dims).drop_nans()
+        event_dims = tuple(set(dims) - set(batch_dims))
+        n_samples = np.prod([len(c) for d, c in coords.items() if d in batch_dims])
+        assert ds.x.shape == (
+            ds.mask.sum(),
+            *tuple(len(coords[d]) for d in event_dims),
+            len(features),
+        )
+        assert ds.y.shape == (
+            ds.mask.sum(),
+            *tuple(len(coords[d]) for d in event_dims),
+            len(targets),
+        )
+        assert len(ds.mask) == n_samples
+        assert ds.dims == ["s", *event_dims, "v"]
+        assert ds.coords.keys() == coords.keys()
