@@ -95,59 +95,20 @@ class DataSplitter:
     def __init__(
         self,
         time_split: dict[str, Any],
-        station_split: Optional[dict[str, Any]] = None,
+        station_split: Optional[dict[str, Any]],
         time_split_method: Optional[str] = None,
         station_split_method: Optional[str] = None,
     ):
 
-        self.time_split = time_split
-        self.station_split = station_split
-
-        self.time_split_method = time_split_method
-        self.station_split_method = station_split_method
-
+        if not time_split.keys() == station_split.keys():
+            raise ValueError(
+                "Time split and station split must be defined "
+                "with the same partitions!"
+            )
         self.partition_names = list(time_split.keys())
+        self._check_time(time_split, time_split_method)
+        self._check_station(station_split, station_split_method)
 
-        # check time
-        if any([isinstance(v, float) for v in time_split.values()]):
-            if time_split_method is None:
-                raise ValueError(
-                    "`time_split_method` must be provided if the time "
-                    "splits are provided as fractions!"
-                )
-            self._time_defined = False
-        else:
-            self._time_defined = True
-
-        # check station
-        if station_split:
-            if not time_split.keys() == station_split.keys():
-                raise ValueError(
-                    "Time split and station split must be defined \
-                        with the same partitions!"
-                )
-
-            if any([isinstance(v, float) for v in station_split.values()]):
-                if self.station_split_method is None:
-                    raise ValueError(
-                        "`station_split_method` must be provided if the "
-                        "station splits are provided as fractions!"
-                    )
-                self._station_defined = False
-            else:
-                self._station_defined = True
-
-        def maptype(idx):
-            if isinstance(idx, float):
-                return idx
-            elif isinstance(idx, Sequence | np.ndarray):
-                if len(idx) == 2:
-                    return slice(*idx)
-                else:
-                    return idx
-
-        for partition, indexer in self.time_split.items():
-            self.time_split[partition] = maptype(indexer)
 
     @classmethod
     def from_json(cls, file: str) -> Self:
@@ -164,6 +125,13 @@ class DataSplitter:
         splitter._time_partitioning()
         splitter._station_partitioning()
         return splitter
+
+    def to_json(self, file: str):
+        if not hasattr(self, "partitions"):
+            self._time_partitioning()
+            self._station_partitioning()
+        with open(file, "w") as f:
+            json.dump(self.partitions, f, indent=4)
 
     def get_partition(
         self, *args: xr.Dataset, partition=None, thinning: Optional[Mapping] = None
@@ -194,14 +162,6 @@ class DataSplitter:
         self._time_partitioning()
         self._station_partitioning()
 
-        if not hasattr(self, "partitions"):
-            raise RuntimeError("No partitioning was set.")
-        if partition not in self.partitions:
-            raise ValueError(
-                "DataSplitter was not initialized with \
-                    {partition} partition."
-            )
-
         # avoid out-of-order indexing (leads to bad performance with xarray/dask)
         station_idx = self.partitions[partition]["station"]
         idx_loc = [pd.Index(self.station_index).get_loc(label) for label in station_idx]
@@ -225,46 +185,39 @@ class DataSplitter:
         return res
 
     def _time_partitioning(self) -> None:
-        """
-        Compute time partitioning for this DataSplitter instance.
-        """
-        if self.station_split is None:
-            return None
 
-        self._time_indexers = {}
-        if not self._time_defined:
-            if all([isinstance(v, float) for v in self.time_split.values()]):
+        # actual computation of splits
+
+        if self._time_defined: # provided time split is all valid xarray indexers (lists or slices)
+            self._time_indexers = self.time_split
+        else:
+            self._time_indexers = {}
+            if all([isinstance(v, float) for v in self.time_split.values()]): # only fractions
                 res = self._time_partition_method(self.time_split)
                 self._time_indexers.update(res)
-            else:
-                _time_split = self.time_split
+            else: # mixed
+                _time_split = self.time_split.copy()
                 self._time_indexers.update({"test": _time_split.pop("test")})
                 res = self._time_partition_method(_time_split)
                 self._time_indexers.update(res)
-        elif self._time_defined:
-            self._time_indexers.update(self.time_split)
 
+        # assign indexers
         for partition in self.partition_names:
-            indexer = {"forecast_reference_time": self._time_indexers[partition]}
+            idx = self._time_indexers[partition]
+            idx = slice(*idx) if len(idx) == 2 else idx 
+            indexer = {"forecast_reference_time": idx}
             if not hasattr(self, "partitions"):
                 self.partitions = {p: {} for p in self.partition_names}
             self.partitions[partition].update(indexer)
 
     def _time_partition_method(self, fractions: Mapping[str, float]):
-        if self.time_split_method not in self.time_split_methods:
-            raise ValueError(
-                f"{self.time_split_method} is not one of the available methods. "
-                f"Chose of of the following: {self.time_split_methods}"
-            )
         if self.time_split_method == "sequential":
             return sequential_split(self.time_index, fractions)
 
-    def _station_partitioning(self) -> None:
+    def _station_partitioning(self):
         """
         Compute station partitioning for this DataSplitter instance.
         """
-        if self.station_split is None:
-            return None
 
         self._station_indexers: dict[str, xindex] = {}
         if not self._station_defined:
@@ -272,7 +225,7 @@ class DataSplitter:
                 res = self._station_partition_method(self.station_split)
                 self._station_indexers.update(res)
             else:
-                _station_split = self.station_split
+                _station_split = self.station_split.copy()
                 self._station_indexers.update({"test": _station_split.pop("test")})
                 res = self._station_partition_method(_station_split)
                 self._station_indexers.update(res)
@@ -285,21 +238,56 @@ class DataSplitter:
                 self.partitions = {p: {} for p in self.partition_names}
             self.partitions[partition].update(indexer)
 
-        return None
-
     def _station_partition_method(
         self, fractions: Mapping[str, float]
     ) -> Mapping[str, np.ndarray]:
-        if self.station_split_method not in self.station_split_methods:
-            raise ValueError(
-                f"{self.station_split_method} is not one of the available methods. "
-                f"Chose of of the following: {self.station_split_methods}"
-            )
+
         if self.station_split_method == "random":
             out = random_split(self.station_index, fractions)
         elif self.station_split_method == "sequential":
             out = sequential_split(self.station_index, fractions)
         return out
+
+
+    def _check_time(self, time_split: dict, time_split_method: str):
+
+        if any([isinstance(v, float) for v in time_split.values()]):
+            if time_split_method is None:
+                raise ValueError(
+                    "`time_split_method` must be provided if the time "
+                    "splits are provided as fractions!"
+                )
+            self._time_defined = False
+            if time_split_method not in self.time_split_methods:
+                raise ValueError(
+                    f"Invalid time split method: {time_split_method}. "
+                    f"Must be one of {self.time_split_methods}."
+                )
+        else:
+            self._time_defined = True
+
+        self.time_split = time_split
+        self.time_split_method = time_split_method
+
+    def _check_station(self, station_split: dict, station_split_method: str):
+
+        if any([isinstance(v, float) for v in station_split.values()]):
+            if station_split_method is None:
+                raise ValueError(
+                    "`station_split_method` must be provided if the "
+                    "station splits are provided as fractions!"
+                )
+            self._station_defined = False
+            if station_split_method not in self.station_split_methods:
+                raise ValueError(
+                    f"Invalid station split method: {station_split_method}. "
+                    f"Must be one of {self.station_split_methods}."
+                )
+        else:
+            self._station_defined = True
+
+        self.station_split = station_split
+        self.station_split_method = station_split_method
 
     def __repr__(self) -> str:
         time_repr = ""
