@@ -289,42 +289,13 @@ class DataSplitter:
         self.station_split = station_split
         self.station_split_method = station_split_method
 
-    def __repr__(self) -> str:
-        time_repr = ""
-        for p, v in self.time_split.items():
-            if isinstance(v, np.ndarray | Sequence):
-                time_repr += f"       {p}: [{v[0]}, {v[1]}, ..., {v[-2]}, {v[-1]}]\n"
-            elif isinstance(v, slice):
-                time_repr += f"       {p}: {v}\n"
-            else:
-                time_repr += f"       {p}: {v},\n"
-        if self.station_split:
-            station_repr = ""
-            for p, v in self.station_split.items():
-                if isinstance(v, np.ndarray | Sequence):
-                    station_repr += (
-                        f"        {p}: [{v[0]}, {v[1]}, ..., {v[-2]}, {v[-1]}]\n"
-                    )
-                else:
-                    station_repr += f"        {p}: {v}\n"
-        else:
-            station_repr = "        "
-        out = "DataSplitter(\n"
-        out += f"    time_split: \n{time_repr}"
-        if self.station_split:
-            out += f"    station_split: \n{station_repr}"
-        out += f")"
-        return out
-
 
 def sequential_split(
     index: xindex,
     split_fractions: Mapping[str, float],
-    gap: Optional[int] = None,
 ) -> dict[str, np.ndarray]:
+    """Split an input index array sequentially"""
     assert sum(split_fractions.values()) == 1
-    if gap:
-        raise NotImplementedError
 
     n_samples = len(index)
     partitions = list(split_fractions.keys())
@@ -340,6 +311,7 @@ def random_split(
     split_fractions: Mapping[str, float],
     seed: int = 10,
 ) -> dict[str, np.ndarray]:
+    """Split an input index array randomly"""
     np.random.seed(seed)
 
     assert sum(split_fractions.values()) == 1

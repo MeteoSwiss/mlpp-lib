@@ -35,7 +35,15 @@ class DataModule:
         Names of the dimensions that will be stacked into batches.
     splitter: `DataSplitter`
         The object that handles the data partitioning.
-
+    filter: `DataFilter`, optional
+        The object that hanfles the data filtering.
+    standardizer: `Standardizer`, optional
+        The object to standardize data, already fitted on the training data.
+        Must be provided if `.setup("test")` is called.
+    sample_weighting: list of str or str, optional
+        Name(s) of the variable(s) used for weighting dataset samples.
+    thinning: mapping, optional
+        Thinning factor as integer for a dimension.
     """
 
     def __init__(
@@ -48,8 +56,7 @@ class DataModule:
         filter: Optional[DataFilter] = None,
         standardizer: Optional[Standardizer] = None,
         sample_weighting: Optional[Sequence[Hashable] | Hashable] = None,
-        thinning: Optional[Mapping[str, Sequence]] = None,
-        device: Optional[str] = None,
+        thinning: Optional[Mapping[str, int]] = None,
     ):
 
         self.data_dir = data_dir
@@ -63,10 +70,18 @@ class DataModule:
             list(sample_weighting) if sample_weighting is not None else None
         )
         self.thinning = thinning
-        self.device = device
 
     def setup(self, stage=None):
-
+        """ Prepare the datamodule for fitting, testing or both.
+        
+        Parameters
+        ----------
+        stage: str, optional
+            If "fit", only training and validation data are processed.
+            If "test", only testing data is processed.
+            If None, all data is processed.
+        """
+        LOGGER.info(f"Beginning datamodule setup for stage='{stage}'")
         # load and preproc
         self.load_raw()
         self.select_splits(stage=stage)
@@ -90,7 +105,6 @@ class DataModule:
         )
 
         if w := self.sample_weighting:
-            LOGGER.info(f"Sample weighting provided: {w}")
             try:
                 self.w = (
                     xr.open_zarr(self.data_dir + "features.zarr")[w]
@@ -216,6 +230,10 @@ class Dataset:
         Names of the input predictors.
     targets:
         Names of the target predictands.
+    w: array-like, optional
+        The sample weights data.
+    mask: boolean array, optional
+        The samples mask.
     """
 
     batch_dims: Sequence[Hashable]
@@ -255,6 +273,13 @@ class Dataset:
             The dataset containing the input features.
         y: xr.Dataset
             The dataset containing the input targets.
+        w: xr.Dataset, optional
+            The dataset containing the variables to compute samples weights.
+
+        Returns
+        -------
+        ds: Dataset
+            The dataset instance.
         """
         x = x.compute()
         y = y.compute()
@@ -353,6 +378,7 @@ class Dataset:
         return x, y, w
 
     def drop_nans(self):
+        """Drop incomplete samples and return a new `Dataset` with a mask."""
         if not self._is_stacked:
             raise ValueError("Dataset shoud be stacked before dropping samples.")
 
@@ -515,6 +541,7 @@ class DataFilter:
         self.x_filter = x_filter
 
     def apply(self, x: xr.Dataset, y: xr.Dataset, w: Optional[xr.Dataset] = None):
+        """Apply the provided filters to the input datasets."""
 
         if self.qa_mask is not None:
             y = y.where(~self.qa_mask)
