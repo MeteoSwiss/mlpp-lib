@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import json
 import logging
-import time
-from dataclasses import dataclass, field
-from typing import Any, Hashable, Mapping, Optional, Sequence, Union, Callable
-
+from typing import Hashable, Mapping, Optional, Sequence, Callable
 import dask.array as da
 import numpy as np
 import pandas as pd
@@ -16,6 +12,7 @@ import tensorflow as tf
 from .model_selection import DataSplitter
 from .standardizers import Standardizer
 
+LOGGER = logging.getLogger(__name__)
 
 class DataModule:
     """A class to encapsulate everything involved in mlpp data processing.
@@ -76,26 +73,11 @@ class DataModule:
         if self.filter is not None:
             self.apply_filter(stage=stage)
         self.standardize(stage=stage)
-
-        if stage == "fit" or stage is None:
-            self.train = (
-                Dataset.from_xarray_datasets(*self.train)
-                .stack(self.batch_dims)
-                .drop_nans()
-            )
-            self.val = (
-                Dataset.from_xarray_datasets(*self.val)
-                .stack(self.batch_dims)
-                .drop_nans()
-            )
-        elif stage == "test" or stage is None:
-            self.test = (
-                Dataset.from_xarray_datasets(*self.test)
-                .stack(self.batch_dims)
-                .drop_nans()
-            )
+        self.as_datasets(stage=stage)
 
     def load_raw(self):
+        LOGGER.info(f"Loading data from: {self.data_dir}")
+
         self.x = (
             xr.open_zarr(self.data_dir + "features.zarr")[self.features]
             .reset_coords(drop=True)
@@ -108,6 +90,7 @@ class DataModule:
         )
 
         if w := self.sample_weighting:
+            LOGGER.info(f"Sample weighting provided: {w}")
             try:
                 self.w = (
                     xr.open_zarr(self.data_dir + "features.zarr")[w]
@@ -124,6 +107,7 @@ class DataModule:
             self.w = None
 
     def select_splits(self, stage=None):
+        LOGGER.info("Selecting splits.")
         args = (self.x, self.y, self.w) if self.w is not None else (self.x, self.y)
         if stage == "fit" or stage is None:
             self.train = self.splitter.get_partition(
@@ -138,6 +122,7 @@ class DataModule:
             )
 
     def apply_filter(self, stage=None):
+        LOGGER.info("Applying filter to features and targets.")
         if stage == "fit" or stage is None:
             self.train = self.filter.apply(*self.train)
             self.val = self.filter.apply(*self.val)
@@ -145,7 +130,7 @@ class DataModule:
             self.test = self.filter.apply(*self.test)
 
     def standardize(self, stage=None):
-
+        LOGGER.info("Standardizing data.")
         if self.standardizer is None:
             if stage == "test":
                 raise ValueError("Must provide standardizer for `test` stage.")
@@ -160,6 +145,31 @@ class DataModule:
             self.val = tuple(self.standardizer.transform(self.val[0])) + self.val[1:]
         elif stage == "test" or stage is None:
             self.test = tuple(self.standardizer.transform(self.test[0])) + self.test[1:]
+
+    def as_datasets(self, stage=None):
+        LOGGER.info("Dask is computing...")
+        if stage == "fit" or stage is None:
+            self.train = (
+                Dataset.from_xarray_datasets(*self.train)
+                .stack(self.batch_dims)
+                .drop_nans()
+            )
+            
+            self.val = (
+                Dataset.from_xarray_datasets(*self.val)
+                .stack(self.batch_dims)
+                .drop_nans()
+            )
+            LOGGER.info(f"Training dataset: {self.train}")
+            LOGGER.info(f"Validation dataset: {self.val}")
+        elif stage == "test" or stage is None:
+            self.test = (
+                Dataset.from_xarray_datasets(*self.test)
+                .stack(self.batch_dims)
+                .drop_nans()
+            )
+            LOGGER.info(f"Test dataset: {self.test}")
+
 
     def train_dataloader(self, batch_size):
         return DataLoader(
@@ -408,6 +418,11 @@ class Dataset:
         del self.x, self.y, self.w
         return x, y, w 
 
+    def __repr__(self) -> str:
+        x, y, w = self._as_variables()
+        wsize = w.sizes if w is not None else None 
+        out = f"Dataset(x={dict(x.sizes)}, y={dict(y.sizes)}, w={dict(wsize)})"
+        return out 
 
 class DataLoader:
     """A dataloader for mlpp
