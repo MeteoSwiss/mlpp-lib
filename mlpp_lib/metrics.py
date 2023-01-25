@@ -29,6 +29,6 @@ class MAEBusts(tf.keras.metrics.Metric):
     def result(self):
         return self.n_busts / self.n_samples
 
-    def reset_states(self):
+    def reset_state(self):
         self.n_busts.assign(0)
         self.n_samples.assign(0)
