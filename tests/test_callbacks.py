@@ -27,15 +27,21 @@ class TestCallbacks(object):
             callbacks=[custom_callback],
         )
 
-    def test_ProperScores(self):
-        custom_callback = callbacks.ProperScores(thresholds=[0, 1])
+    def test_EnsembleMetrics(self):
+        custom_callback = callbacks.EnsembleMetrics(thresholds=[0, 1])
         custom_callback.add_validation_data(self.validation_data)
         res = self._train_with_callback(custom_callback)
+        assert "val_ensstd" in res.history
         assert "val_crps" in res.history
         assert "val_crps_0" in res.history
         assert "val_crps_1" in res.history
         assert "val_bs_0" in res.history
         assert "val_bs_1" in res.history
+
+        invalid = [k for k, v in res.history.items() if isinstance(v[0], np.float32)]
+        assert not any(
+            invalid
+        ), f"Objects of type float32 are not JSON serializable: {invalid}"
 
     def test_TimeHistory(self):
         custom_callback = callbacks.TimeHistory()

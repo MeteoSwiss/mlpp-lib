@@ -53,7 +53,7 @@ RUNS = [
                 "verbose": 1,
             },
             "ReduceLROnPlateau": {"patience": 1, "verbose": 1},
-            "ProperScores": {"thresholds": [0, 1, 2]},
+            "EnsembleMetrics": {"thresholds": [0, 1, 2]},
         },
     },
 ]
@@ -61,7 +61,8 @@ RUNS = [
 
 @pytest.mark.parametrize("param_run", RUNS)
 def test_train(param_run, features_dataset, targets_dataset, splits_train_val):
-    param_run.update({"epochs": 3})
+    num_epochs = 2
+    param_run.update({"epochs": num_epochs})
     results = train.train(
         param_run,
         features_dataset[param_run["features"]],
@@ -73,6 +74,8 @@ def test_train(param_run, features_dataset, targets_dataset, splits_train_val):
     assert isinstance(results[1], dict)  # custom_objects
     assert isinstance(results[2], Standardizer)  # standardizer
     assert isinstance(results[3], dict)  # history
+
+    assert all([len(v) == num_epochs for v in results[3].values()])
 
     # try to pickle the custom objects
     cloudpickle.dumps(results[1])

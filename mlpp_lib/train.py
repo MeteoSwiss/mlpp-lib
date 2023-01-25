@@ -8,7 +8,7 @@ import pandas as pd
 import tensorflow as tf
 import xarray as xr
 
-from mlpp_lib.callbacks import TimeHistory, ProperScores
+from mlpp_lib.callbacks import TimeHistory, EnsembleMetrics
 from mlpp_lib.datasets import get_tensor_dataset, split_dataset
 from mlpp_lib.standardizers import standardize_split_dataset
 from mlpp_lib.utils import (
@@ -151,7 +151,7 @@ def train(
     for callback in callbacks_config.items():
         callback_instance = get_callback({callback[0]: callback[1]})
 
-        if isinstance(callback_instance, ProperScores):
+        if isinstance(callback_instance, EnsembleMetrics):
             callback_instance.add_validation_data((x_val_data, y_val_data))
 
         callbacks.append(callback_instance)
