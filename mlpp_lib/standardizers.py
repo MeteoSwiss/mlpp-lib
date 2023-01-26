@@ -25,7 +25,7 @@ class Standardizer:
 
         self.mean = dataset.mean(dims).compute().copy()
         self.std = dataset.std(dims).compute().copy()
-        self.fillvalue = -5
+        self.fillvalue = self.fillvalue
         # Check for near-zero standard deviations and set them equal to one
         self.std = xr.where(self.std < 1e-6, 1, self.std)
 
