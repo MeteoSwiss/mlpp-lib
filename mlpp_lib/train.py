@@ -127,9 +127,9 @@ def train(
     x_val_data = data["val"][0].values
     y_val_data = data["val"][1].values
     w_train_data = data["train"][2]
-    # see https://github.com/keras-team/keras/pull/16177
+    # see https://github.com/keras-team/keras/pull/17357
     if w_train_data is not None:
-        w_train_data = pd.Series(w_train_data)
+        w_train_data = (w_train_data.values,)
     del data
 
     # prepare model
