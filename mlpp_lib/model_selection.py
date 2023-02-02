@@ -99,6 +99,7 @@ class DataSplitter:
         time_split_method: Optional[str] = None,
         station_split_method: Optional[str] = None,
         seed: Optional[int] = 10,
+        time_dim_name: str = "forecast_reference_time",
     ):
 
         if not time_split.keys() == station_split.keys():
@@ -110,6 +111,7 @@ class DataSplitter:
         self._check_time(time_split, time_split_method)
         self._check_station(station_split, station_split_method)
         self.seed = seed
+        self.time_dim_name = time_dim_name
 
 
     @classmethod
@@ -162,7 +164,7 @@ class DataSplitter:
         if partition is None:
             raise ValueError("Keyword argument `partition` must be provided.")
 
-        self.time_index = args[0].forecast_reference_time.values.copy()
+        self.time_index = args[0][self.time_dim_name].values.copy()
         self.station_index = args[0].station.values.copy()
 
         self._time_partitioning()
@@ -211,7 +213,7 @@ class DataSplitter:
         for partition in self.partition_names:
             idx = self._time_indexers[partition]
             idx = slice(*idx) if len(idx) == 2 else idx 
-            indexer = {"forecast_reference_time": idx}
+            indexer = {self.time_dim_name: idx}
             if not hasattr(self, "partitions"):
                 self.partitions = {p: {} for p in self.partition_names}
             self.partitions[partition].update(indexer)
@@ -249,7 +251,7 @@ class DataSplitter:
     ) -> Mapping[str, np.ndarray]:
 
         if self.station_split_method == "random":
-            out = random_split(self.station_index, fractions)
+            out = random_split(self.station_index, fractions, seed=self.seed)
         elif self.station_split_method == "sequential":
             out = sequential_split(self.station_index, fractions)
         return out
