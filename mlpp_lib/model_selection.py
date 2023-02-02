@@ -98,6 +98,7 @@ class DataSplitter:
         station_split: Optional[dict[str, Any]],
         time_split_method: Optional[str] = None,
         station_split_method: Optional[str] = None,
+        seed: Optional[int] = 10,
     ):
 
         if not time_split.keys() == station_split.keys():
@@ -108,6 +109,7 @@ class DataSplitter:
         self.partition_names = list(time_split.keys())
         self._check_time(time_split, time_split_method)
         self._check_station(station_split, station_split_method)
+        self.seed = seed
 
 
     @classmethod
