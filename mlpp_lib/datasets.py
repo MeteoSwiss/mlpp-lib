@@ -429,12 +429,21 @@ class Dataset:
             list(self.coords.values), names=list(self.coords.keys())
         )
 
-    def dataset_from_predictions(self, preds: np.ndarray) -> xr.Dataset:
-        out = np.full_like(self.y, fill_value=np.nan)
-        out[self.mask] = preds
-        out = xr.Variable(self.dims, out)
+    def dataset_from_predictions(self, preds: np.ndarray, ensemble_axis=None) -> xr.Dataset:
+        event_shape = [len(c) for dim, c in self.coords.items() if dim not in self.batch_dims]
+        full_shape = [self.mask.shape[0], *event_shape, len(self.targets)]
+        dims = list(self.dims)
+        coords = self.coords | {"v": self.targets}
+        if ensemble_axis is not None:
+            full_shape.insert(ensemble_axis, preds.shape[ensemble_axis])
+            dims.insert(ensemble_axis, "realization")
+            coords = coords | {"realization": np.arange(preds.shape[ensemble_axis])}
+        out = np.full(full_shape, fill_value=np.nan)
+        # out[self.mask] = preds
+        out = xr.Variable(dims, out)
+        out[{"s": self.mask}] = preds
         out = out.unstack(s={dim: len(coord) for dim, coord in self.coords.items()})
-        out = xr.DataArray(out, coords=self.coords | {"v": self.targets})
+        out = xr.DataArray(out, coords=coords)
         return out.to_dataset("v")
 
     def _get_copies(self):
