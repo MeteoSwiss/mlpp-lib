@@ -19,7 +19,7 @@ class Standardizer:
 
     mean: xr.Dataset = field(default=None)
     std: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(default=-5)
+    fillvalue: dict[str, float] = field(init=True, default=-5)
 
     def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
 
@@ -36,9 +36,10 @@ class Standardizer:
         def f(ds: xr.Dataset):
             for var in ds.data_vars:
                 assert var in self.mean.data_vars, f"{var} not in Standardizer"
-            return (
-                ((ds - self.mean) / self.std).astype("float32").fillna(self.fillvalue)
-            )
+            ds = ((ds - self.mean) / self.std).astype("float32")
+            if self.fillvalue is not None:
+                ds = ds.fillna(self.fillvalue)
+            return ds
 
         return tuple(f(ds) for ds in datasets)
 
