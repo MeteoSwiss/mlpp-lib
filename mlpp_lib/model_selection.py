@@ -146,6 +146,10 @@ class DataSplitter:
             The dataset arguments from which we want to select a partition.
         partition: str
             The keyword for the partition, e.g. "train", "val" or "test".
+        thinning: dict
+            Mapping from dimension name to integer, indicating by how many times to reduce
+            the number of labels for such dimension coordinate. May be used to reduce the size
+            of an unnecessarily large dataset.
 
         Returns
         -------
