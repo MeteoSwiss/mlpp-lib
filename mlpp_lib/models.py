@@ -2,7 +2,7 @@ import tensorflow as tf
 from typing import Optional, Union, Any
 
 from tensorflow.keras.layers import (
-    Layer,
+    Add,
     Dense,
     Dropout,
     BatchNormalization,
@@ -32,6 +32,7 @@ def fully_connected_network(
     dropout: Optional[Union[float, list[float]]] = None,
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
+    skip_connection: bool = False,
 ) -> Model:
     """
     Build a Fully Connected Neural Network.
@@ -59,6 +60,8 @@ def fully_connected_network(
     probabilistic_layer: str
         (Optional) Name of a probabilistic layer defined in `mlpp_lib.probabilistic_layers`, which is
         used as output layer of the keras `Model`. Default is None.
+    skip_connection: bool
+        Include a skip connection to the MLP architecture. Default is False.
 
     Return
     ------
@@ -93,6 +96,11 @@ def fully_connected_network(
         if i < len(dropout) and 0.0 < dropout[i] < 1.0:
             x = Dropout(dropout[i], name=f"dropout_{i}")(x)
 
+    if skip_connection:
+        x = Dense(input_shape[0])(x)
+        x = Add()([x, inputs])
+        x = Activation(activation=activations[-1])(x)
+
     # probabilistic prediction
     if probabilistic_layer:
         probabilistic_layer = globals()[probabilistic_layer]
@@ -126,6 +134,7 @@ def deep_cross_network(
     dropout: Optional[Union[float, list[float]]] = None,
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
+    skip_connection: bool = False,
 ):
     """
     Build a Deep and Cross Network (see https://arxiv.org/abs/1708.05123).
@@ -153,6 +162,8 @@ def deep_cross_network(
     probabilistic_layer: str
         (Optional) Name of a probabilistic layer defined in `mlpp_lib.probabilistic_layers`, which is
         used as output layer of the keras `Model`. Default is None.
+    skip_connection: bool
+        Include a skip connection to the MLP architecture. Default is False.
 
     Return
     ------
@@ -200,6 +211,11 @@ def deep_cross_network(
 
     # merge
     merge = tf.keras.layers.Concatenate()([cross, deep])
+
+    if skip_connection:
+        merge = Dense(input_shape[0])(merge)
+        merge = Add()([merge, inputs])
+        merge = Activation(activation=activations[-1])(merge)
 
     # probabilistic prediction
     if probabilistic_layer:
