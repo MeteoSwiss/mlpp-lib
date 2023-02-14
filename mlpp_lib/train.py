@@ -16,6 +16,7 @@ from mlpp_lib.utils import (
     get_loss,
     get_metric,
     get_model,
+    get_optimizer,
     process_out_bias_init,
 )
 
@@ -140,7 +141,7 @@ def train(
     model = get_model(input_shape, output_shape, model_config)
     loss = get_loss(loss_config)
     metrics = [get_metric(metric) for metric in metrics_config]
-    optimizer = getattr(tf.keras.optimizers, optimizer)(learning_rate=learning_rate)
+    optimizer = get_optimizer(optimizer)
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
     model.summary(print_fn=LOGGER.info)
 

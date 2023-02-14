@@ -20,6 +20,7 @@ RUNS = [
             }
         },
         "loss": "crps_energy",
+        "optimizer": "RMSprop",
         "callbacks": {"EarlyStopping": {"patience": 10, "restore_best_weights": True}},
     },
     # use a more complicated loss function
@@ -33,6 +34,7 @@ RUNS = [
             }
         },
         "loss": {"WeightedCRPSEnergy": {"threshold": 0, "n_samples": 5}},
+        "optimizer": {"Adam": {"learning_rate": 0.1, "beta_1": 0.95}},
         "metrics": ["bias", "mean_absolute_error", {"MAEBusts": {"threshold": 0.5}}],
     },
     {
@@ -42,6 +44,7 @@ RUNS = [
             "fully_connected_network": {
                 "hidden_layers": [10],
                 "probabilistic_layer": "IndependentNormal",
+                "skip_connection": True,
             }
         },
         "loss": "crps_energy",
@@ -63,11 +66,17 @@ RUNS = [
 def test_train(param_run, features_dataset, targets_dataset, splits_train_val):
     num_epochs = 2
     param_run.update({"epochs": num_epochs})
+    features = features_dataset[param_run["features"]]
+    targets = targets_dataset[param_run["targets"]]
+    if sample_weights := param_run.get("sample_weights"):
+        sample_weights = features_dataset[sample_weights]
+        sample_weights = sample_weights.broadcast_like(targets)
     results = train.train(
         param_run,
-        features_dataset[param_run["features"]],
-        targets_dataset[param_run["targets"]],
+        features,
+        targets,
         splits_train_val,
+        sample_weights=sample_weights,
     )
     assert len(results) == 4
     assert isinstance(results[0], Functional)  # model
