@@ -72,7 +72,6 @@ def train(
     out_bias_init = param_run.get("out_bias_init")
     thinning = param_run.get("thinning")
     optimizer = param_run.get("optimizer", "Adam")
-    learning_rate = param_run.get("learning_rate", 0.001)
     epochs = param_run.get("epochs", 1)
     steps_per_epoch = param_run.get("steps_per_epoch")
 
