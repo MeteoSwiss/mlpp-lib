@@ -65,13 +65,13 @@ def train(
     loss_config = param_run["loss"]
     # optional parameters
     metrics_config = param_run.get("metrics", [])
-    callbacks_config = param_run.get("callbacks", {})
+    callbacks_config = param_run.get("callbacks", [])
     event_dims = param_run.get("batching", {}).get("event_dims", [])
     batch_size = param_run.get("batching", {}).get("batch_size")
     shuffle = param_run.get("batching", {}).get("shuffle", True)
     out_bias_init = param_run.get("out_bias_init")
     thinning = param_run.get("thinning")
-    optimizer = param_run.get("optimizer", "Adam")
+    optimizer_config = param_run.get("optimizer", "Adam")
     epochs = param_run.get("epochs", 1)
     steps_per_epoch = param_run.get("steps_per_epoch")
 
@@ -140,7 +140,7 @@ def train(
     model = get_model(input_shape, output_shape, model_config)
     loss = get_loss(loss_config)
     metrics = [get_metric(metric) for metric in metrics_config]
-    optimizer = get_optimizer(optimizer)
+    optimizer = get_optimizer(optimizer_config)
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
     model.summary(print_fn=LOGGER.info)
 
@@ -148,8 +148,8 @@ def train(
     if callbacks is None:
         callbacks = []
 
-    for callback in callbacks_config.items():
-        callback_instance = get_callback({callback[0]: callback[1]})
+    for callback in callbacks_config:
+        callback_instance = get_callback(callback)
 
         if isinstance(callback_instance, EnsembleMetrics):
             callback_instance.add_validation_data((x_val_data, y_val_data))

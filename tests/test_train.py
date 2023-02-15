@@ -21,7 +21,9 @@ RUNS = [
         },
         "loss": "crps_energy",
         "optimizer": "RMSprop",
-        "callbacks": {"EarlyStopping": {"patience": 10, "restore_best_weights": True}},
+        "callbacks": [
+            {"EarlyStopping": {"patience": 10, "restore_best_weights": True}}
+        ],
     },
     # use a more complicated loss function
     {
@@ -49,15 +51,17 @@ RUNS = [
         },
         "loss": "crps_energy",
         "metrics": ["bias"],
-        "callbacks": {
-            "EarlyStopping": {
-                "patience": 10,
-                "restore_best_weights": True,
-                "verbose": 1,
+        "callbacks": [
+            {
+                "EarlyStopping": {
+                    "patience": 10,
+                    "restore_best_weights": True,
+                    "verbose": 1,
+                }
             },
-            "ReduceLROnPlateau": {"patience": 1, "verbose": 1},
-            "EnsembleMetrics": {"thresholds": [0, 1, 2]},
-        },
+            {"ReduceLROnPlateau": {"patience": 1, "verbose": 1}},
+            {"EnsembleMetrics": {"thresholds": [0, 1, 2]}},
+        ],
     },
 ]
 
