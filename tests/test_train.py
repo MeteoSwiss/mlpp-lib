@@ -23,7 +23,10 @@ RUNS = [
             }
         },
         "loss": "crps_energy",
-        "callbacks": {"EarlyStopping": {"patience": 10, "restore_best_weights": True}},
+        "optimizer": "RMSprop",
+        "callbacks": [
+            {"EarlyStopping": {"patience": 10, "restore_best_weights": True}}
+        ],
     },
     # use a more complicated loss function
     {
@@ -36,6 +39,7 @@ RUNS = [
             }
         },
         "loss": {"WeightedCRPSEnergy": {"threshold": 0, "n_samples": 5}},
+        "optimizer": {"Adam": {"learning_rate": 0.1, "beta_1": 0.95}},
         "metrics": ["bias", "mean_absolute_error", {"MAEBusts": {"threshold": 0.5}}],
     },
     {
@@ -45,19 +49,22 @@ RUNS = [
             "fully_connected_network": {
                 "hidden_layers": [10],
                 "probabilistic_layer": "IndependentNormal",
+                "skip_connection": True,
             }
         },
         "loss": "crps_energy",
         "metrics": ["bias"],
-        "callbacks": {
-            "EarlyStopping": {
-                "patience": 10,
-                "restore_best_weights": True,
-                "verbose": 1,
+        "callbacks": [
+            {
+                "EarlyStopping": {
+                    "patience": 10,
+                    "restore_best_weights": True,
+                    "verbose": 1,
+                }
             },
-            "ReduceLROnPlateau": {"patience": 1, "verbose": 1},
-            "ProperScores": {"thresholds": [0, 1, 2]},
-        },
+            {"ReduceLROnPlateau": {"patience": 1, "verbose": 1}},
+            {"EnsembleMetrics": {"thresholds": [0, 1, 2]}},
+        ],
     },
 ]
 
@@ -78,12 +85,14 @@ def test_train(tmp_path, cfg):
     batch_dims = ["forecast_reference_time","t","station"]
     datamodule = DataModule(tmp_path.as_posix() + "/", cfg["features"], cfg["targets"], batch_dims, splitter)
     results = train.train(cfg, datamodule)
-
+   
     assert len(results) == 4
     assert isinstance(results[0], Functional)  # model
     assert isinstance(results[1], dict)  # custom_objects
     assert isinstance(results[2], Standardizer)  # standardizer
     assert isinstance(results[3], dict)  # history
+
+    assert all([len(v) == num_epochs for v in results[3].values()])
 
     # try to pickle the custom objects
     cloudpickle.dumps(results[1])

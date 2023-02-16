@@ -115,6 +115,30 @@ def get_metric(metric: Union[str, dict]) -> Callable:
     return metric
 
 
+def get_optimizer(optimizer: Union[str, dict]) -> Callable:
+    """Get the optimizer, keras built-in only."""
+
+    if isinstance(optimizer, dict):
+        optimizer_name = list(optimizer.keys())[0]
+        optimizer_options = optimizer[optimizer_name]
+    else:
+        optimizer_name = optimizer
+        optimizer_options = {}
+
+    if hasattr(tf.keras.optimizers, optimizer_name):
+        LOGGER.info(f"Using keras built-in optimizer: {optimizer_name}")
+        optimizer_obj = getattr(tf.keras.optimizers, optimizer_name)
+        optimizer = (
+            optimizer_obj(**optimizer_options)
+            if isinstance(optimizer_obj, type)
+            else optimizer_obj
+        )
+    else:
+        raise KeyError(f"The optimizer {optimizer_name} is not available.")
+
+    return optimizer
+
+
 def process_out_bias_init(
     data: xr.DataArray,
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]],

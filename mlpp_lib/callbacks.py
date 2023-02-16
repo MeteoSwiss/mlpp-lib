@@ -5,7 +5,7 @@ import properscoring as ps
 from tensorflow.keras import callbacks
 
 
-class ProperScores(callbacks.Callback):
+class EnsembleMetrics(callbacks.Callback):
     def __init__(self, n_samples=50, thresholds=None):
         super(callbacks.Callback, self).__init__()
         self.n_samples = n_samples
@@ -23,6 +23,7 @@ class ProperScores(callbacks.Callback):
         assert y_val.shape[0] == y_pred.shape[0]
         assert y_pred.shape[1] == self.n_samples
 
+        logs["val_ensstd"] = np.std(y_pred, axis=1).mean().astype(float)
         logs["val_crps"] = ps.crps_ensemble(y_val, y_pred, axis=1).mean()
         for thr in self.thresholds:
             y_val_thr = np.maximum(y_val, thr)

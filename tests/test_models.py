@@ -1,10 +1,12 @@
 import itertools
 
 import numpy as np
-from keras.engine.functional import Functional
 import pytest
+import tensorflow as tf
+from keras.engine.functional import Functional
 
 from mlpp_lib import models
+
 
 FCN_OPTIONS = dict(
     input_shape=[(5,)],
@@ -14,12 +16,15 @@ FCN_OPTIONS = dict(
     dropout=[None, 0.1, [0.1, 0.0]],
     out_bias_init=["zeros", np.array([0.2]), np.array([0.2, 2.1])],
     probabilistic_layer=[None, "IndependentNormal", "MultivariateNormalTriL"],
+    skip_connection=[False, True],
 )
+
 
 FCN_SCENARIOS = [
     dict(zip(list(FCN_OPTIONS.keys()), x))
     for x in itertools.product(*FCN_OPTIONS.values())
 ]
+
 
 DCN_SCENARIOS = [
     dict(zip(list(FCN_OPTIONS.keys()), x))
@@ -29,6 +34,8 @@ DCN_SCENARIOS = [
 
 @pytest.mark.parametrize("scenario_kwargs", FCN_SCENARIOS)
 def test_fully_connected_network(scenario_kwargs):
+
+    tf.keras.backend.clear_session()
 
     input_shape = scenario_kwargs.pop("input_shape")
     output_size = scenario_kwargs.pop("output_size")

@@ -8,14 +8,16 @@ import pandas as pd
 import tensorflow as tf
 import xarray as xr
 
-from mlpp_lib.callbacks import TimeHistory
+from mlpp_lib.callbacks import TimeHistory, EnsembleMetrics
 from mlpp_lib.datasets import DataModule, Dataset
 from mlpp_lib.callbacks import TimeHistory, ProperScores
+
 from mlpp_lib.utils import (
     get_callback,
     get_loss,
     get_metric,
     get_model,
+    get_optimizer,
     process_out_bias_init,
 )
 
@@ -53,6 +55,7 @@ def train(
     callbacks: Optional[list] = None,
 ) -> tuple:
 
+
     LOGGER.debug(f"run params:\n{pformat(cfg)}")
 
     datamodule.setup("fit")
@@ -67,8 +70,8 @@ def train(
     output_shape = datamodule.train.y.shape[1:]
     model = get_model(input_shape, output_shape, model_config)
     loss = get_loss(loss_config)
-    metrics = [get_metric(metric) for metric in cfg.get("metrics_config", [])]
-    optimizer = getattr(tf.keras.optimizers, cfg.get("optimizer", "Adam"))(learning_rate=cfg.get("learning_rate", 0.001))
+    metrics = [get_metric(metric) for metric in cfg.get("metrics", [])]
+    optimzer = get_optimizer(cfg.get("optimizer", "Adam"))
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
     model.summary(print_fn=LOGGER.info)
 
@@ -76,10 +79,10 @@ def train(
     if callbacks is None:
         callbacks = []
 
-    for callback in cfg.get("callbacks", {}).items():
-        callback_instance = get_callback({callback[0]: callback[1]})
+    for callback in cfg.get("callbacks", []):
+        callback_instance = get_callback(callback)
 
-        if isinstance(callback_instance, ProperScores):
+        if isinstance(callback_instance, EnsembleMetrics):
             callback_instance.add_validation_data((datamodule.val.x, datamodule.val.y))
 
         callbacks.append(callback_instance)
