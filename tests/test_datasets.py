@@ -10,6 +10,7 @@ from mlpp_lib.model_selection import DataSplitter
 from mlpp_lib.standardizers import Standardizer
 from .test_model_selection import ValidDataSplitterOptions
 
+ZARR_MISSING = "zarr" not in xr.backends.list_engines()
 
 class TestDataModule:
 
@@ -32,49 +33,65 @@ class TestDataModule:
         targets_dataset.to_zarr(tmp_path / "targets.zarr", mode="w")
 
 
+    @pytest.mark.skipif(ZARR_MISSING, reason="missing zarr")
     @pytest.mark.usefixtures("write_datasets_zarr")
-    def test_setup_fit_default(self, tmp_path: Path):
+    def test_setup_fit_default_fromfile(self, tmp_path: Path):
         dm = DataModule(
-            tmp_path.as_posix() + "/",
             self.features,
             self.targets,
+            self.batch_dims,
+            self.splitter,
+            data_dir=tmp_path.as_posix() + "/",
+        )
+        dm.setup("fit")
+
+
+    def test_setup_fit_default_fromds(self, features_dataset, targets_dataset):
+        dm = DataModule(
+            features_dataset,
+            targets_dataset,
             self.batch_dims,
             self.splitter,
         )
         dm.setup("fit")
 
+
+    @pytest.mark.skipif(ZARR_MISSING, reason="missing zarr")
     @pytest.mark.usefixtures("write_datasets_zarr")
-    def test_setup_test_default(self, tmp_path: Path, standardizer):
+    def test_setup_test_default_fromfile(self, tmp_path: Path, standardizer):
         dm = DataModule(
-            tmp_path.as_posix() + "/",
             self.features,
             self.targets,
             self.batch_dims,
             self.splitter,
+            data_dir=tmp_path.as_posix() + "/",
             standardizer=standardizer,
         )
         dm.setup("test")
 
+
+    @pytest.mark.skipif(ZARR_MISSING, reason="missing zarr")
     @pytest.mark.usefixtures("write_datasets_zarr")
     def test_setup_fit_thinning(self, tmp_path: Path):
         dm = DataModule(
-            tmp_path.as_posix() + "/",
             self.features,
             self.targets,
             self.batch_dims,
             self.splitter,
+            data_dir=tmp_path.as_posix() + "/",
             thinning={"forecast_reference_time": 2}
         )
         dm.setup("fit")
 
+    @pytest.mark.skipif(ZARR_MISSING, reason="missing zarr")
     @pytest.mark.usefixtures("write_datasets_zarr")
     def test_setup_fit_weights(self, tmp_path: Path):
         dm = DataModule(
-            tmp_path.as_posix() + "/",
             self.features,
             self.targets,
             self.batch_dims,
             self.splitter,
+            data_dir=tmp_path.as_posix() + "/",
             sample_weighting=["coe:x1"]
         )
         dm.setup("fit")

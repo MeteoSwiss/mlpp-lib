@@ -25,16 +25,17 @@ class DataModule:
 
     Parameters
     ----------
-    data_dir: string
-        Path to the directory containing the raw data.
-    features: list of strings
-        Names of the predictors.
+    features: list of strings or xr.Dataset
+        Names of the predictors or an xr.Dataset containing the predictors.
     targets: list of strings
-        Names of the targets.
+        Names of the targets or an xr.Dataset containing the targets.
     batch_dims: list of strings
         Names of the dimensions that will be stacked into batches.
     splitter: `DataSplitter`
         The object that handles the data partitioning.
+    data_dir: string
+        Path to the directory containing the raw data. Must be provided if features
+        and targets are lists of names.
     filter: `DataFilter`, optional
         The object that hanfles the data filtering.
     standardizer: `Standardizer`, optional
@@ -48,14 +49,14 @@ class DataModule:
 
     def __init__(
         self,
-        data_dir: str,
-        features: Sequence[Hashable],
-        targets: Sequence[Hashable],
+        features: Sequence[Hashable] | xr.Dataset,
+        targets: Sequence[Hashable] | xr.Dataset,
         batch_dims: Sequence[Hashable],
         splitter: DataSplitter,
+        data_dir: Optional[str] = None,
         filter: Optional[DataFilter] = None,
         standardizer: Optional[Standardizer] = None,
-        sample_weighting: Optional[Sequence[Hashable] | Hashable] = None,
+        sample_weighting: Optional[Sequence[Hashable] | Hashable | xr.Dataset] = None,
         thinning: Optional[Mapping[str, int]] = None,
     ):
 
@@ -67,9 +68,10 @@ class DataModule:
         self.filter = filter
         self.standardizer = standardizer
         self.sample_weighting = (
-            list(sample_weighting) if sample_weighting is not None else None
+            list(sample_weighting) if isinstance(sample_weighting, str) else sample_weighting
         )
         self.thinning = thinning
+
 
     def setup(self, stage=None):
         """ Prepare the datamodule for fitting, testing or both.
@@ -82,8 +84,9 @@ class DataModule:
             If None, all data is processed.
         """
         LOGGER.info(f"Beginning datamodule setup for stage='{stage}'")
-        # load and preproc
-        self.load_raw()
+        maybe_load = self._check_args()
+        if maybe_load:
+            self.load_raw()
         self.select_splits(stage=stage)
         if self.filter is not None:
             self.apply_filter(stage=stage)
@@ -92,7 +95,7 @@ class DataModule:
 
     def load_raw(self):
         LOGGER.info(f"Loading data from: {self.data_dir}")
-
+        
         self.x = (
             xr.open_zarr(self.data_dir + "features.zarr")[self.features]
             .reset_coords(drop=True)
@@ -208,6 +211,27 @@ class DataModule:
             shuffle=False,
             device=self.device,
         )
+
+    def _check_args(self):
+        if isinstance(self.features, xr.Dataset):
+            assert isinstance(self.targets, xr.Dataset)
+            if self.sample_weighting is not None:
+                assert isinstance(self.sample_weighting, xr.Dataset)
+                self.w = self.sample_weighting.copy()
+                self.sample_weighting = list(self.w.data_vars)
+            else:
+                self.w = self.sample_weighting
+            self.x = self.features.copy()
+            self.y = self.targets.copy()
+            self.features = list(self.x.data_vars)
+            self.targets = list(self.y.data_vars)
+            maybe_load = False
+        else:
+            assert self.data_dir is not None
+            if "zarr" not in xr.backends.list_engines():
+                raise ModuleNotFoundError("zarr must be installed to read data from disk!")
+            maybe_load = True 
+        return maybe_load
 
 
 class Dataset:

@@ -17,7 +17,6 @@ xarray = "^2022.3.0"
 dask = "^2022.6.0"
 properscoring = "^0.1"
 numba = {version = "^0.56.4", optional = true}
-zarr = "^2.13.6"
 
 [tool.poetry.extras]
 tensorflow = ["tensorflow"]

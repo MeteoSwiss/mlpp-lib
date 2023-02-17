@@ -3,6 +3,7 @@ import json
 import cloudpickle
 import pytest
 from keras.engine.functional import Functional
+import xarray as xr 
 
 from mlpp_lib import train
 from mlpp_lib.standardizers import Standardizer
@@ -75,9 +76,10 @@ def write_datasets_zarr(tmp_path, features_dataset, targets_dataset):
     targets_dataset.to_zarr(tmp_path / "targets.zarr", mode="w")
 
 
+@pytest.mark.skipif("zarr" not in xr.backends.list_engines(), reason="missing zarr")
 @pytest.mark.usefixtures("write_datasets_zarr")
 @pytest.mark.parametrize("cfg", RUNS)
-def test_train(tmp_path, cfg):
+def test_train_fromfile(tmp_path, cfg):
     cfg.update({"epochs": 3})
 
     splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
@@ -93,6 +95,29 @@ def test_train(tmp_path, cfg):
     assert isinstance(results[3], dict)  # history
 
     assert all([len(v) == num_epochs for v in results[3].values()])
+
+    # try to pickle the custom objects
+    cloudpickle.dumps(results[1])
+
+    # try to dump fit history to json
+    json.dumps(results[3])
+
+
+@pytest.mark.parametrize("cfg", RUNS)
+def test_train_fromds(features_dataset, targets_dataset, cfg):
+    cfg.update({"epochs": 3})
+
+    splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
+    splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
+    batch_dims = ["forecast_reference_time","t","station"]
+    datamodule = DataModule(features_dataset, targets_dataset, batch_dims, splitter)
+    results = train.train(cfg, datamodule)
+
+    assert len(results) == 4
+    assert isinstance(results[0], Functional)  # model
+    assert isinstance(results[1], dict)  # custom_objects
+    assert isinstance(results[2], Standardizer)  # standardizer
+    assert isinstance(results[3], dict)  # history
 
     # try to pickle the custom objects
     cloudpickle.dumps(results[1])
