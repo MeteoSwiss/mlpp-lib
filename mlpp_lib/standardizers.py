@@ -58,12 +58,7 @@ class Standardizer:
     def save_json(self, out_fn: str) -> None:
         if self.mean is None:
             raise ValueError("Standardizer wasn't fit to data")
-
-        out_dict = {
-            "mean": self.mean.to_dict(),
-            "std": self.std.to_dict(),
-            "fillvalue": self.fillvalue,
-        }
+        out_dict = self.to_dict()
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
 
@@ -76,6 +71,14 @@ class Standardizer:
         std = xr.Dataset.from_dict(in_dict["std"])
         fillvalue = in_dict["fillvalue"]
         return cls(mean, std, fillvalue=fillvalue)
+
+    def to_dict(self):
+        out_dict = {
+            "mean": self.mean.to_dict(),
+            "std": self.std.to_dict(),
+            "fillvalue": self.fillvalue,
+        }
+        return out_dict
 
 
 def standardize_split_dataset(
