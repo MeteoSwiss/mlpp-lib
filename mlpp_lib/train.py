@@ -1,16 +1,11 @@
 import logging
-from inspect import getmembers, isfunction, isclass
 from pprint import pformat
 from typing import Optional
 
-import numpy as np
-import pandas as pd
 import tensorflow as tf
-import xarray as xr
 
 from mlpp_lib.callbacks import TimeHistory, EnsembleMetrics
-from mlpp_lib.datasets import DataModule, Dataset
-from mlpp_lib.callbacks import TimeHistory, ProperScores
+from mlpp_lib.datasets import DataModule
 
 from mlpp_lib.utils import (
     get_callback,
@@ -71,7 +66,7 @@ def train(
     model = get_model(input_shape, output_shape, model_config)
     loss = get_loss(loss_config)
     metrics = [get_metric(metric) for metric in cfg.get("metrics", [])]
-    optimzer = get_optimizer(cfg.get("optimizer", "Adam"))
+    optimizer = get_optimizer(cfg.get("optimizer", "Adam"))
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
     model.summary(print_fn=LOGGER.info)
 
