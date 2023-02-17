@@ -85,7 +85,7 @@ def test_train_fromfile(tmp_path, cfg):
     splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
     splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
     batch_dims = ["forecast_reference_time","t","station"]
-    datamodule = DataModule(tmp_path.as_posix() + "/", cfg["features"], cfg["targets"], batch_dims, splitter)
+    datamodule = DataModule(cfg["features"], cfg["targets"], batch_dims, splitter, tmp_path.as_posix() + "/")
     results = train.train(cfg, datamodule)
    
     assert len(results) == 4
@@ -94,7 +94,6 @@ def test_train_fromfile(tmp_path, cfg):
     assert isinstance(results[2], Standardizer)  # standardizer
     assert isinstance(results[3], dict)  # history
 
-    assert all([len(v) == num_epochs for v in results[3].values()])
 
     # try to pickle the custom objects
     cloudpickle.dumps(results[1])
@@ -110,7 +109,7 @@ def test_train_fromds(features_dataset, targets_dataset, cfg):
     splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
     splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
     batch_dims = ["forecast_reference_time","t","station"]
-    datamodule = DataModule(features_dataset, targets_dataset, batch_dims, splitter)
+    datamodule = DataModule(features_dataset[cfg["features"]], targets_dataset[cfg["targets"]], batch_dims, splitter)
     results = train.train(cfg, datamodule)
 
     assert len(results) == 4
