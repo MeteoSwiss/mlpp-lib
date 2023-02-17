@@ -17,7 +17,7 @@ LOGGER = logging.getLogger(__name__)
 class DataModule:
     """A class to encapsulate everything involved in mlpp data processing.
 
-    1. Load `xarray` objects from `.zarr` archives and select variables.
+    1. Take xarray objects or load and select variables from `.zarr` archives.
     2. Filter, split, standardize.
     3. Load into mlpp `Dataset`
     4. Reshape/mask as needed.
