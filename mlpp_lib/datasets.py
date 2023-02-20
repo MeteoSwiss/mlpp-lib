@@ -133,7 +133,7 @@ class DataModule:
             self.val = self.splitter.get_partition(
                 *args, partition="val", thinning=self.thinning
             )
-        elif stage == "test" or stage is None:
+        if stage == "test" or stage is None:
             self.test = self.splitter.get_partition(
                 *args, partition="test", thinning=self.thinning
             )
@@ -160,7 +160,7 @@ class DataModule:
                 tuple(self.standardizer.transform(self.train[0])) + self.train[1:]
             )
             self.val = tuple(self.standardizer.transform(self.val[0])) + self.val[1:]
-        elif stage == "test" or stage is None:
+        if stage == "test" or stage is None:
             self.test = tuple(self.standardizer.transform(self.test[0])) + self.test[1:]
 
     def as_datasets(self, stage=None):
@@ -179,7 +179,7 @@ class DataModule:
             )
             LOGGER.info(f"Training dataset: {self.train}")
             LOGGER.info(f"Validation dataset: {self.val}")
-        elif stage == "test" or stage is None:
+        if stage == "test" or stage is None:
             self.test = (
                 Dataset.from_xarray_datasets(*self.test)
                 .stack(self.batch_dims)
