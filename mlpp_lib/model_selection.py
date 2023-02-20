@@ -303,7 +303,7 @@ def sequential_split(
     split_fractions: Mapping[str, float],
 ) -> dict[str, np.ndarray]:
     """Split an input index array sequentially"""
-    assert sum(split_fractions.values()) == 1
+    assert np.isclose(sum(split_fractions.values()), 1.)
 
     n_samples = len(index)
     partitions = list(split_fractions.keys())
@@ -322,7 +322,7 @@ def random_split(
     """Split an input index array randomly"""
     np.random.seed(seed)
 
-    assert sum(split_fractions.values()) == 1
+    assert np.isclose(sum(split_fractions.values()), 1.)
 
     n_samples = len(index)
     partitions = list(split_fractions.keys())
