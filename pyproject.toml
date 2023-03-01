@@ -22,7 +22,7 @@ zarr = {version = "^2.14.1", optional = true}
 [tool.poetry.extras]
 tensorflow = ["tensorflow"]
 tensorflow-cpu = ["tensorflow-cpu"]
-zarr = ["zarr"]
+extended = ["zarr", "numba", "tensorflow"]
 
 [tool.poetry.dev-dependencies]
 tensorflow = "~2.9.3"
