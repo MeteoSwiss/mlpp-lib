@@ -1,16 +1,12 @@
 import logging
-from inspect import getmembers, isfunction, isclass
 from pprint import pformat
 from typing import Optional
 
-import numpy as np
-import pandas as pd
 import tensorflow as tf
-import xarray as xr
 
 from mlpp_lib.callbacks import TimeHistory, EnsembleMetrics
-from mlpp_lib.datasets import get_tensor_dataset, split_dataset
-from mlpp_lib.standardizers import standardize_split_dataset
+from mlpp_lib.datasets import DataModule
+
 from mlpp_lib.utils import (
     get_callback,
     get_loss,
@@ -49,98 +45,29 @@ def get_log_params(param_run: dict) -> dict:
 
 
 def train(
-    param_run: dict,
-    features: xr.Dataset,
-    targets: xr.Dataset,
-    splits_train_val: dict,
-    sample_weights: Optional[xr.Dataset] = None,
-    targets_mask: Optional[xr.DataArray] = None,
-    features_mask: Optional[xr.DataArray] = None,
+    cfg: dict,
+    datamodule: DataModule,
     callbacks: Optional[list] = None,
 ) -> tuple:
 
-    LOGGER.debug(f"run params:\n{pformat(param_run)}")
-    # required parameters
-    model_config = param_run["model"]
-    loss_config = param_run["loss"]
-    # optional parameters
-    metrics_config = param_run.get("metrics", [])
-    callbacks_config = param_run.get("callbacks", [])
-    event_dims = param_run.get("batching", {}).get("event_dims", [])
-    batch_size = param_run.get("batching", {}).get("batch_size")
-    shuffle = param_run.get("batching", {}).get("shuffle", True)
-    out_bias_init = param_run.get("out_bias_init")
-    thinning = param_run.get("thinning")
-    optimizer_config = param_run.get("optimizer", "Adam")
-    epochs = param_run.get("epochs", 1)
-    steps_per_epoch = param_run.get("steps_per_epoch")
+    LOGGER.debug(f"run params:\n{pformat(cfg)}")
 
-    # load data and filter measurements
-    if targets_mask is not None:
-        targets = targets.where(
-            targets_mask
-        )  # TODO: make sure that qa code follows this!
-        LOGGER.info(
-            f"Will keep {targets_mask.sum()/targets_mask.size * 100:.1f}% of targets."
-        )
-
-    if features_mask is not None:
-        LOGGER.info(
-            f"Will keep {features_mask.sum() / features_mask.size * 100:.1f}% of features."
-        )
-        features = features.assign_coords(is_valid=features_mask)
-    else:
-        features = features.assign_coords(is_valid=True)
-
-    # split datasets
-    features = split_dataset(features, splits=splits_train_val, thinning=thinning)
-    targets = split_dataset(targets, splits=splits_train_val, thinning=thinning)
-    sample_weights = split_dataset(
-        sample_weights, splits=splits_train_val, thinning=thinning
-    )
-
-    # standardize features
-    features, standardizer = standardize_split_dataset(
-        features, return_standardizer=True
-    )
-
-    # reshape as input tensors
-    data = {}
-    for split_key in splits_train_val.keys():
-        features[split_key] = features[split_key].where(features[split_key].is_valid)
-        data[split_key] = get_tensor_dataset(
-            features[split_key],
-            targets[split_key],
-            sample_weights[split_key],
-            event_dims=event_dims,
-        )
-        LOGGER.info(
-            f"{data[split_key][0].sizes['sample']} samples in the {split_key} set."
-        )
-        if data[split_key][2] is not None:
-            # take the product in case multiple weights are used
-            var_axis = data[split_key][2].dims.index("variable")
-            data[split_key][2] = np.prod(data[split_key][2], axis=var_axis)
-
-    x_train_data = data["train"][0].values
-    y_train_data = data["train"][1].values
-    x_val_data = data["val"][0].values
-    y_val_data = data["val"][1].values
-    w_train_data = data["train"][2]
-    # see https://github.com/keras-team/keras/pull/17357
-    if w_train_data is not None:
-        w_train_data = (w_train_data.values,)
-    del data
+    datamodule.setup("fit")
+    model_config = cfg["model"]
+    loss_config = cfg["loss"]
 
     # prepare model
-    out_bias_init = process_out_bias_init(y_train_data, out_bias_init, event_dims)
+    event_dims = list(set(datamodule.x.dims) - set(datamodule.batch_dims))
+    out_bias_init = process_out_bias_init(
+        datamodule.train.x, cfg.get("out_bias_init", "zeros"), event_dims
+    )
     model_config[list(model_config)[0]].update({"out_bias_init": out_bias_init})
-    input_shape = x_train_data.shape[1:]
-    output_shape = y_train_data.shape[1:]
+    input_shape = datamodule.train.x.shape[1:]
+    output_shape = datamodule.train.y.shape[1:]
     model = get_model(input_shape, output_shape, model_config)
     loss = get_loss(loss_config)
-    metrics = [get_metric(metric) for metric in metrics_config]
-    optimizer = get_optimizer(optimizer_config)
+    metrics = [get_metric(metric) for metric in cfg.get("metrics", [])]
+    optimizer = get_optimizer(cfg.get("optimizer", "Adam"))
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
     model.summary(print_fn=LOGGER.info)
 
@@ -148,11 +75,11 @@ def train(
     if callbacks is None:
         callbacks = []
 
-    for callback in callbacks_config:
+    for callback in cfg.get("callbacks", []):
         callback_instance = get_callback(callback)
 
         if isinstance(callback_instance, EnsembleMetrics):
-            callback_instance.add_validation_data((x_val_data, y_val_data))
+            callback_instance.add_validation_data((datamodule.val.x, datamodule.val.y))
 
         callbacks.append(callback_instance)
 
@@ -161,15 +88,15 @@ def train(
 
     LOGGER.info("Start training.")
     res = model.fit(
-        x=x_train_data,
-        y=y_train_data,
-        sample_weight=w_train_data,
-        epochs=epochs,
-        validation_data=(x_val_data, y_val_data),
+        x=datamodule.train.x,
+        y=datamodule.train.y,
+        sample_weight=datamodule.train.w,
+        epochs=cfg.get("epochs", 1),
+        validation_data=(datamodule.val.x, datamodule.val.y),
         callbacks=callbacks,
-        shuffle=shuffle,
-        batch_size=batch_size,
-        steps_per_epoch=steps_per_epoch,
+        shuffle=cfg.get("shuffle", True),
+        batch_size=cfg.get("batch_size", 1024),
+        steps_per_epoch=cfg.get("steps_per_epoch", None),
         verbose=2,
     )
     LOGGER.info("Done! \U0001F40D")
@@ -182,7 +109,7 @@ def train(
     history = res.history
     # for some reasons, 'lr' is provided as float32
     # and needs to be casted in order to be serialized
-    if "lr" in history:
-        history["lr"] = list(map(float, history["lr"]))
+    for k in history:
+        history[k] = list(map(float, history[k]))
 
-    return model, custom_objects, standardizer, history
+    return model, custom_objects, datamodule.standardizer, history
