@@ -46,14 +46,14 @@ def fully_connected_network(
     hidden_layers: list[int]
         List that is used to define the fully connected block. Each element creates
         a Dense layer with the corresponding units.
-    activations: str | list[str]
+    activations: str or list[str]
         (Optional) Activation function(s) for the Dense layer(s). See https://keras.io/api/layers/activations/#relu-function.
         If a string is passed, the same activation is used for all layers. Default is `relu`.
-    dropout: float | list[float]
+    dropout: float or list[float]
         (Optional) Dropout rate for the optional dropout layers. If a `float` is passed,
         dropout layers with the given rate are created after each Dense layer, except before the output layer.
         Default is None.
-    out_bias_init: str | np.ndarray
+    out_bias_init: str or np.ndarray
         (Optional) Specifies the initialization of the output layer bias. If a string is passed,
         it must be a valid Keras built-in initializer (see https://keras.io/api/layers/initializers/).
         If an array is passed, it must match the `output_size` argument.
@@ -148,14 +148,14 @@ def deep_cross_network(
     hidden_layers: list[int]
         List that is used to define the fully connected block. Each element creates
         a Dense layer with the corresponding units.
-    activations: str | list[str]
+    activations: str or list[str]
         (Optional) Activation function(s) for the Dense layer(s). See https://keras.io/api/layers/activations/#relu-function.
         If a string is passed, the same activation is used for all layers. Default is `relu`.
-    dropout: float | list[float]
+    dropout: float or list[float]
         (Optional) Dropout rate for the optional dropout layers. If a `float` is passed,
         dropout layers with the given rate are created after each Dense layer, except before the output layer.
         Default is None.
-    out_bias_init: str | np.ndarray
+    out_bias_init: str or np.ndarray
         (Optional) Specifies the initialization of the output layer bias. If a string is passed,
         it must be a valid Keras built-in initializer (see https://keras.io/api/layers/initializers/).
         If an array is passed, it must match the `output_size` argument.

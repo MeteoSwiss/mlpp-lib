@@ -13,7 +13,7 @@ from typing_extensions import Self
 LOGGER = logging.getLogger(__name__)
 
 
-xindex = Type[Sequence | np.ndarray]
+xindex = Type[Sequence or np.ndarray]
 
 
 class DataSplitter:
@@ -113,7 +113,6 @@ class DataSplitter:
         self.seed = seed
         self.time_dim_name = time_dim_name
 
-
     @classmethod
     def from_json(cls, file: str) -> Self:
         """Instantiate the DataSplitter from a json file with previously computed splits."""
@@ -196,14 +195,18 @@ class DataSplitter:
 
         # actual computation of splits
 
-        if self._time_defined: # provided time split is all valid xarray indexers (lists or slices)
+        if (
+            self._time_defined
+        ):  # provided time split is all valid xarray indexers (lists or slices)
             self._time_indexers = self.time_split
         else:
             self._time_indexers = {}
-            if all([isinstance(v, float) for v in self.time_split.values()]): # only fractions
+            if all(
+                [isinstance(v, float) for v in self.time_split.values()]
+            ):  # only fractions
                 res = self._time_partition_method(self.time_split)
                 self._time_indexers.update(res)
-            else: # mixed
+            else:  # mixed
                 _time_split = self.time_split.copy()
                 self._time_indexers.update({"test": _time_split.pop("test")})
                 res = self._time_partition_method(_time_split)
@@ -212,7 +215,7 @@ class DataSplitter:
         # assign indexers
         for partition in self.partition_names:
             idx = self._time_indexers[partition]
-            idx = slice(*idx) if len(idx) == 2 else idx 
+            idx = slice(*idx) if len(idx) == 2 else idx
             indexer = {self.time_dim_name: idx}
             if not hasattr(self, "partitions"):
                 self.partitions = {p: {} for p in self.partition_names}
@@ -255,7 +258,6 @@ class DataSplitter:
         elif self.station_split_method == "sequential":
             out = sequential_split(self.station_index, fractions)
         return out
-
 
     def _check_time(self, time_split: dict, time_split_method: str):
 
@@ -303,7 +305,7 @@ def sequential_split(
     split_fractions: Mapping[str, float],
 ) -> dict[str, np.ndarray]:
     """Split an input index array sequentially"""
-    assert np.isclose(sum(split_fractions.values()), 1.)
+    assert np.isclose(sum(split_fractions.values()), 1.0)
 
     n_samples = len(index)
     partitions = list(split_fractions.keys())
@@ -322,7 +324,7 @@ def random_split(
     """Split an input index array randomly"""
     np.random.seed(seed)
 
-    assert np.isclose(sum(split_fractions.values()), 1.)
+    assert np.isclose(sum(split_fractions.values()), 1.0)
 
     n_samples = len(index)
     partitions = list(split_fractions.keys())

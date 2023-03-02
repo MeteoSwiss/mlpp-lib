@@ -3,7 +3,7 @@ import json
 import cloudpickle
 import pytest
 from keras.engine.functional import Functional
-import xarray as xr 
+import xarray as xr
 
 from mlpp_lib import train
 from mlpp_lib.standardizers import Standardizer
@@ -84,16 +84,17 @@ def test_train_fromfile(tmp_path, cfg):
 
     splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
     splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
-    batch_dims = ["forecast_reference_time","t","station"]
-    datamodule = DataModule(cfg["features"], cfg["targets"], batch_dims, splitter, tmp_path.as_posix() + "/")
+    batch_dims = ["forecast_reference_time", "t", "station"]
+    datamodule = DataModule(
+        cfg["features"], cfg["targets"], batch_dims, splitter, tmp_path.as_posix() + "/"
+    )
     results = train.train(cfg, datamodule)
-   
+
     assert len(results) == 4
     assert isinstance(results[0], Functional)  # model
     assert isinstance(results[1], dict)  # custom_objects
     assert isinstance(results[2], Standardizer)  # standardizer
     assert isinstance(results[3], dict)  # history
-
 
     # try to pickle the custom objects
     cloudpickle.dumps(results[1])
@@ -108,8 +109,13 @@ def test_train_fromds(features_dataset, targets_dataset, cfg):
 
     splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
     splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
-    batch_dims = ["forecast_reference_time","t","station"]
-    datamodule = DataModule(features_dataset[cfg["features"]], targets_dataset[cfg["targets"]], batch_dims, splitter)
+    batch_dims = ["forecast_reference_time", "t", "station"]
+    datamodule = DataModule(
+        features_dataset[cfg["features"]],
+        targets_dataset[cfg["targets"]],
+        batch_dims,
+        splitter,
+    )
     results = train.train(cfg, datamodule)
 
     assert len(results) == 4

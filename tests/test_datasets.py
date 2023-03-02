@@ -12,6 +12,7 @@ from .test_model_selection import ValidDataSplitterOptions
 
 ZARR_MISSING = "zarr" not in xr.backends.list_engines()
 
+
 class TestDataModule:
 
     features = ["coe:x1", "obs:x3", "dem:x4"]
@@ -32,7 +33,6 @@ class TestDataModule:
         features_dataset.to_zarr(tmp_path / "features.zarr", mode="w")
         targets_dataset.to_zarr(tmp_path / "targets.zarr", mode="w")
 
-
     @pytest.mark.skipif(ZARR_MISSING, reason="missing zarr")
     @pytest.mark.usefixtures("write_datasets_zarr")
     def test_setup_fit_default_fromfile(self, tmp_path: Path):
@@ -45,7 +45,6 @@ class TestDataModule:
         )
         dm.setup("fit")
 
-
     def test_setup_fit_default_fromds(self, features_dataset, targets_dataset):
         dm = DataModule(
             features_dataset,
@@ -54,7 +53,6 @@ class TestDataModule:
             self.splitter,
         )
         dm.setup("fit")
-
 
     @pytest.mark.skipif(ZARR_MISSING, reason="missing zarr")
     @pytest.mark.usefixtures("write_datasets_zarr")
@@ -69,7 +67,6 @@ class TestDataModule:
         )
         dm.setup("test")
 
-
     @pytest.mark.skipif(ZARR_MISSING, reason="missing zarr")
     @pytest.mark.usefixtures("write_datasets_zarr")
     def test_setup_fit_thinning(self, tmp_path: Path):
@@ -79,7 +76,7 @@ class TestDataModule:
             self.batch_dims,
             self.splitter,
             data_dir=tmp_path.as_posix() + "/",
-            thinning={"forecast_reference_time": 2}
+            thinning={"forecast_reference_time": 2},
         )
         dm.setup("fit")
 
@@ -92,11 +89,9 @@ class TestDataModule:
             self.batch_dims,
             self.splitter,
             data_dir=tmp_path.as_posix() + "/",
-            sample_weighting=["coe:x1"]
+            sample_weighting=["coe:x1"],
         )
         dm.setup("fit")
-
-    
 
 
 class TestDataset:

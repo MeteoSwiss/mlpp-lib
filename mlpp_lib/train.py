@@ -50,7 +50,6 @@ def train(
     callbacks: Optional[list] = None,
 ) -> tuple:
 
-
     LOGGER.debug(f"run params:\n{pformat(cfg)}")
 
     datamodule.setup("fit")
@@ -59,7 +58,9 @@ def train(
 
     # prepare model
     event_dims = list(set(datamodule.x.dims) - set(datamodule.batch_dims))
-    out_bias_init = process_out_bias_init(datamodule.train.x, cfg.get("out_bias_init", "zeros"), event_dims)
+    out_bias_init = process_out_bias_init(
+        datamodule.train.x, cfg.get("out_bias_init", "zeros"), event_dims
+    )
     model_config[list(model_config)[0]].update({"out_bias_init": out_bias_init})
     input_shape = datamodule.train.x.shape[1:]
     output_shape = datamodule.train.y.shape[1:]
@@ -109,6 +110,6 @@ def train(
     # for some reasons, 'lr' is provided as float32
     # and needs to be casted in order to be serialized
     for k in history:
-        history[k] =  list(map(float, history[k]))
+        history[k] = list(map(float, history[k]))
 
     return model, custom_objects, datamodule.standardizer, history

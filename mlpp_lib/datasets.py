@@ -14,6 +14,7 @@ from .standardizers import Standardizer
 
 LOGGER = logging.getLogger(__name__)
 
+
 class DataModule:
     """A class to encapsulate everything involved in mlpp data processing.
 
@@ -49,14 +50,14 @@ class DataModule:
 
     def __init__(
         self,
-        features: Sequence[Hashable] | xr.Dataset,
-        targets: Sequence[Hashable] | xr.Dataset,
+        features: Sequence[Hashable] or xr.Dataset,
+        targets: Sequence[Hashable] or xr.Dataset,
         batch_dims: Sequence[Hashable],
         splitter: DataSplitter,
         data_dir: Optional[str] = None,
         filter: Optional[DataFilter] = None,
         standardizer: Optional[Standardizer] = None,
-        sample_weighting: Optional[Sequence[Hashable] | Hashable | xr.Dataset] = None,
+        sample_weighting: Optional[Sequence[Hashable] or Hashable or xr.Dataset] = None,
         thinning: Optional[Mapping[str, int]] = None,
     ):
 
@@ -68,14 +69,15 @@ class DataModule:
         self.filter = filter
         self.standardizer = standardizer
         self.sample_weighting = (
-            list(sample_weighting) if isinstance(sample_weighting, str) else sample_weighting
+            list(sample_weighting)
+            if isinstance(sample_weighting, str)
+            else sample_weighting
         )
         self.thinning = thinning
 
-
     def setup(self, stage=None):
-        """ Prepare the datamodule for fitting, testing or both.
-        
+        """Prepare the datamodule for fitting, testing or both.
+
         Parameters
         ----------
         stage: str, optional
@@ -95,7 +97,7 @@ class DataModule:
 
     def load_raw(self):
         LOGGER.info(f"Loading data from: {self.data_dir}")
-        
+
         self.x = (
             xr.open_zarr(self.data_dir + "features.zarr")[self.features]
             .reset_coords(drop=True)
@@ -171,7 +173,7 @@ class DataModule:
                 .stack(self.batch_dims)
                 .drop_nans()
             )
-            
+
             self.val = (
                 Dataset.from_xarray_datasets(*self.val)
                 .stack(self.batch_dims)
@@ -186,7 +188,6 @@ class DataModule:
                 .drop_nans()
             )
             LOGGER.info(f"Test dataset: {self.test}")
-
 
     def train_dataloader(self, batch_size):
         return DataLoader(
@@ -229,8 +230,10 @@ class DataModule:
         else:
             assert self.data_dir is not None
             if "zarr" not in xr.backends.list_engines():
-                raise ModuleNotFoundError("zarr must be installed to read data from disk!")
-            maybe_load = True 
+                raise ModuleNotFoundError(
+                    "zarr must be installed to read data from disk!"
+                )
+            maybe_load = True
         return maybe_load
 
 
@@ -343,8 +346,8 @@ class Dataset:
             x, y, w = self._undrop_nans()
             dims = (*self.coords.keys(), "v")
             ds = Dataset(x, y, dims, self.coords, self.features, self.targets, w=w)
-            del x, y, w 
-            return ds 
+            del x, y, w
+            return ds
         else:
             x, y, w = self._as_variables()
             unstack_info = {dim: len(coord) for dim, coord in self.coords.items()}
@@ -360,7 +363,7 @@ class Dataset:
             return ds
 
     @staticmethod
-    def _check_coords(x: xr.Dataset | xr.DataArray, y: xr.Dataset | xr.DataArray):
+    def _check_coords(x: xr.Dataset or xr.DataArray, y: xr.Dataset or xr.DataArray):
 
         if x.dims != y.dims:
             raise ValueError(
@@ -409,7 +412,7 @@ class Dataset:
         x, y, w = self._get_copies()
 
         mask = ~(
-            da.any(da.isnan(da.from_array(x, name="x")), axis=-1) 
+            da.any(da.isnan(da.from_array(x, name="x")), axis=-1)
             | da.any(da.isnan(da.from_array(y, name="y")), axis=-1)
         ).compute()
 
@@ -445,16 +448,20 @@ class Dataset:
             w_tmp[mask] = w
             w = w_tmp.copy()
             del w_tmp
-        
-        return x, y, w 
+
+        return x, y, w
 
     def get_multiindex(self) -> pd.MultiIndex:
         return pd.MultiIndex.from_product(
             list(self.coords.values), names=list(self.coords.keys())
         )
 
-    def dataset_from_predictions(self, preds: np.ndarray, ensemble_axis=None) -> xr.Dataset:
-        event_shape = [len(c) for dim, c in self.coords.items() if dim not in self.batch_dims]
+    def dataset_from_predictions(
+        self, preds: np.ndarray, ensemble_axis=None
+    ) -> xr.Dataset:
+        event_shape = [
+            len(c) for dim, c in self.coords.items() if dim not in self.batch_dims
+        ]
         full_shape = [self.mask.shape[0], *event_shape, len(self.targets)]
         dims = list(self.dims)
         coords = self.coords | {"v": self.targets}
@@ -475,13 +482,14 @@ class Dataset:
         y = self.y.copy()
         w = self.w.copy() if self.w is not None else None
         del self.x, self.y, self.w
-        return x, y, w 
+        return x, y, w
 
     def __repr__(self) -> str:
         x, y, w = self._as_variables()
-        wsize = dict(w.sizes) if w is not None else None 
+        wsize = dict(w.sizes) if w is not None else None
         out = f"Dataset(x={dict(x.sizes)}, y={dict(y.sizes)}, w={wsize})"
-        return out 
+        return out
+
 
 class DataLoader:
     """A dataloader for mlpp

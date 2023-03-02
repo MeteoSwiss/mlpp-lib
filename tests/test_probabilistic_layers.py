@@ -59,8 +59,12 @@ def test_probabilistic_model(layer):
 
 @pytest.mark.parametrize("layer", LAYERS)
 def test_probabilistic_model_predict(layer, features_dataset, targets_dataset):
-    batch_dims = ["forecast_reference_time", "t","station"]
-    data = Dataset.from_xarray_datasets(features_dataset, targets_dataset).stack(batch_dims).drop_nans()
+    batch_dims = ["forecast_reference_time", "t", "station"]
+    data = (
+        Dataset.from_xarray_datasets(features_dataset, targets_dataset)
+        .stack(batch_dims)
+        .drop_nans()
+    )
     x_shape = data.x.shape
     y_shape = data.y.shape
     input_shape = x_shape[1]
