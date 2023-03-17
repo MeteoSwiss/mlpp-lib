@@ -97,6 +97,8 @@ def crps_energy(
         use_reparameterization=use_reparameterization,
     )
     crps = E_1 - E_2 / 2
+    # Avoid negative loss when E_2 >> E_1 caused by large values in `sample_2`
+    crps = tf.abs(crps)
 
     return crps[..., None]
 
@@ -203,6 +205,9 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
 
         twcrps = E_1 - self.bias_correction * E_2 / 2
 
+        # Avoid negative loss when E_2 >> E_1 caused by large values in `sample_2`
+        twcrps = tf.abs(twcrps)
+
         return twcrps[..., None]
 
 
@@ -278,6 +283,9 @@ class EnergyScore(tf.keras.losses.Loss):
         )
 
         energy_score = E_1 - E_2 / 2
+
+        # Avoid negative loss when E_2 >> E_1 caused by large values in `sample_2`
+        energy_score = tf.abs(energy_score)
 
         return energy_score
 
