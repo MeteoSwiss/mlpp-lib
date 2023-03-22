@@ -84,8 +84,9 @@ class IndependentBeta(tfpl.DistributionLambda):
                 axis=0,
             )
             alpha, beta, shift, scale = tf.split(params, 4, axis=-1)
-            alpha = tf.math.softplus(tf.reshape(alpha, output_shape))
-            beta = tf.math.softplus(tf.reshape(beta, output_shape))
+            # alpha > 2 and beta > 2 produce a concave downward Beta
+            alpha = 2.0 + tf.math.softplus(tf.reshape(alpha, output_shape))
+            beta = 2.0 + tf.math.softplus(tf.reshape(beta, output_shape))
             shift = tf.math.softplus(tf.reshape(shift, output_shape))
             scale = tf.math.softplus(tf.reshape(scale, output_shape))
             betad = tfd.Beta(alpha, beta, validate_args=validate_args)

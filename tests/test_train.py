@@ -1,6 +1,7 @@
 import json
 
 import cloudpickle
+import numpy as np
 import pytest
 from keras.engine.functional import Functional
 import xarray as xr
@@ -36,7 +37,7 @@ RUNS = [
         "model": {
             "fully_connected_network": {
                 "hidden_layers": [10],
-                "probabilistic_layer": "IndependentNormal",
+                "probabilistic_layer": "IndependentBeta",
             }
         },
         "loss": {"WeightedCRPSEnergy": {"threshold": 0, "n_samples": 5}},
@@ -80,7 +81,8 @@ def write_datasets_zarr(tmp_path, features_dataset, targets_dataset):
 @pytest.mark.usefixtures("write_datasets_zarr")
 @pytest.mark.parametrize("cfg", RUNS)
 def test_train_fromfile(tmp_path, cfg):
-    cfg.update({"epochs": 3})
+    num_epochs = 3
+    cfg.update({"epochs": num_epochs})
 
     splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
     splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
@@ -96,6 +98,9 @@ def test_train_fromfile(tmp_path, cfg):
     assert isinstance(results[2], Standardizer)  # standardizer
     assert isinstance(results[3], dict)  # history
 
+    assert all([np.isfinite(v).all() for v in results[3].values()])
+    assert all([len(v) == num_epochs for v in results[3].values()])
+
     # try to pickle the custom objects
     cloudpickle.dumps(results[1])
 
@@ -105,7 +110,8 @@ def test_train_fromfile(tmp_path, cfg):
 
 @pytest.mark.parametrize("cfg", RUNS)
 def test_train_fromds(features_dataset, targets_dataset, cfg):
-    cfg.update({"epochs": 3})
+    num_epochs = 3
+    cfg.update({"epochs": num_epochs})
 
     splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
     splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
@@ -123,6 +129,9 @@ def test_train_fromds(features_dataset, targets_dataset, cfg):
     assert isinstance(results[1], dict)  # custom_objects
     assert isinstance(results[2], Standardizer)  # standardizer
     assert isinstance(results[3], dict)  # history
+
+    assert all([np.isfinite(v).all() for v in results[3].values()])
+    assert all([len(v) == num_epochs for v in results[3].values()])
 
     # try to pickle the custom objects
     cloudpickle.dumps(results[1])
