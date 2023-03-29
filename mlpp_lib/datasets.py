@@ -247,8 +247,6 @@ class Dataset:
     ----------
     x: array-like
         The input data.
-    y: array-like
-        The target data.
     dims: list or tuple
         Names of the dimensions. Last dimension is always `v`.
     coords: mapping of strings to array-like
@@ -257,6 +255,8 @@ class Dataset:
         Names of the input predictors.
     targets:
         Names of the target predictands.
+    y: array-like, optional
+        The target data.
     w: array-like, optional
         The sample weights data.
     mask: boolean array, optional
@@ -268,11 +268,11 @@ class Dataset:
     def __init__(
         self,
         x: np.ndarray,
-        y: np.ndarray,
         dims: Sequence[Hashable],
         coords: dict[str, Sequence],
         features: Optional[Sequence[Hashable]] = None,
         targets: Optional[Sequence[Hashable]] = None,
+        y: Optional[np.ndarray] = None,
         w: Optional[np.ndarray] = None,
         mask: Optional[np.ndarray] = None,
     ):
@@ -289,7 +289,10 @@ class Dataset:
 
     @classmethod
     def from_xarray_datasets(
-        cls: Self, x: xr.Dataset, y: xr.Dataset, w: Optional[xr.Dataset] = None
+        cls: Self,
+        x: xr.Dataset,
+        y: Optional[xr.Dataset] = None,
+        w: Optional[xr.Dataset] = None,
     ) -> Self:
         """
         Create a mlpp `Dataset` from `xr.Datasets`.
@@ -298,7 +301,7 @@ class Dataset:
         ----------
         x: xr.Dataset
             The dataset containing the input features.
-        y: xr.Dataset
+        y: xr.Dataset, optional
             The dataset containing the input targets.
         w: xr.Dataset, optional
             The dataset containing the variables to compute samples weights.
@@ -309,29 +312,33 @@ class Dataset:
             The dataset instance.
         """
         x = x.compute()
-        y = y.compute()
         if "is_valid" in list(x._coord_names):
             x = x.where(x.coords["is_valid"])  # TODO: this can be optimized
         dims, coords = cls._check_coords(x, y)
         dims.append("v")
         features = list(x.data_vars)
-        targets = list(y.data_vars)
         x = x.to_array("v").transpose(..., "v").values
-        y = y.to_array("v").transpose(..., "v").values
+        if y is not None:
+            y = y.compute()
+            targets = list(y.data_vars)
+            y = y.to_array("v").transpose(..., "v").values
+        else:
+            targets = None
         if w is not None:
             w = w.to_array("v").transpose(..., "v").values
             w = np.prod(w, axis=-1)
-        return cls(x, y, dims, coords, features, targets, w=w)
+        return cls(x, dims, coords, features, targets, y=y, w=w)
 
     def stack(self, batch_dims: Optional[Sequence[Hashable]] = None) -> Self:
         """Stack batch dimensions along the first axis"""
         x, y, w = self._as_variables()
         dims = ["s"] + [dim for dim in x.dims if dim not in batch_dims]
         x = x.stack(s=batch_dims).transpose("s", ...).values.copy(order="C")
-        y = y.stack(s=batch_dims).transpose("s", ...).values.copy(order="C")
+        if y is not None:
+            y = y.stack(s=batch_dims).transpose("s", ...).values.copy(order="C")
         if w is not None:
             w = w.stack(s=batch_dims).transpose("s", ...).values.copy(order="C")
-        ds = Dataset(x, y, dims, self.coords, self.features, self.targets, w=w)
+        ds = Dataset(x, dims, self.coords, self.features, self.targets, y=y, w=w)
         ds.batch_dims = batch_dims
         ds._is_stacked = True
         del x, y, w
@@ -345,25 +352,32 @@ class Dataset:
         if self.mask is not None:
             x, y, w = self._undrop_nans()
             dims = (*self.coords.keys(), "v")
-            ds = Dataset(x, y, dims, self.coords, self.features, self.targets, w=w)
+            ds = Dataset(x, dims, self.coords, self.features, self.targets, y=y, w=w)
             del x, y, w
             return ds
         else:
             x, y, w = self._as_variables()
             unstack_info = {dim: len(coord) for dim, coord in self.coords.items()}
             x = x.unstack(s=unstack_info).transpose(..., "v").values
-            y = y.unstack(s=unstack_info).transpose(..., "v").values
             dims = (*self.coords.keys(), "v")
+            if y is not None:
+                y = y.unstack(s=unstack_info).transpose(..., "v").values
             if w is not None:
                 w = w.unstack(s=unstack_info).values
-            ds = Dataset(x, y, dims, self.coords, self.features, self.targets, w=w)
+            ds = Dataset(x, dims, self.coords, self.features, self.targets, y=y, w=w)
             ds.batch_dims = self.batch_dims
             ds._is_stacked = False
             del x, y, w
             return ds
 
     @staticmethod
-    def _check_coords(x: xr.Dataset or xr.DataArray, y: xr.Dataset or xr.DataArray):
+    def _check_coords(
+        x: xr.Dataset or xr.DataArray, y: Optional[xr.Dataset or xr.DataArray] = None
+    ):
+        if y is None:
+            dims = list(x.dims)
+            coords = {dim: x[dim].values for dim in dims if dim != "v"}
+            return dims, coords
 
         if x.dims != y.dims:
             raise ValueError(
@@ -379,7 +393,7 @@ class Dataset:
                 continue
             elif any(x[dim].values != y[dim].values):
                 raise ValueError(
-                    "x and y have different coordinatres on the " f"{dim} dimension!"
+                    "x and y have different coordinates on the " f"{dim} dimension!"
                 )
             else:
                 coords[dim] = x[dim].values
@@ -400,7 +414,7 @@ class Dataset:
 
     def _as_variables(self) -> tuple[xr.Variable, ...]:
         x = xr.Variable(self.dims, self.x)
-        y = xr.Variable(self.dims, self.y)
+        y = xr.Variable(self.dims, self.y) if self.y is not None else None
         w = xr.Variable(self.dims[:-1], self.w) if self.w is not None else None
         return x, y, w
 
@@ -411,17 +425,17 @@ class Dataset:
 
         x, y, w = self._get_copies()
 
-        mask = ~(
-            da.any(da.isnan(da.from_array(x, name="x")), axis=-1)
-            | da.any(da.isnan(da.from_array(y, name="y")), axis=-1)
-        ).compute()
+        mask = da.any(da.isnan(da.from_array(x, name="x")), axis=-1)
+        if y is not None:
+            mask = mask | da.any(da.isnan(da.from_array(y, name="y")), axis=-1)
+        mask = (~mask).compute()
 
         x = x[mask]
-        y = y[mask]
+        y = y[mask] if y is not None else None
         w = w[mask] if w is not None else None
 
         ds = Dataset(
-            x, y, self.dims, self.coords, self.features, self.targets, w=w, mask=mask
+            x, self.dims, self.coords, self.features, self.targets, y=y, w=w, mask=mask
         )
         ds._is_stacked = self._is_stacked
         ds.batch_dims = self.batch_dims
@@ -431,16 +445,17 @@ class Dataset:
     def _undrop_nans(self):
 
         original_shape = tuple(len(c) for c in self.coords.values())
+        mask = self.mask.reshape(*original_shape).copy()
         x, y, w = self._get_copies()
         x_tmp = np.full((*original_shape, len(self.features)), fill_value=np.nan)
-        y_tmp = np.full((*original_shape, len(self.targets)), fill_value=np.nan)
-        mask = self.mask.reshape(*original_shape).copy()
         x_tmp[mask] = x
-        y_tmp[mask] = y
         x = x_tmp
-        y = y_tmp
-        del x_tmp, y_tmp
-
+        del x_tmp
+        if y is not None:
+            y_tmp = np.full((*original_shape, len(self.targets)), fill_value=np.nan)
+            y_tmp[mask] = y
+            y = y_tmp
+            del y_tmp
         if w is not None:
             w_tmp = np.full(
                 original_shape, fill_value=np.nan
@@ -479,15 +494,16 @@ class Dataset:
 
     def _get_copies(self):
         x = self.x.copy()
-        y = self.y.copy()
+        y = self.y.copy() if self.y is not None else None
         w = self.w.copy() if self.w is not None else None
         del self.x, self.y, self.w
         return x, y, w
 
     def __repr__(self) -> str:
         x, y, w = self._as_variables()
+        ysize = dict(y.sizes) if y is not None else None
         wsize = dict(w.sizes) if w is not None else None
-        out = f"Dataset(x={dict(x.sizes)}, y={dict(y.sizes)}, w={wsize})"
+        out = f"Dataset(x={dict(x.sizes)}, y={ysize}, w={wsize})"
         return out
 
 
