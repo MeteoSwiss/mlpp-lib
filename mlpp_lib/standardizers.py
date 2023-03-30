@@ -55,18 +55,8 @@ class Standardizer:
 
         return tuple(f(ds) for ds in datasets)
 
-    def save_json(self, out_fn: str) -> None:
-        if self.mean is None:
-            raise ValueError("Standardizer wasn't fit to data")
-        out_dict = self.to_dict()
-        with open(out_fn, "w") as outfile:
-            json.dump(out_dict, outfile, indent=4)
-
     @classmethod
-    def from_json(cls, in_fn: str) -> Self:
-        with open(in_fn, "r") as f:
-            in_dict = json.load(f)
-
+    def from_dict(cls, in_dict: dict) -> Self:
         mean = xr.Dataset.from_dict(in_dict["mean"])
         std = xr.Dataset.from_dict(in_dict["std"])
         fillvalue = in_dict["fillvalue"]
@@ -79,6 +69,19 @@ class Standardizer:
             "fillvalue": self.fillvalue,
         }
         return out_dict
+
+    @classmethod
+    def from_json(cls, in_fn: str) -> Self:
+        with open(in_fn, "r") as f:
+            in_dict = json.load(f)
+        return cls.from_dict(in_dict)
+
+    def save_json(self, out_fn: str) -> None:
+        if self.mean is None:
+            raise ValueError("Standardizer wasn't fit to data")
+        out_dict = self.to_dict()
+        with open(out_fn, "w") as outfile:
+            json.dump(out_dict, outfile, indent=4)
 
 
 def standardize_split_dataset(
