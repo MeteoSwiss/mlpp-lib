@@ -279,3 +279,25 @@ class TestDataset:
         assert ds_pred.dims["realization"] == n_samples
         assert all([ds_pred.dims[c] == ds.coords[c].size for c in ds.coords])
         assert list(ds_pred.data_vars) == ds.targets
+
+    @pytest.mark.parametrize(
+        "batch_dims",
+        [
+            ("forecast_reference_time", "t", "station"),
+            ("forecast_reference_time", "station"),
+        ],
+        ids=lambda x: repr(x),
+    )
+    def test_dataset_from_predictions_only_x(self, dataset_only_x, batch_dims):
+        n_samples = 3
+        targets = ["obs:y1", "obs:y2"]
+        ds = dataset_only_x.stack(batch_dims)
+        # Note that here we do not drop nan, hence the mask is not created!
+        predictions = np.random.randn(n_samples, *ds.x.shape[:-1], len(targets))
+        ds_pred = ds.dataset_from_predictions(
+            predictions, ensemble_axis=0, targets=targets
+        )
+        assert isinstance(ds_pred, xr.Dataset)
+        assert ds_pred.dims["realization"] == n_samples
+        assert all([ds_pred.dims[c] == ds.coords[c].size for c in ds.coords])
+        assert list(ds_pred.data_vars) == targets

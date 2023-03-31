@@ -473,16 +473,23 @@ class Dataset:
         )
 
     def dataset_from_predictions(
-        self, preds: np.ndarray, ensemble_axis=None
+        self,
+        preds: np.ndarray,
+        ensemble_axis: Optional[int] = None,
+        targets: Optional[Sequence[Hashable]] = None,
     ) -> xr.Dataset:
         if not self._is_stacked:
             raise ValueError("Dataset should be stacked first.")
+        if self.targets is None and targets is None:
+            raise ValueError("Please specify argument 'targets'")
+        else:
+            targets = targets or self.targets
         event_shape = [
             len(c) for dim, c in self.coords.items() if dim not in self.batch_dims
         ]
-        full_shape = [self.x.shape[0], *event_shape, len(self.targets)]
+        full_shape = [self.x.shape[0], *event_shape, len(targets)]
         dims = list(self.dims)
-        coords = self.coords | {"v": self.targets}
+        coords = self.coords | {"v": targets}
         if ensemble_axis is not None:
             full_shape.insert(ensemble_axis, preds.shape[ensemble_axis])
             dims.insert(ensemble_axis, "realization")
