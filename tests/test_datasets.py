@@ -260,3 +260,21 @@ class TestDataset:
         assert len(ds.mask) == n_samples
         assert ds.dims == ["s", *event_dims, "v"]
         assert ds.coords.keys() == coords.keys()
+
+    @pytest.mark.parametrize(
+        "batch_dims",
+        [
+            ("forecast_reference_time", "t", "station"),
+            ("forecast_reference_time", "station"),
+        ],
+        ids=lambda x: repr(x),
+    )
+    def test_dataset_from_predictions(self, dataset, batch_dims):
+        n_samples = 3
+        ds = dataset.stack(batch_dims)
+        predictions = np.random.randn(n_samples, *ds.y.shape)
+        ds_pred = ds.dataset_from_predictions(predictions, ensemble_axis=0)
+        assert isinstance(ds_pred, xr.Dataset)
+        assert ds_pred.dims["realization"] == n_samples
+        assert all([ds_pred.dims[c] == ds.coords[c].size for c in ds.coords])
+        assert list(ds_pred.data_vars) == ds.targets

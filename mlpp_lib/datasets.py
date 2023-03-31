@@ -474,21 +474,25 @@ class Dataset:
     def dataset_from_predictions(
         self, preds: np.ndarray, ensemble_axis=None
     ) -> xr.Dataset:
+        if not self._is_stacked:
+            raise ValueError("Dataset should be stacked first.")
         event_shape = [
             len(c) for dim, c in self.coords.items() if dim not in self.batch_dims
         ]
-        full_shape = [self.mask.shape[0], *event_shape, len(self.targets)]
+        full_shape = [self.x.shape[0], *event_shape, len(self.targets)]
         dims = list(self.dims)
         coords = self.coords | {"v": self.targets}
         if ensemble_axis is not None:
             full_shape.insert(ensemble_axis, preds.shape[ensemble_axis])
             dims.insert(ensemble_axis, "realization")
             coords = coords | {"realization": np.arange(preds.shape[ensemble_axis])}
-        out = np.full(full_shape, fill_value=np.nan)
-        # out[self.mask] = preds
-        out = xr.Variable(dims, out)
-        out[{"s": self.mask}] = preds
-        out = out.unstack(s={dim: len(coord) for dim, coord in self.coords.items()})
+        if self.mask is not None:
+            out = np.full(full_shape, fill_value=np.nan)
+            out = xr.Variable(dims, out)
+            out[{"s": self.mask}] = preds
+        else:
+            out = xr.Variable(dims, preds)
+        out = out.unstack(s={dim: len(self.coords[dim]) for dim in self.batch_dims})
         out = xr.DataArray(out, coords=coords)
         return out.to_dataset("v")
 
