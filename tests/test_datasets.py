@@ -272,6 +272,7 @@ class TestDataset:
     def test_dataset_from_predictions(self, dataset, batch_dims):
         n_samples = 3
         ds = dataset.stack(batch_dims)
+        ds = ds.drop_nans()
         predictions = np.random.randn(n_samples, *ds.y.shape)
         ds_pred = ds.dataset_from_predictions(predictions, ensemble_axis=0)
         assert isinstance(ds_pred, xr.Dataset)

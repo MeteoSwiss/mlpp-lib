@@ -421,13 +421,14 @@ class Dataset:
     def drop_nans(self):
         """Drop incomplete samples and return a new `Dataset` with a mask."""
         if not self._is_stacked:
-            raise ValueError("Dataset shoud be stacked before dropping samples.")
+            raise ValueError("Dataset should be stacked before dropping samples.")
 
         x, y, w = self._get_copies()
 
-        mask = da.any(da.isnan(da.from_array(x, name="x")), axis=-1)
+        event_axes = [self.dims.index(dim) for dim in self.dims if dim != "s"]
+        mask = da.any(da.isnan(da.from_array(x, name="x")), axis=event_axes)
         if y is not None:
-            mask = mask | da.any(da.isnan(da.from_array(y, name="y")), axis=-1)
+            mask = mask | da.any(da.isnan(da.from_array(y, name="y")), axis=event_axes)
         mask = (~mask).compute()
 
         x = x[mask]
