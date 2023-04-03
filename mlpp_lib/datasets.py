@@ -329,6 +329,30 @@ class Dataset:
             w = np.prod(w, axis=-1)
         return cls(x, dims, coords, features, targets, y=y, w=w)
 
+    def __getitem__(self, *idx) -> Self:
+        x = self.x[idx]
+        if self.y is not None:
+            y = self.y[idx]
+        else:
+            y = None
+        if self.w is not None:
+            w = self.w[idx]
+        else:
+            w = None
+
+        multi_index = self.get_multiindex()[idx]
+        multi_index = multi_index.to_series().to_xarray()
+        coords = {k: v for k, v in multi_index.coords.items()}
+        coords = self.coords | coords
+
+        ds = Dataset(x, self.dims, coords, self.features, self.targets, y=y, w=w)
+        del x, y, w, coords
+
+        if self._is_stacked:
+            ds.batch_dims = self.batch_dims
+
+        return ds
+
     def stack(self, batch_dims: Optional[Sequence[Hashable]] = None) -> Self:
         """Stack batch dimensions along the first axis"""
         x, y, w = self._as_variables()
@@ -468,9 +492,14 @@ class Dataset:
         return x, y, w
 
     def get_multiindex(self) -> pd.MultiIndex:
-        return pd.MultiIndex.from_product(
-            list(self.coords.values), names=list(self.coords.keys())
-        )
+        """Return MultiIndex object composed of all dimension coordinates."""
+        if self._is_stacked:
+            idx_list = [self.coords[k] for k in self.batch_dims]
+            names = self.batch_dims
+        else:
+            idx_list = list(self.coords.values())
+            names = list(self.coords.keys())
+        return pd.MultiIndex.from_product(idx_list, names=names)
 
     def dataset_from_predictions(
         self,
