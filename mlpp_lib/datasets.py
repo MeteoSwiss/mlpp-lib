@@ -42,8 +42,9 @@ class DataModule:
     standardizer: `Standardizer`, optional
         The object to standardize data, already fitted on the training data.
         Must be provided if `.setup("test")` is called.
-    sample_weighting: list of str or str, optional
-        Name(s) of the variable(s) used for weighting dataset samples.
+    sample_weighting: list of str or str or xr.Dataset, optional
+        Name(s) of the variable(s) used for weighting dataset samples or an xr.Dataset
+        containing the sample weights.
     thinning: mapping, optional
         Thinning factor as integer for a dimension.
     """
@@ -325,6 +326,7 @@ class Dataset:
         else:
             targets = None
         if w is not None:
+            w = w.fillna(1)
             w = w.to_array("v").transpose(..., "v").values
             w = np.prod(w, axis=-1)
         return cls(x, dims, coords, features, targets, y=y, w=w)
