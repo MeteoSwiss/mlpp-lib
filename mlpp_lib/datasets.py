@@ -315,7 +315,7 @@ class Dataset:
         x = x.compute()
         if "is_valid" in list(x._coord_names):
             x = x.where(x.coords["is_valid"])  # TODO: this can be optimized
-        dims, coords = cls._check_coords(x, y)
+        dims, coords = cls._get_dims_and_coords(x, y)
         dims.append("v")
         features = list(x.data_vars)
         x = x.to_array("v").transpose(..., "v").values
@@ -373,7 +373,7 @@ class Dataset:
             return ds
 
     @staticmethod
-    def _check_coords(
+    def _get_dims_and_coords(
         x: xr.Dataset or xr.DataArray, y: Optional[xr.Dataset or xr.DataArray] = None
     ):
         if y is None:
