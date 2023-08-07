@@ -37,7 +37,6 @@ def get_log_params(param_run: dict) -> dict:
     log_params["sample_weights_names"] = param_run.get("sample_weights")
     log_params["event_dims"] = param_run["batching"]["event_dims"]
     log_params["thinning"] = param_run.get("thinning")
-    log_params.update(param_run["filter"])
     log_params["model_name"] = list(param_run["model"])[0]
     log_params.update(param_run["model"][log_params["model_name"]])
     log_params["loss"] = param_run["loss"]
