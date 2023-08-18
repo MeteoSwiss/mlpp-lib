@@ -44,6 +44,7 @@ RUNS = [
         "optimizer": {"Adam": {"learning_rate": 0.1, "beta_1": 0.95}},
         "metrics": ["bias", "mean_absolute_error", {"MAEBusts": {"threshold": 0.5}}],
     },
+    #
     {
         "features": ["coe:x1"],
         "targets": ["obs:y1"],
@@ -67,6 +68,21 @@ RUNS = [
             {"ReduceLROnPlateau": {"patience": 1, "verbose": 1}},
             {"EnsembleMetrics": {"thresholds": [0, 1, 2]}},
         ],
+    },
+    # with multiscale CRPS loss
+    {
+        "features": ["coe:x1"],
+        "targets": ["obs:y1"],
+        "model": {
+            "fully_connected_network": {
+                "hidden_layers": [10],
+                "probabilistic_layer": "IndependentNormal",
+            }
+        },
+        "loss": {
+            "MultiScaleCRPSEnergy": {"scales": [1, 2], "threshold": 0, "n_samples": 5}
+        },
+        "metrics": ["bias"],
     },
 ]
 
