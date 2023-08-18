@@ -301,3 +301,27 @@ class TestDataset:
         assert ds_pred.dims["realization"] == n_samples
         assert all([ds_pred.dims[c] == ds.coords[c].size for c in ds.coords])
         assert list(ds_pred.data_vars) == targets
+
+    @pytest.mark.parametrize(
+        "batch_dims",
+        [
+            ("forecast_reference_time", "t", "station"),
+            ("forecast_reference_time", "station"),
+        ],
+        ids=lambda x: repr(x),
+    )
+    def test_dataset_from_predictions_only_x_subset(self, dataset_only_x, batch_dims):
+        n_samples = 3
+        targets = ["obs:y1", "obs:y2"]
+        ds = dataset_only_x.stack(batch_dims)
+        ds_batch = ds[slice(None, 5)]
+        predictions = np.random.randn(n_samples, *ds_batch.x.shape[:-1], len(targets))
+        ds_pred = ds_batch.dataset_from_predictions(
+            predictions, ensemble_axis=0, targets=targets
+        )
+        assert isinstance(ds_pred, xr.Dataset)
+        assert ds_pred.dims["realization"] == n_samples
+        assert all(
+            [ds_pred.dims[c] == ds_batch.coords[c].size for c in ds_batch.coords]
+        )
+        assert list(ds_pred) == targets
