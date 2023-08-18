@@ -38,6 +38,7 @@ class DataModule:
     group_samples: dict, optional
         Mapping of the form `{dim_name: group_size}` to indicate that the original order
         of the samples should be conserved for the `dim_name` dimension when stacking.
+        The dimension `dim_name` must be one of the batch dimensions in `batch_dims`.
         If `group_samples` is not None, NaNs are removed in blocks of size `group_size`.
     data_dir: string
         Path to the directory containing the raw data. Must be provided if features
