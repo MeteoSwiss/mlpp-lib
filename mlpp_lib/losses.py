@@ -151,6 +151,7 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
         self,
         y_true: Union[tf.Tensor, np.ndarray],
         y_pred: Union[tf.Tensor, np.ndarray, tfp.distributions.Distribution],
+        sample_weight=None,
     ) -> tf.Tensor:
         """
         Compute the loss.

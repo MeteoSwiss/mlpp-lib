@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 from typing import Hashable, Mapping, Optional, Sequence, Callable
+
 import dask.array as da
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 import xarray as xr
 from typing_extensions import Self
-import tensorflow as tf
 
 from .model_selection import DataSplitter
 from .standardizers import Standardizer
@@ -34,11 +35,15 @@ class DataModule:
         Names of the dimensions that will be stacked into batches.
     splitter: `DataSplitter`
         The object that handles the data partitioning.
+    group_samples: dict, optional
+        Mapping of the form `{dim_name: group_size}` to indicate that the original order
+        of the samples should be conserved for the `dim_name` dimension when stacking.
+        If `group_samples` is not None, NaNs are removed in blocks of size `group_size`.
     data_dir: string
         Path to the directory containing the raw data. Must be provided if features
         and targets are lists of names.
     filter: `DataFilter`, optional
-        The object that hanfles the data filtering.
+        The object that handles the data filtering.
     standardizer: `Standardizer`, optional
         The object to standardize data, already fitted on the training data.
         Must be provided if `.setup("test")` is called.
@@ -55,6 +60,7 @@ class DataModule:
         targets: Sequence[Hashable] or xr.Dataset,
         batch_dims: Sequence[Hashable],
         splitter: DataSplitter,
+        group_samples: Optional[dict[str:int]] = None,
         data_dir: Optional[str] = None,
         filter: Optional[DataFilter] = None,
         standardizer: Optional[Standardizer] = None,
@@ -67,6 +73,7 @@ class DataModule:
         self.targets = targets
         self.batch_dims = batch_dims
         self.splitter = splitter
+        self.group_samples = group_samples
         self.filter = filter
         self.standardizer = standardizer
         self.sample_weighting = (
@@ -167,26 +174,39 @@ class DataModule:
             self.test = tuple(self.standardizer.transform(self.test[0])) + self.test[1:]
 
     def as_datasets(self, stage=None):
+        batch_dims = self.batch_dims
+        if self.group_samples:
+            group_dim, group_size = list(self.group_samples.items())[0]
+            if group_dim not in batch_dims:
+                raise ValueError(
+                    f"The dimension {group_dim} used for grouping samples "
+                    f"must be one of the batch dimensions: {batch_dims}"
+                )
+            batch_dims.remove(group_dim)
+            batch_dims.insert(0, group_dim)
+        else:
+            group_size = 1
+
         LOGGER.info("Dask is computing...")
         if stage == "fit" or stage is None:
             self.train = (
                 Dataset.from_xarray_datasets(*self.train)
-                .stack(self.batch_dims)
-                .drop_nans()
+                .stack(batch_dims)
+                .drop_nans(group_size)
             )
 
             self.val = (
                 Dataset.from_xarray_datasets(*self.val)
-                .stack(self.batch_dims)
-                .drop_nans()
+                .stack(batch_dims)
+                .drop_nans(group_size)
             )
             LOGGER.info(f"Training dataset: {self.train}")
             LOGGER.info(f"Validation dataset: {self.val}")
         if stage == "test" or stage is None:
             self.test = (
                 Dataset.from_xarray_datasets(*self.test)
-                .stack(self.batch_dims)
-                .drop_nans()
+                .stack(batch_dims)
+                .drop_nans(group_size)
             )
             LOGGER.info(f"Test dataset: {self.test}")
 
@@ -331,7 +351,7 @@ class Dataset:
             w = np.prod(w, axis=-1)
         return cls(x, dims, coords, features, targets, y=y, w=w)
 
-    def stack(self, batch_dims: Optional[Sequence[Hashable]] = None) -> Self:
+    def stack(self, batch_dims: Sequence[Hashable]) -> Self:
         """Stack batch dimensions along the first axis"""
         x, y, w = self._as_variables()
         dims = ["s"] + [dim for dim in x.dims if dim not in batch_dims]
@@ -420,7 +440,7 @@ class Dataset:
         w = xr.Variable(self.dims[:-1], self.w) if self.w is not None else None
         return x, y, w
 
-    def drop_nans(self):
+    def drop_nans(self, group_size: int = 1):
         """Drop incomplete samples and return a new `Dataset` with a mask."""
         if not self._is_stacked:
             raise ValueError("Dataset should be stacked before dropping samples.")
@@ -432,6 +452,18 @@ class Dataset:
         if y is not None:
             mask = mask | da.any(da.isnan(da.from_array(y, name="y")), axis=event_axes)
         mask = (~mask).compute()
+
+        # with grouped samples, nans have to be removed in blocks:
+        # if one or more nans are found in a given block, the entire block is dropped
+        if group_size > 1:
+            mask_length = len(mask)
+            remainder = mask_length % group_size
+            pad_length = 0 if remainder == 0 else group_size - remainder
+            padded_mask = np.pad(
+                mask, (0, pad_length), mode="constant", constant_values=True
+            )
+            grouped_mask = np.amin(padded_mask.reshape(-1, group_size), axis=1)
+            mask = grouped_mask.repeat(group_size)[:mask_length]
 
         x = x[mask]
         y = y[mask] if y is not None else None
@@ -521,8 +553,8 @@ class Dataset:
         return out
 
 
-class DataLoader:
-    """A dataloader for mlpp
+class DataLoader(tf.keras.utils.Sequence):
+    """A dataloader for mlpp.
 
     Parameters
     ----------
@@ -532,13 +564,18 @@ class DataLoader:
         Size of each batch.
     shuffle: bool
         Enable or disable shuffling before each iteration.
+    block_size: int
+        Use to define the size of sample blocks, so that during shuffling indices within
+        each block stay in their original order, but the blocks themselves are shuffled.
+        Default value is 1, which is equivalent to a normal shuffling. This parameter
+        is ignored if `shuffle=False`.
 
 
     Example:
     >>> train_dataloader = DataLoader(
     ...    train_dataset,
-    ...    batch_size = 2056,
-    ...    shuffle = True,
+    ...    batch_size=2056,
+    ...    shuffle=True,
     ... )
     ... for x, y in train_dataloader:
     ...     pred = model(x)
@@ -550,11 +587,13 @@ class DataLoader:
         dataset: Dataset,
         batch_size: int,
         shuffle: bool = True,
+        block_size: int = 1,
     ):
 
         self.dataset = dataset
         self.batch_size = batch_size
         self.shuffle = shuffle
+        self.block_size = block_size
         self.num_samples = len(self.dataset.x)
         self.num_batches = self.num_samples // batch_size
         self._indices = tf.range(self.num_samples)
@@ -570,15 +609,42 @@ class DataLoader:
             raise IndexError
         start = index * self.batch_size
         end = index * self.batch_size + self.batch_size
-        return self.dataset.x[start:end], self.dataset.y[start:end]
+        output = [self.dataset.x[start:end], self.dataset.y[start:end]]
+        if self.dataset.w is not None:
+            output.append(self.dataset.w[start:end])
+        return tuple(output)
+
+    def on_epoch_end(self) -> None:
+        self._reset()
+
+    def _shuffle_indices(self):
+        """
+        Shuffle the batch indices, with the option to define blocks, so that indices within
+        each block stay in their original order, but the blocks themselves are shuffled.
+        """
+        if self.block_size == 1:
+            self._indices = tf.random.shuffle(self._indices, seed=self._seed)
+        num_blocks = self._indices.shape[0] // self.block_size
+        reshaped_indices = tf.reshape(
+            self._indices[: num_blocks * self.block_size], (num_blocks, self.block_size)
+        )
+        shuffled_blocks = tf.random.shuffle(reshaped_indices, seed=self._seed)
+        shuffled_indices = tf.reshape(shuffled_blocks, [-1])
+        # Append any remaining elements if the number of indices isn't a multiple of the block size
+        if shuffled_indices.shape[0] % self.block_size:
+            remainder = self._indices[num_blocks * self.block_size :]
+            shuffled_indices = tf.concat([shuffled_indices, remainder], axis=0)
+        self._indices = shuffled_indices
 
     def _reset(self):
         """Reset iterator and shuffles data if needed"""
         self.index = 0
         if self.shuffle:
-            self._indices = tf.random.shuffle(self._indices, seed=self._seed)
+            self._shuffle_indices()
             self.dataset.x = tf.gather(self.dataset.x, self._indices)
             self.dataset.y = tf.gather(self.dataset.y, self._indices)
+            if self.dataset.w is not None:
+                self.dataset.w = tf.gather(self.dataset.w, self._indices)
             self._seed += 1
 
     def _to_device(self, device):
@@ -586,6 +652,8 @@ class DataLoader:
         with tf.device(device):
             self.dataset.x = tf.constant(self.dataset.x)
             self.dataset.y = tf.constant(self.dataset.y)
+            if self.dataset.w is not None:
+                self.dataset.w = tf.constant(self.dataset.w)
 
 
 class DataFilter:
