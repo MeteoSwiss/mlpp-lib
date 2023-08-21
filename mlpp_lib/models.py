@@ -40,6 +40,30 @@ def _build_fcn_block(
     return x
 
 
+def _build_fcn_output(x, output_size, probabilistic_layer, out_bias_init):
+    # probabilistic prediction
+    if probabilistic_layer:
+        probabilistic_layer = globals()[probabilistic_layer]
+        n_params = probabilistic_layer.params_size(output_size)
+        if isinstance(out_bias_init, np.ndarray):
+            out_bias_init = np.hstack(
+                [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
+            )
+            out_bias_init = initializers.Constant(out_bias_init)
+
+        x = Dense(n_params, bias_initializer=out_bias_init, name="dist_params")(x)
+        outputs = probabilistic_layer(output_size, name="output")(x)
+
+    # deterministic prediction
+    else:
+        if isinstance(out_bias_init, np.ndarray):
+            out_bias_init = initializers.Constant(out_bias_init)
+
+        outputs = Dense(output_size, bias_initializer=out_bias_init, name="output")(x)
+
+    return outputs
+
+
 def fully_connected_network(
     input_shape: tuple[int],
     output_size: int,
@@ -104,31 +128,9 @@ def fully_connected_network(
             f"but output size is {output_size}"
         )
 
-    # build core blocks
     inputs = tf.keras.Input(shape=input_shape)
-    x = inputs
     x = _build_fcn_block(inputs, hidden_layers, activations, dropout, skip_connection)
-
-    # probabilistic prediction
-    if probabilistic_layer:
-        probabilistic_layer = globals()[probabilistic_layer]
-        n_params = probabilistic_layer.params_size(output_size)
-        if isinstance(out_bias_init, np.ndarray):
-            out_bias_init = np.hstack(
-                [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
-            )
-            out_bias_init = initializers.Constant(out_bias_init)
-
-        x = Dense(n_params, bias_initializer=out_bias_init, name="dist_params")(x)
-        outputs = probabilistic_layer(output_size, name="output")(x)
-
-    # deterministic prediction
-    else:
-        if isinstance(out_bias_init, np.ndarray):
-            out_bias_init = initializers.Constant(out_bias_init)
-
-        outputs = Dense(output_size, bias_initializer=out_bias_init, name="output")(x)
-
+    outputs = _build_fcn_output(x, output_size, probabilistic_layer, out_bias_init)
     model = Model(inputs=inputs, outputs=outputs)
 
     return model
@@ -145,7 +147,7 @@ def fully_connected_multibranch_network(
     skip_connection: bool = False,
 ) -> Model:
     """
-    Build a Fully Connected Neural Network.
+    Build a multi-branch Fully Connected Neural Network.
 
     Parameters
     ----------
@@ -199,8 +201,7 @@ def fully_connected_multibranch_network(
         )
 
     if probabilistic_layer:
-        probabilistic_layer = globals()[probabilistic_layer]
-        n_params = probabilistic_layer.params_size(output_size)
+        n_params = globals()[probabilistic_layer].params_size(output_size)
         n_branches = n_params
     else:
         n_branches = output_size
@@ -215,29 +216,9 @@ def fully_connected_multibranch_network(
         all_branch_outputs.append(x)
 
     concatenated_x = tf.keras.layers.Concatenate()(all_branch_outputs)
-
-    # probabilistic prediction
-    if probabilistic_layer:
-        if isinstance(out_bias_init, np.ndarray):
-            out_bias_init = np.hstack(
-                [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
-            )
-            out_bias_init = initializers.Constant(out_bias_init)
-
-        x = Dense(n_params, bias_initializer=out_bias_init, name="dist_params")(
-            concatenated_x
-        )
-        outputs = probabilistic_layer(output_size, name="output")(x)
-
-    # deterministic prediction
-    else:
-        if isinstance(out_bias_init, np.ndarray):
-            out_bias_init = initializers.Constant(out_bias_init)
-
-        outputs = Dense(output_size, bias_initializer=out_bias_init, name="output")(
-            concatenated_x
-        )
-
+    outputs = _build_fcn_output(
+        concatenated_x, output_size, probabilistic_layer, out_bias_init
+    )
     model = Model(inputs=inputs, outputs=outputs)
 
     return model
