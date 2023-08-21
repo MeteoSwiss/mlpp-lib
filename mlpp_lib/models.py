@@ -24,6 +24,22 @@ else:
     TCN_IMPORTED = True
 
 
+def _build_fcn_block(
+    inputs, hidden_layers, activations, dropout, skip_connection, idx=0
+):
+    x = inputs
+    for i, units in enumerate(hidden_layers):
+        x = Dense(units, activation=activations[i], name=f"dense_{idx}_{i}")(x)
+        if i < len(dropout) and 0.0 < dropout[i] < 1.0:
+            x = Dropout(dropout[i], name=f"dropout_{idx}_{i}")(x)
+
+    if skip_connection:
+        x = Dense(inputs.shape[1], name=f"skip_dense_{idx}")(x)
+        x = Add(name=f"skip_add_{idx}")([x, inputs])
+        x = Activation(activation=activations[-1], name=f"skip_activation_{idx}")(x)
+    return x
+
+
 def fully_connected_network(
     input_shape: tuple[int],
     output_size: int,
@@ -42,7 +58,7 @@ def fully_connected_network(
     input_shape: tuple[int]
         Shape of the input samples (not including batch size)
     output_size: int
-        Number of target predictands.
+        Number of target predictants.
     hidden_layers: list[int]
         List that is used to define the fully connected block. Each element creates
         a Dense layer with the corresponding units.
@@ -91,15 +107,7 @@ def fully_connected_network(
     # build core blocks
     inputs = tf.keras.Input(shape=input_shape)
     x = inputs
-    for i, units in enumerate(hidden_layers):
-        x = Dense(units, activation=activations[i], name=f"dense_{i}")(x)
-        if i < len(dropout) and 0.0 < dropout[i] < 1.0:
-            x = Dropout(dropout[i], name=f"dropout_{i}")(x)
-
-    if skip_connection:
-        x = Dense(input_shape[0])(x)
-        x = Add()([x, inputs])
-        x = Activation(activation=activations[-1])(x)
+    x = _build_fcn_block(inputs, hidden_layers, activations, dropout, skip_connection)
 
     # probabilistic prediction
     if probabilistic_layer:
@@ -126,6 +134,115 @@ def fully_connected_network(
     return model
 
 
+def fully_connected_multibranch_network(
+    input_shape: tuple[int],
+    output_size: int,
+    hidden_layers: list,
+    activations: Optional[Union[str, list[str]]] = "relu",
+    dropout: Optional[Union[float, list[float]]] = None,
+    out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
+    probabilistic_layer: Optional[str] = None,
+    skip_connection: bool = False,
+) -> Model:
+    """
+    Build a Fully Connected Neural Network.
+
+    Parameters
+    ----------
+    input_shape: tuple[int]
+        Shape of the input samples (not including batch size)
+    output_size: int
+        Number of target predictants.
+    hidden_layers: list[int]
+        List that is used to define the fully connected block. Each element creates
+        a Dense layer with the corresponding units.
+    activations: str or list[str]
+        (Optional) Activation function(s) for the Dense layer(s). See https://keras.io/api/layers/activations/#relu-function.
+        If a string is passed, the same activation is used for all layers. Default is `relu`.
+    dropout: float or list[float]
+        (Optional) Dropout rate for the optional dropout layers. If a `float` is passed,
+        dropout layers with the given rate are created after each Dense layer, except before the output layer.
+        Default is None.
+    out_bias_init: str or np.ndarray
+        (Optional) Specifies the initialization of the output layer bias. If a string is passed,
+        it must be a valid Keras built-in initializer (see https://keras.io/api/layers/initializers/).
+        If an array is passed, it must match the `output_size` argument.
+    probabilistic_layer: str
+        (Optional) Name of a probabilistic layer defined in `mlpp_lib.probabilistic_layers`, which is
+        used as output layer of the keras `Model`. Default is None.
+    skip_connection: bool
+        Include a skip connection to the MLP architecture. Default is False.
+
+    Return
+    ------
+    model: keras Functional model
+        The built (but not yet compiled) model.
+    """
+
+    if isinstance(dropout, list):
+        assert len(dropout) == len(hidden_layers)
+    elif isinstance(dropout, float):
+        dropout = [dropout] * (len(hidden_layers) - 1)
+    else:
+        dropout = []
+
+    if isinstance(activations, list):
+        assert len(activations) == len(hidden_layers)
+    elif isinstance(activations, str):
+        activations = [activations] * len(hidden_layers)
+
+    if isinstance(out_bias_init, np.ndarray):
+        out_bias_init_shape = out_bias_init.shape[-1]
+        assert out_bias_init.shape[-1] == output_size, (
+            f"Bias initialization array is shape {out_bias_init_shape}"
+            f"but output size is {output_size}"
+        )
+
+    if probabilistic_layer:
+        probabilistic_layer = globals()[probabilistic_layer]
+        n_params = probabilistic_layer.params_size(output_size)
+        n_branches = n_params
+    else:
+        n_branches = output_size
+
+    inputs = tf.keras.Input(shape=input_shape)
+    all_branch_outputs = []
+
+    for idx in range(n_branches):
+        x = _build_fcn_block(
+            inputs, hidden_layers, activations, dropout, skip_connection, idx
+        )
+        all_branch_outputs.append(x)
+
+    concatenated_x = tf.keras.layers.Concatenate()(all_branch_outputs)
+
+    # probabilistic prediction
+    if probabilistic_layer:
+        if isinstance(out_bias_init, np.ndarray):
+            out_bias_init = np.hstack(
+                [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
+            )
+            out_bias_init = initializers.Constant(out_bias_init)
+
+        x = Dense(n_params, bias_initializer=out_bias_init, name="dist_params")(
+            concatenated_x
+        )
+        outputs = probabilistic_layer(output_size, name="output")(x)
+
+    # deterministic prediction
+    else:
+        if isinstance(out_bias_init, np.ndarray):
+            out_bias_init = initializers.Constant(out_bias_init)
+
+        outputs = Dense(output_size, bias_initializer=out_bias_init, name="output")(
+            concatenated_x
+        )
+
+    model = Model(inputs=inputs, outputs=outputs)
+
+    return model
+
+
 def deep_cross_network(
     input_shape: tuple[int],
     output_size: int,
@@ -144,7 +261,7 @@ def deep_cross_network(
     input_shape: tuple[int]
         Shape of the input samples (not including batch size)
     output_size: int
-        Number of target predictands.
+        Number of target predictants.
     hidden_layers: list[int]
         List that is used to define the fully connected block. Each element creates
         a Dense layer with the corresponding units.
