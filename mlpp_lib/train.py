@@ -5,7 +5,7 @@ from typing import Optional
 import tensorflow as tf
 
 from mlpp_lib.callbacks import TimeHistory, EnsembleMetrics
-from mlpp_lib.datasets import DataModule
+from mlpp_lib.datasets import DataLoader, DataModule
 
 from mlpp_lib.utils import (
     get_callback,
@@ -85,16 +85,22 @@ def train(
     time_callback = TimeHistory()
     callbacks.append(time_callback)
 
+    train_dataloader = DataLoader(
+        datamodule.train,
+        batch_size=cfg.get("batch_size", 1024),
+        shuffle=cfg.get("shuffle", True),
+        block_size=list(datamodule.group_samples.values())[0]
+        if datamodule.group_samples is not None
+        else 1,
+    )
+
     LOGGER.info("Start training.")
     res = model.fit(
-        x=datamodule.train.x,
-        y=datamodule.train.y,
-        sample_weight=(datamodule.train.w,) if datamodule.train.w is not None else None,
+        train_dataloader,
         epochs=cfg.get("epochs", 1),
         validation_data=(datamodule.val.x, datamodule.val.y),
+        validation_batch_size=train_dataloader.batch_size,
         callbacks=callbacks,
-        shuffle=cfg.get("shuffle", True),
-        batch_size=cfg.get("batch_size", 1024),
         steps_per_epoch=cfg.get("steps_per_epoch", None),
         verbose=2,
     )
