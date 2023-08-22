@@ -85,13 +85,19 @@ def train(
     time_callback = TimeHistory()
     callbacks.append(time_callback)
 
+    batch_size = cfg.get("batch_size", 1024)
+    if datamodule.group_samples is not None:
+        block_size = list(datamodule.group_samples.values())[0]
+    else:
+        block_size = 1
+    # modify batch_size so that it becomes a multiple of block_size
+    batch_size = (batch_size // block_size) * block_size
+
     train_dataloader = DataLoader(
         datamodule.train,
-        batch_size=cfg.get("batch_size", 1024),
+        batch_size=batch_size,
         shuffle=cfg.get("shuffle", True),
-        block_size=list(datamodule.group_samples.values())[0]
-        if datamodule.group_samples is not None
-        else 1,
+        block_size=block_size,
     )
 
     LOGGER.info("Start training.")
