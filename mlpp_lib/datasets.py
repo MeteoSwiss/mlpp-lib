@@ -618,13 +618,14 @@ class DataLoader(tf.keras.utils.Sequence):
     def on_epoch_end(self) -> None:
         self._reset()
 
-    def _shuffle_indices(self):
+    def _shuffle_indices(self) -> None:
         """
         Shuffle the batch indices, with the option to define blocks, so that indices within
         each block stay in their original order, but the blocks themselves are shuffled.
         """
         if self.block_size == 1:
             self._indices = tf.random.shuffle(self._indices, seed=self._seed)
+            return
         num_blocks = self._indices.shape[0] // self.block_size
         reshaped_indices = tf.reshape(
             self._indices[: num_blocks * self.block_size], (num_blocks, self.block_size)
@@ -637,7 +638,7 @@ class DataLoader(tf.keras.utils.Sequence):
             shuffled_indices = tf.concat([shuffled_indices, remainder], axis=0)
         self._indices = shuffled_indices
 
-    def _reset(self):
+    def _reset(self) -> None:
         """Reset iterator and shuffles data if needed"""
         self.index = 0
         if self.shuffle:
@@ -648,7 +649,7 @@ class DataLoader(tf.keras.utils.Sequence):
                 self.dataset.w = tf.gather(self.dataset.w, self._indices)
             self._seed += 1
 
-    def _to_device(self, device):
+    def _to_device(self, device) -> None:
         """Transfer data to a device"""
         with tf.device(device):
             self.dataset.x = tf.constant(self.dataset.x)
@@ -680,7 +681,9 @@ class DataFilter:
         self.qa_mask = xr.load_dataarray(qa_filter) if qa_filter is not None else None
         self.x_filter = x_filter
 
-    def apply(self, x: xr.Dataset, y: xr.Dataset, w: Optional[xr.Dataset] = None):
+    def apply(
+        self, x: xr.Dataset, y: xr.Dataset, w: Optional[xr.Dataset] = None
+    ) -> tuple[xr.Dataset, ...]:
         """Apply the provided filters to the input datasets."""
 
         if self.qa_mask is not None:
