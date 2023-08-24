@@ -79,6 +79,7 @@ RUNS = [
                 "probabilistic_layer": "IndependentNormal",
             }
         },
+        "group_samples": {"t": 2},
         "loss": {
             "MultiScaleCRPSEnergy": {"scales": [1, 2], "threshold": 0, "n_samples": 5}
         },
@@ -137,6 +138,7 @@ def test_train_fromds(features_dataset, targets_dataset, cfg):
         targets_dataset[cfg["targets"]],
         batch_dims,
         splitter,
+        group_samples=cfg.get("group_samples"),
     )
     results = train.train(cfg, datamodule)
 
