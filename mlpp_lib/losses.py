@@ -217,7 +217,7 @@ class WeightedCRPSEnergy(tf.keras.losses.Loss):
 
             if scale is not None and scale > 1:
                 # Reshape the tensors and compute the block maxima
-                reshaped_true = tf.reshape(v_obs, (-1, scale))
+                reshaped_true = tf.reshape(v_obs, (-1, scale, 1))
                 v_obs = tf.reduce_max(reshaped_true, axis=1)
 
                 reshaped_pred = tf.reshape(samples_1, (n_samples, -1, scale, 1))
