@@ -99,13 +99,18 @@ def train(
         shuffle=cfg.get("shuffle", True),
         block_size=block_size,
     )
+    val_dataloader = DataLoader(
+        datamodule.val,
+        batch_size=batch_size,
+        shuffle=False,
+        block_size=block_size,
+    )
 
     LOGGER.info("Start training.")
     res = model.fit(
         train_dataloader,
         epochs=cfg.get("epochs", 1),
-        validation_data=(datamodule.val.x, datamodule.val.y),
-        validation_batch_size=train_dataloader.batch_size,
+        validation_data=val_dataloader,
         callbacks=callbacks,
         steps_per_epoch=cfg.get("steps_per_epoch", None),
         verbose=2,
