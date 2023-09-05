@@ -136,3 +136,51 @@ def equidistant_resampling(
         )
 
     return output_dataset
+
+
+def compute_ecc(
+    input_dataset: xr.Dataset,
+    ecc_ranks: xr.DataArray,
+    loop_dim: Optional[str] = None,
+    b: float = 0.0,
+) -> xr.Dataset:
+    """Apply ECC
+
+    Parameters
+    ----------
+    input_dataset: xr.Dataset
+        Input dataset with dimension 'realization'.
+    ecc_ranks: xr.DataArray
+    loop_dim: str, optional
+        If specified, sorting is done while looping along the given dimension
+        to limit memory.
+    b: float, optional
+        b parameter in the plotting positions formula. The default b=0 is equivalent to
+        the Weibull method.
+
+    Returns
+    -------
+    output_dataset: xr.Dataset
+    """
+    align_dims = [dim for dim in input_dataset.dims.keys() if dim in ecc_ranks.dims]
+    align_dims.remove("realization")
+    ecc_ranks = ecc_ranks.sel({dim: input_dataset[dim] for dim in align_dims})
+
+    # apply Weibull plotting positions to template ranks
+    ens_size_template = ecc_ranks.realization.size
+    ecc_ranks = (ecc_ranks + b) / (ens_size_template + 1 - 2 * b)
+
+    # sort predictions
+    output = xr.Dataset()
+    for name, data_array in input_dataset.data_vars.items():
+        if "direction" in name:
+            circular = True
+        else:
+            circular = False
+        da_sorted = sortby(
+            data_array, dim="realization", loop_dim=loop_dim, circular=circular, b=b
+        )
+        # reorder predictions accordingly
+        output[name] = da_sorted.sel(rank=ecc_ranks, method="nearest").drop("rank")
+
+    return output
