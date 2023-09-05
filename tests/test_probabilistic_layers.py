@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 import tensorflow as tf
 import tensorflow_probability as tfp
-from keras.engine.functional import Functional
 
 from mlpp_lib import models
 from mlpp_lib import probabilistic_layers
@@ -54,7 +53,7 @@ def test_probabilistic_model(layer):
     )
     encoder.summary()
     encoder.compile()
-    assert isinstance(encoder, Functional)
+    assert isinstance(encoder, tf.keras.Sequential)
 
 
 @pytest.mark.parametrize("layer", LAYERS)

@@ -22,7 +22,7 @@ from tensorflow_probability.python.layers import (
 )
 
 
-@tf.keras.utils.register_keras_serializable()
+@tf.keras.saving.register_keras_serializable()
 class IndependentBeta(tfpl.DistributionLambda):
     """An independent 4-parameter Beta Keras layer."""
 
@@ -135,7 +135,7 @@ class IndependentBeta(tfpl.DistributionLambda):
         return super(IndependentBeta, self).output[0]
 
 
-@tf.keras.utils.register_keras_serializable()
+@tf.keras.saving.register_keras_serializable()
 class IndependentGamma(tfpl.DistributionLambda):
     """An independent gamma Keras layer."""
 
@@ -245,7 +245,7 @@ class IndependentGamma(tfpl.DistributionLambda):
         return super(IndependentGamma, self).output[0]
 
 
-@tf.keras.utils.register_keras_serializable()
+@tf.keras.saving.register_keras_serializable()
 class IndependentLogNormal(tfpl.DistributionLambda):
     """An independent LogNormal Keras layer."""
 
@@ -353,7 +353,7 @@ class IndependentLogNormal(tfpl.DistributionLambda):
         return super(IndependentLogNormal, self).output[0]
 
 
-@tf.keras.utils.register_keras_serializable()
+@tf.keras.saving.register_keras_serializable()
 class IndependentTruncatedNormal(tfpl.DistributionLambda):
     """An independent TruncatedNormal Keras layer."""
 
@@ -463,7 +463,7 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
         return super(IndependentTruncatedNormal, self).output[0]
 
 
-@tf.keras.utils.register_keras_serializable()
+@tf.keras.saving.register_keras_serializable()
 class IndependentWeibull(tfpl.DistributionLambda):
     """An independent Weibull Keras layer."""
 
@@ -574,7 +574,7 @@ class IndependentWeibull(tfpl.DistributionLambda):
         return super(IndependentWeibull, self).output[0]
 
 
-@tf.keras.utils.register_keras_serializable()
+@tf.keras.saving.register_keras_serializable()
 class MultivariateNormalDiag(tfpl.DistributionLambda):
     """A `d`-variate normal Keras layer from `2* d` params,
     with a diagonal scale matrix.
@@ -670,7 +670,7 @@ class MultivariateNormalDiag(tfpl.DistributionLambda):
         return super(MultivariateNormalDiag, self).output[0]
 
 
-@tf.keras.utils.register_keras_serializable()
+@tf.keras.saving.register_keras_serializable()
 class MultivariateNormalTriL(tfpl.MultivariateNormalTriL):
     def __init__(
         self,

@@ -80,7 +80,7 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
         "-c",
         "import tensorflow as tf;"
         f"from mlpp_lib.probabilistic_layers import {prob_layer};"
-        f"tf.keras.models.load_model('{tmp_path}', compile=False)",
+        f"tf.keras.saving.load_model('{tmp_path}', compile=False)",
     ]
     completed_process = subprocess.run(args, shell=True)
     assert completed_process.returncode == 0, "failed to reload model"
@@ -92,16 +92,15 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
         "import tensorflow as tf;"
         f"from mlpp_lib.losses import {loss};"
         f"from mlpp_lib.probabilistic_layers import {prob_layer};"
-        f"tf.keras.models.load_model('{tmp_path}', custom_objects={{'{loss}':{loss}}})",
+        f"tf.keras.saving.load_model('{tmp_path}', custom_objects={{'{loss}':{loss}}})",
     ]
     completed_process = subprocess.run(args, shell=True)
     assert completed_process.returncode == 0, "failed to reload model"
 
-    # loading here is not a good test because the custom layers are still somehow in memory
-    # we'll do it anyway to test that the behavior doesn't change after loading
     input_arr = tf.random.uniform((1, 5))
     outputs = model(input_arr).mean()
     del model
-    model = tf.keras.models.load_model(tmp_path, compile=False)
+    tf.keras.backend.clear_session()
+    model = tf.keras.saving.load_model(tmp_path, compile=False)
     assert isinstance(model, Functional)
     np.testing.assert_allclose(model(input_arr).mean(), outputs)
