@@ -1,0 +1,32 @@
+# This workflow will upload a Python Package using Twine when a release is created
+# For more information see: https://help.github.com/en/actions/language-and-framework-guides/using-python-with-github-actions#publishing-to-package-registries
+
+name: Build and package library
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Setup poetry
+        uses: abatilo/actions-poetry@v2
+      - name: Install the project dependencies
+        run: |
+          poetry install
+          poetry add twine
+      - name: package library
+        run: poetry build
+      # - name: Publish to PyPI
+      #   env:
+      #     PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+      #   run: |
+      #     python setup.py sdist bdist_wheel
+      #     twine upload dist/* --verbose --skip-existing -u __token__ -p "$PYPI_TOKEN"
