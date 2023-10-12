@@ -24,9 +24,9 @@ jobs:
           poetry add twine
       - name: package library
         run: poetry build
-      # - name: Publish to PyPI
-      #   env:
-      #     PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-      #   run: |
-      #     python setup.py sdist bdist_wheel
-      #     twine upload dist/* --verbose --skip-existing -u __token__ -p "$PYPI_TOKEN"
+      - name: Publish to PyPI
+        env:
+          PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          poetry config pypi-token.pypi "$PYPI_TOKEN"
+          poetry publish
