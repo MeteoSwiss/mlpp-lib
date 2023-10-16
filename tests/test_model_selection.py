@@ -91,6 +91,25 @@ class TestDataSplitter:
             features_dataset, targets_dataset, partition="test"
         )
 
+    @pytest.mark.parametrize(
+        "options", scenarios, ids=ValidDataSplitterOptions.pytest_id
+    )
+    def test_serialization(self, options, features_dataset, targets_dataset, tmp_path):
+        fn = f"{tmp_path}/splitter.json"
+        splitter = ms.DataSplitter(
+            options.time_split,
+            options.station_split,
+            options.time_split_method,
+            options.station_split_method,
+        )
+        splitter.get_partition(features_dataset, targets_dataset, partition="train")
+        splitter.save_json(fn)
+        new_splitter = ms.DataSplitter.from_json(fn)
+        for split_key, split_dict in splitter.partitions.items():
+            for dim, value in split_dict.items():
+                new_value = new_splitter.partitions[split_key][dim]
+                np.testing.assert_array_equal(value, new_value)
+
     # test invalid arguments
     def test_time_split_method_required(self):
         time_split = {"train": 0.6, "val": 0.2, "test": 0.2}
