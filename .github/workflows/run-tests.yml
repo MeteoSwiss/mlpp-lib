@@ -1,6 +1,6 @@
-# This workflow will install the Python package, run tests
+# This workflow will install the Python package and run the tests
 
-name: Run tests
+name: Test mlpp-lib
 
 on:
   push:
