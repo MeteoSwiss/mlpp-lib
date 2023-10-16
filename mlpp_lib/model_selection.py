@@ -295,7 +295,14 @@ class DataSplitter:
         if not hasattr(self, "partitions"):
             self._time_partitioning()
             self._station_partitioning()
-        return deepcopy(self.partitions)
+        partitions = deepcopy(self.partitions)
+        for split_key, split_dict in partitions.items():
+            for dim, value in split_dict.items():
+                if isinstance(value, slice):
+                    partitions[split_key][dim] = [str(value.start), str(value.stop)]
+                elif hasattr(value, "tolist"):
+                    partitions[split_key][dim] = value.astype(str).tolist()
+        return partitions
 
     @classmethod
     def from_json(cls, in_fn: str) -> Self:
@@ -305,12 +312,6 @@ class DataSplitter:
 
     def save_json(self, out_fn: str) -> None:
         out_dict = self.to_dict()
-        for split_key, split_dict in out_dict.items():
-            for dim, value in split_dict.items():
-                if isinstance(value, slice):
-                    out_dict[split_key][dim] = [str(value.start), str(value.stop)]
-                elif hasattr(value, "tolist"):
-                    out_dict[split_key][dim] = value.astype(str).tolist()
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
 
