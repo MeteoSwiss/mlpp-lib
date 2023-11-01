@@ -32,7 +32,6 @@ class MonteCarloDropout(Dropout):
 def _build_fcn_block(
     inputs,
     hidden_layers,
-    batchnorm,
     activations,
     dropout,
     mc_dropout,
