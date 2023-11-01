@@ -1,8 +1,9 @@
 import json
 import logging
 import random
+from copy import deepcopy
 from itertools import combinations
-from typing import Any, Hashable, Mapping, Optional, Sequence, Type
+from typing import Any, Mapping, Optional, Sequence, Type
 
 import numpy as np
 import pandas as pd
@@ -113,29 +114,6 @@ class DataSplitter:
         self.seed = seed
         self.time_dim_name = time_dim_name
 
-    @classmethod
-    def from_json(cls, file: str) -> Self:
-        """Instantiate the DataSplitter from a json file with previously computed splits."""
-
-        with open(file, "r") as f:
-            splits = json.load(f)
-
-        time_split = {k: v["forecast_reference_time"] for k, v in splits.items()}
-        station_split = {k: v["station"] for k, v in splits.items()}
-        splitter = cls(time_split, station_split)
-        splitter._time_defined = True
-        splitter._station_defined = True
-        splitter._time_partitioning()
-        splitter._station_partitioning()
-        return splitter
-
-    def to_json(self, file: str):
-        if not hasattr(self, "partitions"):
-            self._time_partitioning()
-            self._station_partitioning()
-        with open(file, "w") as f:
-            json.dump(self.partitions, f, indent=4)
-
     def get_partition(
         self, *args: xr.Dataset, partition=None, thinning: Optional[Mapping] = None
     ) -> tuple[xr.Dataset, ...]:
@@ -215,6 +193,7 @@ class DataSplitter:
         # assign indexers
         for partition in self.partition_names:
             idx = self._time_indexers[partition]
+            idx = pd.to_datetime(idx)  # always convert to pandas datetime indices
             idx = slice(*idx) if len(idx) == 2 else idx
             indexer = {self.time_dim_name: idx}
             if not hasattr(self, "partitions"):
@@ -298,6 +277,43 @@ class DataSplitter:
 
         self.station_split = station_split
         self.station_split_method = station_split_method
+
+    @classmethod
+    def from_dict(cls, splits: dict) -> Self:
+        time_split = {k: v["forecast_reference_time"] for k, v in splits.items()}
+        station_split = {k: v["station"] for k, v in splits.items()}
+        splitter = cls(time_split, station_split)
+        splitter._time_defined = True
+        splitter._station_defined = True
+        splitter._time_partitioning()
+        splitter._station_partitioning()
+        return splitter
+
+    def to_dict(self):
+        if not hasattr(self, "time_index") or not hasattr(self, "station_index"):
+            raise ValueError("DataSplitter wasn't applied on data yet")
+        if not hasattr(self, "partitions"):
+            self._time_partitioning()
+            self._station_partitioning()
+        partitions = deepcopy(self.partitions)
+        for split_key, split_dict in partitions.items():
+            for dim, value in split_dict.items():
+                if isinstance(value, slice):
+                    partitions[split_key][dim] = [str(value.start), str(value.stop)]
+                elif hasattr(value, "tolist"):
+                    partitions[split_key][dim] = value.astype(str).tolist()
+        return partitions
+
+    @classmethod
+    def from_json(cls, in_fn: str) -> Self:
+        with open(in_fn, "r") as f:
+            in_dict = json.load(f)
+        return cls.from_dict(in_dict)
+
+    def save_json(self, out_fn: str) -> None:
+        out_dict = self.to_dict()
+        with open(out_fn, "w") as outfile:
+            json.dump(out_dict, outfile, indent=4)
 
 
 def sequential_split(

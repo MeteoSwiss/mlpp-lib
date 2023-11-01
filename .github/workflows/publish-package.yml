@@ -1,0 +1,30 @@
+# This workflow will upload a Python Package when a release is created
+
+name: Build and publish library
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Setup poetry
+        uses: abatilo/actions-poetry@v2
+      - name: Install the project dependencies
+        run: |
+          poetry install
+      - name: package library
+        run: poetry build
+      - name: Publish to PyPI
+        env:
+          PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          poetry config pypi-token.pypi "$PYPI_TOKEN"
+          poetry publish
