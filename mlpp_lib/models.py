@@ -24,14 +24,29 @@ else:
     TCN_IMPORTED = True
 
 
+class MonteCarloDropout(Dropout):
+    def call(self, inputs):
+        return super().call(inputs, training=True)
+
+
 def _build_fcn_block(
-    inputs, hidden_layers, activations, dropout, skip_connection, idx=0
+    inputs,
+    hidden_layers,
+    batchnorm,
+    activations,
+    dropout,
+    mc_dropout,
+    skip_connection,
+    idx=0,
 ):
     x = inputs
     for i, units in enumerate(hidden_layers):
         x = Dense(units, activation=activations[i], name=f"dense_{idx}_{i}")(x)
         if i < len(dropout) and 0.0 < dropout[i] < 1.0:
-            x = Dropout(dropout[i], name=f"dropout_{idx}_{i}")(x)
+            if mc_dropout:
+                x = MonteCarloDropout(dropout[i], name=f"mc_dropout_{idx}_{i}")(x)
+            else:
+                x = Dropout(dropout[i], name=f"dropout_{idx}_{i}")(x)
 
     if skip_connection:
         x = Dense(inputs.shape[1], name=f"skip_dense_{idx}")(x)
@@ -70,6 +85,7 @@ def fully_connected_network(
     hidden_layers: list,
     activations: Optional[Union[str, list[str]]] = "relu",
     dropout: Optional[Union[float, list[float]]] = None,
+    mc_dropout: bool = False,
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
     skip_connection: bool = False,
@@ -93,6 +109,9 @@ def fully_connected_network(
         (Optional) Dropout rate for the optional dropout layers. If a `float` is passed,
         dropout layers with the given rate are created after each Dense layer, except before the output layer.
         Default is None.
+    mc_dropout: bool
+        Enable Monte Carlo dropout during inference. It has no effect during training.
+        It has no effect if `dropout=None`. Default is false.
     out_bias_init: str or np.ndarray
         (Optional) Specifies the initialization of the output layer bias. If a string is passed,
         it must be a valid Keras built-in initializer (see https://keras.io/api/layers/initializers/).
@@ -129,7 +148,14 @@ def fully_connected_network(
         )
 
     inputs = tf.keras.Input(shape=input_shape)
-    x = _build_fcn_block(inputs, hidden_layers, activations, dropout, skip_connection)
+    x = _build_fcn_block(
+        inputs,
+        hidden_layers,
+        activations,
+        dropout,
+        mc_dropout,
+        skip_connection,
+    )
     outputs = _build_fcn_output(x, output_size, probabilistic_layer, out_bias_init)
     model = Model(inputs=inputs, outputs=outputs)
 
@@ -142,6 +168,7 @@ def fully_connected_multibranch_network(
     hidden_layers: list,
     activations: Optional[Union[str, list[str]]] = "relu",
     dropout: Optional[Union[float, list[float]]] = None,
+    mc_dropout: bool = False,
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
     skip_connection: bool = False,
@@ -165,6 +192,9 @@ def fully_connected_multibranch_network(
         (Optional) Dropout rate for the optional dropout layers. If a `float` is passed,
         dropout layers with the given rate are created after each Dense layer, except before the output layer.
         Default is None.
+        mc_dropout: bool
+        Enable Monte Carlo dropout during inference. It has no effect during training.
+        It has no effect if `dropout=None`. Default is false.
     out_bias_init: str or np.ndarray
         (Optional) Specifies the initialization of the output layer bias. If a string is passed,
         it must be a valid Keras built-in initializer (see https://keras.io/api/layers/initializers/).
@@ -211,7 +241,13 @@ def fully_connected_multibranch_network(
 
     for idx in range(n_branches):
         x = _build_fcn_block(
-            inputs, hidden_layers, activations, dropout, skip_connection, idx
+            inputs,
+            hidden_layers,
+            activations,
+            dropout,
+            mc_dropout,
+            skip_connection,
+            idx,
         )
         all_branch_outputs.append(x)
 
@@ -230,6 +266,7 @@ def deep_cross_network(
     hidden_layers: list,
     activations: Optional[Union[str, list[str]]] = "relu",
     dropout: Optional[Union[float, list[float]]] = None,
+    mc_dropout: bool = False,
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
     skip_connection: bool = False,
@@ -253,6 +290,9 @@ def deep_cross_network(
         (Optional) Dropout rate for the optional dropout layers. If a `float` is passed,
         dropout layers with the given rate are created after each Dense layer, except before the output layer.
         Default is None.
+    mc_dropout: bool
+        Enable Monte Carlo dropout during inference. It has no effect during training.
+        It has no effect if `dropout=None`. Default is false.
     out_bias_init: str or np.ndarray
         (Optional) Specifies the initialization of the output layer bias. If a string is passed,
         it must be a valid Keras built-in initializer (see https://keras.io/api/layers/initializers/).
@@ -304,7 +344,10 @@ def deep_cross_network(
         deep = BatchNormalization()(deep)
         deep = Activation(activations[i])(deep)
         if i < len(dropout) and 0.0 < dropout[i] < 1.0:
-            deep = Dropout(dropout[i])(deep)
+            if mc_dropout:
+                deep = MonteCarloDropout(dropout[i])(deep)
+            else:
+                deep = Dropout(dropout[i])(deep)
     # deep = tf.keras.Model(inputs=inputs, outputs=deep, name="deepblock")
 
     # merge

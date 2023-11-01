@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import tensorflow as tf
 from keras.engine.functional import Functional
+from numpy.testing import assert_array_equal
 
 from mlpp_lib import models
 
@@ -14,6 +15,7 @@ FCN_OPTIONS = dict(
     hidden_layers=[[8, 8]],
     activations=["relu", ["relu", "elu"]],
     dropout=[None, 0.1, [0.1, 0.0]],
+    mc_dropout=[True, False],
     out_bias_init=["zeros", np.array([0.2]), np.array([0.2, 2.1])],
     probabilistic_layer=[None, "IndependentNormal", "MultivariateNormalTriL"],
     skip_connection=[False, True],
@@ -30,6 +32,21 @@ DCN_SCENARIOS = [
     dict(zip(list(FCN_OPTIONS.keys()), x))
     for x in itertools.product(*FCN_OPTIONS.values())
 ]
+
+
+def _test_prediction(model, scenario_kwargs, dummy_input, output_size):
+    pred = model(dummy_input)
+    assert pred.shape == (32, output_size)
+    pred2 = model(dummy_input)
+    if scenario_kwargs["probabilistic_layer"] is not None:
+        pred = pred.mean()
+        pred2 = pred2.mean()
+
+    if scenario_kwargs["dropout"] is not None and scenario_kwargs["mc_dropout"]:
+        with pytest.raises(AssertionError):
+            assert_array_equal(pred, pred2)
+    else:
+        assert_array_equal(pred, pred2)
 
 
 @pytest.mark.parametrize("scenario_kwargs", FCN_SCENARIOS)
@@ -61,7 +78,7 @@ def test_fully_connected_network(scenario_kwargs):
         )
         assert isinstance(model, Functional)
 
-    assert model(dummy_input).shape == (32, output_size)
+    _test_prediction(model, scenario_kwargs, dummy_input, output_size)
 
 
 @pytest.mark.parametrize("scenario_kwargs", FCN_SCENARIOS)
@@ -93,7 +110,7 @@ def test_fully_connected_multibranch_network(scenario_kwargs):
         )
         assert isinstance(model, Functional)
 
-    assert model(dummy_input).shape == (32, output_size)
+    _test_prediction(model, scenario_kwargs, dummy_input, output_size)
 
 
 @pytest.mark.parametrize("scenario_kwargs", DCN_SCENARIOS)
@@ -118,4 +135,4 @@ def test_deep_cross_network(scenario_kwargs):
         model = models.deep_cross_network(input_shape, output_size, **scenario_kwargs)
         assert isinstance(model, Functional)
 
-    assert model(dummy_input).shape == (32, output_size)
+    _test_prediction(model, scenario_kwargs, dummy_input, output_size)
