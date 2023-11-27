@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mlpp-lib"
-version = "0.4.2"
+version = "0.5.0"
 description = "Collection of methods for ML-based postprocessing of weather forecasts."
 authors = ["Daniele Nerini <daniele.nerini@meteoswiss.ch>"]
 include = ["LICENSE", "README.md"]
@@ -24,10 +24,11 @@ tensorflow = ["tensorflow"]
 tensorflow-cpu = ["tensorflow-cpu"]
 extended = ["zarr", "numba", "tensorflow"]
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.group.dev.dependencies]
 tensorflow = "~2.12.1"
 pytest = "^7"
 black = "^22.1.0"
+mlflow = "^2.8.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.8"]
