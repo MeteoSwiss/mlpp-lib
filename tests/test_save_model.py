@@ -9,7 +9,7 @@ from keras.engine.functional import Functional
 from mlpp_lib import models
 from mlpp_lib import losses, metrics
 from mlpp_lib import probabilistic_layers
-from mlpp_lib.utils import get_loss, get_metric
+from mlpp_lib.utils import get_loss, get_metric, get_optimizer
 
 
 def _belongs_here(obj, module):
@@ -63,7 +63,11 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
         save_traces = False
 
     model = models.fully_connected_network(
-        (5,), 2, hidden_layers=[3], probabilistic_layer=prob_layer
+        (5,),
+        2,
+        hidden_layers=[3],
+        probabilistic_layer=prob_layer,
+        mc_dropout=True,
     )
     assert isinstance(model.from_config(model.get_config()), Functional)
     loss = get_loss(loss)
@@ -105,3 +109,31 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
     model = tf.keras.models.load_model(tmp_path, compile=False)
     assert isinstance(model, Functional)
     np.testing.assert_allclose(model(input_arr).mean(), outputs)
+
+
+def test_save_model_mlflow(tmp_path):
+    """Test model save/load"""
+    pytest.importorskip("mlflow")
+
+    import mlflow
+
+    mlflow_uri = f"file://{tmp_path.absolute()}/mlruns"
+    mlflow.set_tracking_uri(mlflow_uri)
+
+    model = models.fully_connected_network(
+        (5,), 2, hidden_layers=[3, 3], dropout=0.5, mc_dropout=True
+    )
+    optimizer = get_optimizer("Adam")
+    model.compile(optimizer=optimizer, loss=None, metrics=None)
+    custom_objects = tf.keras.layers.serialize(model)
+
+    model_info = mlflow.keras.log_model(
+        model,
+        "model_save",
+        custom_objects=custom_objects,
+        save_format="h5",
+    )
+
+    tf.keras.backend.clear_session()
+    model = mlflow.keras.load_model(model_info.model_uri)
+    assert isinstance(model, Functional)

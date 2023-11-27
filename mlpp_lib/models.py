@@ -1,6 +1,8 @@
-import tensorflow as tf
+import logging
 from typing import Optional, Union, Any
 
+import numpy as np
+import tensorflow as tf
 from tensorflow.keras.layers import (
     Add,
     Dense,
@@ -8,13 +10,10 @@ from tensorflow.keras.layers import (
     BatchNormalization,
     Activation,
 )
-
 from tensorflow.keras import Model, initializers
 
 from mlpp_lib.physical_layers import *
 from mlpp_lib.probabilistic_layers import *
-
-import numpy as np
 
 try:
     import tcn  # type: ignore
@@ -24,6 +23,10 @@ else:
     TCN_IMPORTED = True
 
 
+_LOGGER = logging.getLogger(__name__)
+
+
+@tf.keras.utils.register_keras_serializable()
 class MonteCarloDropout(Dropout):
     def call(self, inputs):
         return super().call(inputs, training=True)
@@ -39,6 +42,9 @@ def _build_fcn_block(
     skip_connection,
     idx=0,
 ):
+    if mc_dropout and dropout is None:
+        _LOGGER.warning("dropout=None, hence I will ignore mc_dropout=True")
+
     x = inputs
     for i, units in enumerate(hidden_layers):
         x = Dense(units, name=f"dense_{idx}_{i}")(x)
