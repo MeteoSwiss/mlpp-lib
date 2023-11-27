@@ -26,7 +26,7 @@ else:
 _LOGGER = logging.getLogger(__name__)
 
 
-@tf.keras.utils.register_keras_serializable()
+@tf.keras.saving.register_keras_serializable()
 class MonteCarloDropout(Dropout):
     def call(self, inputs):
         return super().call(inputs, training=True)
