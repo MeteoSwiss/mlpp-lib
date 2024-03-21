@@ -201,3 +201,50 @@ def test_multivariate_loss(metric, scaling, weights):
     result = loss(obs, fct).numpy()
 
     assert isinstance(result, np.float32)
+
+
+def test_binary_loss_dtypes():
+    """Test various input data types"""
+    tf.random.set_seed(1234)
+    loss = losses.BinaryClassifierLoss(threshold=1)
+    y_pred_dist = tfd.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
+    y_pred_ens = y_pred_dist.sample(100)
+    y_true = tf.zeros((3, 1))
+
+    # prediction is TFP distribution
+    tf.random.set_seed(42)
+    result = loss(y_true, y_pred_dist)
+    assert tf.is_tensor(result)
+    assert result.dtype == "float32"
+    tf.random.set_seed(42)
+    np.testing.assert_allclose(result, loss(y_true.numpy(), y_pred_dist))
+
+    # prediction is TF tensor
+    result = loss(y_true, y_pred_ens)
+    assert tf.is_tensor(result)
+    assert result.dtype == "float32"
+    np.testing.assert_allclose(result, loss(y_true.numpy(), y_pred_ens))
+
+    # prediction is numpy array
+    result = loss(y_true, y_pred_ens.numpy())
+    assert tf.is_tensor(result)
+    assert result.dtype == "float32"
+    np.testing.assert_allclose(result, loss(y_true.numpy(), y_pred_ens.numpy()))
+
+
+def test_combined_loss():
+    """"""
+    loss_specs = [
+        {"BinaryClassifierLoss": {"threshold": 1}, "weight": 0.7},
+        {"WeightedCRPSEnergy": {"threshold": 0.1}, "weight": 0.1},
+    ]
+
+    combined_loss = losses.CombinedLoss(loss_specs)
+    y_pred_dist = tfd.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
+    y_true = tf.zeros((3, 1))
+
+    # prediction is TFP distribution
+    tf.random.set_seed(42)
+    result = combined_loss(y_true, y_pred_dist)
+    assert tf.is_tensor(result)
+    assert result.dtype == "float32"

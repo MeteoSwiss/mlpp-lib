@@ -576,3 +576,101 @@ class MultivariateLoss(tf.keras.losses.Loss):
         y_pred.shape = (*y_pred.batch_shape, *y_pred.event_shape)
 
         return y_true, y_pred
+
+
+class BinaryClassifierLoss(tf.keras.losses.Loss):
+    """
+    Compute binary classification loss from continuous predictions based on a threshold.
+
+    Parameters
+    ----------
+    threshold: float
+    loss_type: {"binary_crossentropy", "focal"}
+        The type of loss to be used.
+    n_samples: int, optional
+    **kwargs:
+        (Optional) Additional keyword arguments to be passed to the parent `Loss` class.
+
+    """
+
+    def __init__(
+        self,
+        threshold: float,
+        loss_type: Literal["binary_crossentropy", "focal"] = "binary_crossentropy",
+        n_samples: int = 1000,
+        **kwargs,
+    ) -> None:
+        super(BinaryClassifierLoss, self).__init__(**kwargs)
+
+        self.threshold = float(threshold)
+        self.n_samples = int(n_samples)
+        if self.n_samples < 2:
+            raise ValueError("n_samples must be > 1")
+        self.loss_type = loss_type
+
+    def get_config(self) -> dict:
+        custom_config = {
+            "threshold": self.threshold,
+            "loss_type": self.loss_type,
+            "n_samples": self.n_samples,
+        }
+        config = super().get_config()
+        config.update(custom_config)
+        return config
+
+    def call(
+        self,
+        y_true: Union[tf.Tensor, np.ndarray],
+        y_pred: Union[tf.Tensor, np.ndarray, tfp.distributions.Distribution],
+    ) -> tf.Tensor:
+        """
+        Compute the loss.
+
+        Parameters
+        ----------
+        y_true: array-like
+            Values representing the ground truth.
+        y_pred: array_like or tfp.Distribution
+            Predicted values or distributions.
+        """
+        threshold = tf.constant(self.threshold, dtype=y_true.dtype)
+        n_samples = self.n_samples
+        y_true = tf.debugging.check_numerics(y_true, "Target values")
+
+        if isinstance(y_pred, tfp.distributions.Distribution):
+            y_pred_samples = y_pred.sample(n_samples)
+        else:
+            y_pred_samples = y_pred
+
+        y_pred_samples = tf.debugging.check_numerics(y_pred_samples, "Predicted values")
+
+        y_true_bool = tf.cast(y_true > threshold, dtype=y_true.dtype)
+        y_pred_bool = tf.cast(y_pred_samples > threshold, dtype=y_true.dtype)
+        y_pred_prob = tf.reduce_mean(y_pred_bool, axis=0)
+
+        loss = tf.keras.losses.binary_crossentropy(y_true_bool, y_pred_prob, axis=1)
+        if self.loss_type == "focal":
+            loss = tf.pow(1 - tf.exp(-loss), 2)
+
+        return loss
+
+
+class CombinedLoss(tf.keras.losses.Loss):
+    def __init__(self, losses):
+        # Local import to avoid circular dependency with mlpp_lib.utils
+        from mlpp_lib.utils import get_loss
+
+        super(CombinedLoss, self).__init__()
+        self.losses = []
+        self.weights = []
+
+        # Initialize losses based on the input config dictionaries
+        for loss_config in losses:
+            self.weights.append(loss_config.get("weight", 1.0))
+            self.losses.append(get_loss(loss_config))
+
+    def call(self, y_true, y_pred):
+        total_loss = 0
+        for loss, weight in zip(self.losses, self.weights):
+            total_loss += weight * loss(y_true, y_pred)
+        return total_loss
