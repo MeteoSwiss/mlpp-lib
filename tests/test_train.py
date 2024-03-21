@@ -85,6 +85,25 @@ RUNS = [
         },
         "metrics": ["bias"],
     },
+    # with combined loss
+    {
+        "features": ["coe:x1"],
+        "targets": ["obs:y1"],
+        "model": {
+            "fully_connected_network": {
+                "hidden_layers": [10],
+                "probabilistic_layer": "IndependentNormal",
+            }
+        },
+        "loss": {
+            "CombinedLoss": {
+                "losses": [
+                    {"BinaryClassifierLoss": {"threshold": 1}, "weight": 0.7},
+                    {"WeightedCRPSEnergy": {"threshold": 0.1}, "weight": 0.1},
+                ],
+            }
+        },
+    },
 ]
 
 
