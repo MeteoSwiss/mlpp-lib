@@ -308,7 +308,7 @@ class DataSplitter:
         splitter._station_partitioning()
         return splitter
 
-    def to_dict(self):
+    def to_dict(self, sort_values=False):
         if not hasattr(self, "time_index") or not hasattr(self, "station_index"):
             raise ValueError("DataSplitter wasn't applied on any data yet, run `fit` first.")
         if not hasattr(self, "partitions"):
@@ -321,6 +321,8 @@ class DataSplitter:
                     partitions[split_key][dim] = [str(value.start), str(value.stop)]
                 elif hasattr(value, "tolist"):
                     partitions[split_key][dim] = value.astype(str).tolist()
+                    if sort_values:
+                        partitions[split_key][dim] = sorted(partitions[split_key][dim])
         return partitions
 
     @classmethod
