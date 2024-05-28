@@ -98,9 +98,9 @@ class DataModule:
         maybe_load = self._check_args()
         if maybe_load:
             self.load_raw()
-        self.select_splits(stage=stage)
         if self.filter is not None:
-            self.apply_filter(stage=stage)
+            self.apply_filter()
+        self.select_splits(stage=stage)
         self.standardize(stage=stage)
         self.as_datasets(stage=stage)
 
@@ -149,13 +149,9 @@ class DataModule:
                 *args, partition="test", thinning=self.thinning
             )
 
-    def apply_filter(self, stage=None):
+    def apply_filter(self):
         LOGGER.info("Applying filter to features and targets.")
-        if stage == "fit" or stage is None:
-            self.train = self.filter.apply(*self.train)
-            self.val = self.filter.apply(*self.val)
-        if stage == "test" or stage is None:
-            self.test = self.filter.apply(*self.test)
+        self.x, self.y = self.filter.apply(self.x, self.y)
 
     def standardize(self, stage=None):
         LOGGER.info("Standardizing data.")
