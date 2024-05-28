@@ -213,7 +213,10 @@ class DataSplitter:
         for partition in self.partition_names:
             idx = self._time_indexers[partition]
             idx = pd.to_datetime(idx)  # always convert to pandas datetime indices
-            idx = slice(*idx) if len(idx) == 2 else idx
+            if len(idx) == 2:
+                # convert slice to list of labels
+                time_index = pd.to_datetime(self.time_index)
+                idx = time_index[time_index.slice_indexer(start=idx[0], end=idx[1])]
             indexer = {self.time_dim_name: idx}
             if not hasattr(self, "partitions"):
                 self.partitions = {p: {} for p in self.partition_names}
