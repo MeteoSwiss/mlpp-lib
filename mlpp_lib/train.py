@@ -23,12 +23,6 @@ LOGGER = logging.getLogger(__name__)
 def get_log_params(param_run: dict) -> dict:
     """Extract a selection of parameters for pretty logging"""
     log_params = {}
-    for dimension in param_run["data_partitioning"].keys():
-        params = {
-            f"partitioning_{dimension}_{name}": value
-            for name, value in param_run["data_partitioning"][dimension].items()
-        }
-        log_params.update(params)
     # log_params["features_names"] = param_run["features"]
     # Note to future self: the list of features can easily exceed the maximum length for
     # a logged parameter, so we excluded it. Instead, this is logged as an artifact
