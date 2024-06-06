@@ -3,6 +3,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+from abc import abstractmethod
 
 import numpy as np
 import xarray as xr
@@ -11,8 +12,35 @@ from typing_extensions import Self
 LOGGER = logging.getLogger(__name__)
 
 
+class Normalizer:
+
+    @abstractmethod
+    def fit():
+        pass
+    
+    @abstractmethod
+    def transform():
+        pass
+    
+    @abstractmethod
+    def inverse_transform():
+        pass
+    
+    @abstractmethod
+    def from_dict():
+        pass
+    
+    @abstractmethod
+    def to_dict():
+        pass
+    
+    @abstractmethod
+    def save_json():
+        pass
+
+
 @dataclass
-class Standardizer:
+class Standardizer(Normalizer):
     """
     Standardizes data in a xarray.Dataset object.
     """
