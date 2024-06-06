@@ -12,7 +12,13 @@ from typing_extensions import Self
 LOGGER = logging.getLogger(__name__)
 
 
-class Normalizer:
+class Normalizer():
+    """
+    Abstract class for normalizing data in a xarray.Dataset object.
+    """
+
+    def __init__(self, subclass_var_dict: dict[Normalizer, list[str]]):
+        pass
 
     @abstractmethod
     def fit():
@@ -38,6 +44,19 @@ class Normalizer:
     def save_json():
         pass
 
+    @classmethod
+    def normalise(cls, data: xr.Dataset, method_variable_dict: dict[Normalizer, list[str]]) -> xr.Dataset:
+        normalized_vars = []
+        for method, variables in method_variable_dict.items():
+            vars_to_remove = [var for var in vars if var in normalized_vars]
+            if len(vars_to_remove) > 0:
+                LOGGER.info(f"Variable(s) {[var for var in vars_to_remove]} already normalized")
+                variables = [var for var in variables if var not in vars_to_remove]
+            
+            method.fit(data, variables)
+            data = method.transform(data, variables)
+            normalized_vars.extend(variables)
+
 
 @dataclass
 class Standardizer(Normalizer):
@@ -49,20 +68,27 @@ class Standardizer(Normalizer):
     std: xr.Dataset = field(default=None)
     fillvalue: dict[str, float] = field(init=True, default=-5)
 
-    def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
+    def fit(self, dataset: xr.Dataset, vars: Optional[list] = None, dims: Optional[list] = None):
+        
+        if vars is None:
+            vars = dataset.data_vars
+        if not all(var in dataset.data_vars for var in vars):
+            raise KeyError(f"There are variables not in dataset: {[var for var in vars if var not in dataset.data_vars]}")
 
-        self.mean = dataset.mean(dims).compute().copy()
-        self.std = dataset.std(dims).compute().copy()
+        self.mean = dataset[vars].mean(dims).compute().copy()
+        self.std = dataset[vars].std(dims).compute().copy()
         self.fillvalue = self.fillvalue
         # Check for near-zero standard deviations and set them equal to one
         self.std = xr.where(self.std < 1e-6, 1, self.std)
 
-    def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
+    def transform(self, *datasets: xr.Dataset, vars: Optional[list] = None) -> tuple[xr.Dataset, ...]:
         if self.mean is None:
             raise ValueError("Standardizer wasn't fit to data")
+        if vars is None:
+            vars = dataset.data_vars
 
         def f(ds: xr.Dataset):
-            for var in ds.data_vars:
+            for var in vars:
                 assert var in self.mean.data_vars, f"{var} not in Standardizer"
             ds = ((ds - self.mean) / self.std).astype("float32")
             if self.fillvalue is not None:
@@ -71,12 +97,14 @@ class Standardizer(Normalizer):
 
         return tuple(f(ds) for ds in datasets)
 
-    def inverse_transform(self, *datasets: xr.Dataset) -> xr.Dataset:
+    def inverse_transform(self, *datasets: xr.Dataset, vars: Optional[list] = None) -> xr.Dataset:
         if self.mean is None:
             raise ValueError("Standardizer wasn't fit to data")
+        if vars is None:
+            vars = dataset.data_vars
 
         def f(ds: xr.Dataset) -> xr.Dataset:
-            for var in ds.data_vars:
+            for var in vars:
                 assert var in self.mean.data_vars, f"{var} not in Standardizer"
             ds = xr.where(ds > self.fillvalue, ds, np.nan)
             return (ds * self.std + self.mean).astype("float32")
