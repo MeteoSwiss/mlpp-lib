@@ -114,21 +114,17 @@ def test_todict(n1, n2):
 
 def test_fromdict(out_dict1, out_dict2, n1, n2):
 
-    n3 = st.Standardizer.from_dict(out_dict1)
-    n4 = st.MultiNormalizer.from_dict(out_dict2)
+    # use the method directly without creating a class instance 
+    n3 = type(n1).from_dict(out_dict1)
+    n4 = type(n2).from_dict(out_dict2)
 
     err = False
-    if check_equality(n1.mean, n3.mean):
-        LOGGER.info(f"n1 mean has stayed the same")
-    else:
-        LOGGER.info(f"n1 mean has changed")
-        err = True
-    
-    if check_equality(n1.std, n3.std):
-        LOGGER.info(f"n1 std has stayed the same")
-    else:
-        LOGGER.info(f"n1 std has changed")
-        err = True
+    for attr in get_class_attributes(n1):
+        if check_equality(getattr(n1, attr), getattr(n3, attr)):
+            LOGGER.info(f"n1 {attr} has stayed the same")
+        else:
+            LOGGER.info(f"n1 {attr} has changed")
+            err = True
 
     if err:
         LOGGER.info("n1 and n3 are not equal. Check the logs for more details. Continuing with the test...")
@@ -158,8 +154,8 @@ def test_fromdict(out_dict1, out_dict2, n1, n2):
 
 def test_load_json(json1, json2, n1, n2):
 
-    n5 = st.Standardizer.from_json(json1)
-    n6 = st.MultiNormalizer.from_json(json2)
+    n5 = type(n1).from_json(json1)
+    n6 = type(n2).from_json(json2)
 
     err = False
 
@@ -220,6 +216,8 @@ def test_inv_transform(n1, n2, data, ds1, ds2):
 
 def test_standardizer():
 
+    LOGGER.info("Testing Standardizer")
+
     # create a standardizer in 2 different ways
     n1 = st.Standardizer()
     n2 = st.MultiNormalizer(method_var_dict={'Standardizer': ["a", "b"]})
@@ -242,15 +240,57 @@ def test_standardizer():
     # test saving to json
 
     LOGGER.info("Testing save_json function")
-    n1.save_json("./test.json")
-    n2.save_json("./test2.json")
+    n1.save_json("./test_norma.json")
+    n2.save_json("./test_norma2.json")
 
     LOGGER.info("Saving to json test passed")
 
     # test loading from json
 
     LOGGER.info("Testing load_json function")
-    test_load_json("./test.json", "./test2.json", n1, n2)
+    test_load_json("./test_norma.json", "./test_norma2.json", n1, n2)
+
+    # test_inverse_transform
+
+    LOGGER.info("Testing inverse_transform function")
+    test_inv_transform(n1, n2, data, ds1, ds2)
+
+
+def test_minmaxscaler():
+
+    LOGGER.info("\n")
+    LOGGER.info("Testing MinMaxScaler")
+
+    n1 = st.MinMaxScaler()
+    n2 = st.MultiNormalizer(method_var_dict={'MinMaxScaler': ["a", "b"]})
+
+    # Test the fit and transform functions
+    
+    LOGGER.info("Testing fit and transform functions")
+    n1, n2, data, ds1, ds2 = test_fit_transform(n1, n2)
+
+    # Test the saving
+
+    LOGGER.info("Testing to_dict function")
+    out_dict1, out_dict2 = test_todict(n1, n2)
+
+    # test loading from a dictionary
+
+    LOGGER.info("Testing from_dict function")
+    test_fromdict(out_dict1, out_dict2, n1, n2)
+
+    # test saving to json
+
+    LOGGER.info("Testing save_json function")
+    n1.save_json("./test_minmax.json")
+    n2.save_json("./test_minmax2.json")
+
+    LOGGER.info("Saving to json test passed")
+
+    # test loading from json
+
+    LOGGER.info("Testing load_json function")
+    test_load_json("./test_minmax.json", "./test_minmax2.json", n1, n2)
 
     # test_inverse_transform
 
@@ -269,6 +309,7 @@ def test_standardizer():
 def main():
     setup_logger("./test.log")
     test_standardizer()
+    test_minmaxscaler()
 
 
 if __name__ == "__main__":
