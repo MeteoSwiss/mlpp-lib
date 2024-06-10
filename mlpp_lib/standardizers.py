@@ -163,6 +163,7 @@ class Standardizer(Normalizer):
         # Check for near-zero standard deviations and set them equal to one
         self.std = xr.where(self.std < 1e-6, 1, self.std)
 
+
     def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
         if self.mean is None:
             raise ValueError("Standardizer wasn't fit to data")
@@ -179,6 +180,7 @@ class Standardizer(Normalizer):
             return ds
 
         return tuple(f(ds, variables) for ds in datasets)
+    
 
     def inverse_transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
         if self.mean is None:
@@ -221,6 +223,89 @@ class Standardizer(Normalizer):
         out_dict = self.to_dict()
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
+
+@dataclass
+class MinMaxScaler(Normalizer):
+    """
+    Normalize data using a min/max scaling in a xarray.Dataset object.
+    """
+
+    minimum: xr.Dataset = field(default=None)
+    maximum: xr.Dataset = field(default=None)
+    name = "MinMaxScaler"
+
+    def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
+        if variables is None:
+            variables = list(dataset.data_vars)
+        if not all(var in dataset.data_vars for var in variables):
+            raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
+
+        self.minimum = dataset[variables].min(dims).compute().copy()
+        self.maximum = dataset[variables].max(dims).compute().copy()
+
+    def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+        if self.minimum is None:
+            raise ValueError("MinMaxScaler wasn't fit to data")
+
+        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+            if variables is None:
+                variables = ds.data_vars
+            for var in variables:
+                assert var in self.minimum.data_vars, f"{var} not in MinMaxScaler"
+            return ((ds - self.minimum) / (self.maximum - self.minimum)).astype("float32")
+        
+        return tuple(f(ds, variables) for ds in datasets)
+    
+
+    def inverse_transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+        if self.minimum is None:
+            raise ValueError("MinMaxScaler wasn't fit to data")
+
+        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+            if variables is None:
+                variables = ds.data_vars
+            for var in variables:
+                assert var in self.minimum.data_vars, f"{var} not in MinMaxScaler"
+            return (ds * (self.maximum - self.minimum) + self.minimum).astype("float32")
+        
+        return tuple(f(ds, variables) for ds in datasets)
+    
+
+    @classmethod
+    def from_dict(cls, in_dict: dict) -> Self:
+        minimum = xr.Dataset.from_dict(in_dict["minimum"])
+        maximum = xr.Dataset.from_dict(in_dict["maximum"])
+        return cls(minimum, maximum)
+    
+
+    def to_dict(self):
+        out_dict = {
+            "minimum": self.minimum.to_dict(),
+            "maximum": self.maximum.to_dict(),
+        }
+        return out_dict
+    
+
+    @classmethod
+    def from_json(cls, in_fn: str) -> Self:
+        with open(in_fn, "r") as f:
+            in_dict = json.load(f)
+        return cls.from_dict(in_dict)
+    
+
+    def save_json(self, out_fn: str) -> None:
+        if self.minimum is None:
+            raise ValueError("MinMaxScaler wasn't fit to data")
+        out_dict = self.to_dict()
+        with open(out_fn, "w") as outfile:
+            json.dump(out_dict, outfile, indent=4)
+
+
+
+
+
+
+
 
 
 def standardize_split_dataset(
