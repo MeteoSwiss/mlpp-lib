@@ -5,3 +5,5 @@ __pycache__/
 mlpp_lib.egg-info/
 dev_*
 dev_*/
+mlpp_lib/tests/test*.json
+mlpp_lib/tests/test*.log
