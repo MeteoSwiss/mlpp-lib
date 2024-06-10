@@ -12,64 +12,132 @@ from typing_extensions import Self
 LOGGER = logging.getLogger(__name__)
 
 
-class Normalizer():
+
+def create_instance_from_str(class_name: str):
+
+    cls = globals()[class_name]
+
+    if issubclass(cls, Normalizer):
+        return cls()
+    else:
+        raise ValueError(f"{class_name} is not a subclass of Normalizer")
+
+class Normalizer:
     """
     Abstract class for normalizing data in a xarray.Dataset object.
+    In principle it should not be instantiated, it only adds an extra level of abstraction.
     """
-
-    def __init__(self, method_var_dict: dict[Normalizer, list[str]] = None):
-        seen_vars = []
-        self.method_var_dict = method_var_dict
-        for method, variables in method_var_dict.items():
-            vars_to_remove = [var for var in variables if var in seen_vars]
-            if len(vars_to_remove) > 0:
-                LOGGER.info(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another normalization method")
-                variables = [var for var in variables if var not in vars_to_remove]
-                self.method_var_dict[method] = variables
-
 
     @abstractmethod
     def fit():
         pass
-    
+
     @abstractmethod
     def transform():
         pass
-    
+
     @abstractmethod
     def inverse_transform():
         pass
-    
+
     @abstractmethod
+    def from_dict():
+        pass
+
+    @abstractmethod
+    def to_dict():
+        pass
+
+    @abstractmethod
+    def from_json():
+        pass
+
+    @abstractmethod
+    def save_json():
+        pass
+
+
+class MultiNormalizer(Normalizer):
+    """
+    Abstract class for normalizing data in a xarray.Dataset object with different normalizations.
+    """
+
+    def __init__(self, method_var_dict: dict[str, list[str]] = None):
+        seen_vars = []
+        self.method_vars_list = []
+
+        if method_var_dict is None:
+            raise ValueError("method_var_dict should be provided! Cannot infer normalization methods from 'None'")
+        
+        for method, variables in method_var_dict.items():
+            vars_to_remove = [var for var in variables if var in seen_vars]
+            method_cls = create_instance_from_str(method) # ensure the proper functionning in case it is not an str
+            
+            if len(vars_to_remove) > 0:
+                LOGGER.info(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another normalization method")
+                variables = [var for var in variables if var not in vars_to_remove]
+            
+            self.method_vars_list.append((method_cls, variables))
+
+
+    def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
+        
+        for i in range(len(self.method_vars_list)):
+            method, variables = self.method_vars_list[i]
+            method.fit(dataset=dataset, variables = variables, dims = dims)
+            self.method_vars_list[i] = (method, variables)
+
+    
+    def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
+        
+        for item in self.method_vars_list:
+            method, variables = item
+            datasets = method.transform(*datasets, variables=variables)
+        return datasets
+    
+    
+    def inverse_transform(self, *datasets: xr.Dataset) -> xr.Dataset:
+        
+        for item in self.method_vars_list:
+            method, variables = item
+            datasets = method.inverse_transform(*datasets, variables=variables)
+
+        return datasets
+    
+    
     @classmethod
     def from_dict(cls, in_dict: dict) -> Self:
         method_var_dict = {}
-        for func, inner_dict in in_dict.items():
-            method = func().from_dict(inner_dict)
+        for method_name, inner_dict in in_dict.items():
+            tmp_class = create_instance_from_str(method_name)
+            subclass = tmp_class.from_dict(inner_dict)
             variables = inner_dict["channels"]
-            method_var_dict[method] = variables
+            method_var_dict[subclass.name] = variables
         return cls(method_var_dict)
-            
     
-    @abstractmethod
+    
     def to_dict(self):
         out_dict = {}
-        for method, variables in self.method_var_dict.items():
+        for item in self.method_vars_list:
+            method, variables = item
             out_dict_tmp = method.to_dict()
             out_dict_tmp["channels"] = variables
-            out_dict[method.__class__.__name__] = out_dict_tmp
+            out_dict[method.name] = out_dict_tmp
+        return out_dict
+
+
+    @classmethod
+    def from_json(cls, in_fn: str) -> Self:
+        with open(in_fn, "r") as f:
+            in_dict = json.load(f)
+        return cls.from_dict(in_dict)
     
-    @abstractmethod
+    
     def save_json(self, out_fn) -> None:
         out_dict = self.to_dict()
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
 
-    def normalise(self, data: xr.Dataset) -> xr.Dataset:
-        for method, variables in self.method_variable_dict.items():
-            method.fit(data, variables)
-            data = method.transform(data, variables)
-        return data
 
 @dataclass
 class Standardizer(Normalizer):
@@ -80,11 +148,12 @@ class Standardizer(Normalizer):
     mean: xr.Dataset = field(default=None)
     std: xr.Dataset = field(default=None)
     fillvalue: dict[str, float] = field(init=True, default=-5)
+    name = "Standardizer"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
-        
+
         if variables is None:
-            variables = dataset.data_vars
+            variables = list(dataset.data_vars)
         if not all(var in dataset.data_vars for var in variables):
             raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
 
@@ -97,10 +166,11 @@ class Standardizer(Normalizer):
     def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
         if self.mean is None:
             raise ValueError("Standardizer wasn't fit to data")
-
-        def f(ds: xr.Dataset):
+        
+        def f(ds: xr.Dataset, variables: Optional[list] = None):
+            
             if variables is None:
-                variables = ds.data_vars
+                variables = list(ds.data_vars)
             for var in variables:
                 assert var in self.mean.data_vars, f"{var} not in Standardizer"
             ds = ((ds - self.mean) / self.std).astype("float32")
@@ -108,13 +178,13 @@ class Standardizer(Normalizer):
                 ds = ds.fillna(self.fillvalue)
             return ds
 
-        return tuple(f(ds) for ds in datasets)
+        return tuple(f(ds, variables) for ds in datasets)
 
-    def inverse_transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+    def inverse_transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
         if self.mean is None:
             raise ValueError("Standardizer wasn't fit to data")
 
-        def f(ds: xr.Dataset) -> xr.Dataset:
+        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
             if variables is None:
                 variables = ds.data_vars
             for var in variables:
@@ -122,7 +192,7 @@ class Standardizer(Normalizer):
             ds = xr.where(ds > self.fillvalue, ds, np.nan)
             return (ds * self.std + self.mean).astype("float32")
 
-        return tuple(f(ds) for ds in datasets)
+        return tuple(f(ds, variables) for ds in datasets)
 
     @classmethod
     def from_dict(cls, in_dict: dict) -> Self:
