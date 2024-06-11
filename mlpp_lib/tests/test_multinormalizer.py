@@ -65,7 +65,7 @@ def check_equality(ds1, ds2):
 def create_dummy_dataset(nb_var=2):
     data = xr.Dataset(
         {
-            f"var{i}": (("x", "y"), np.arange(4**i, 4**i+4).reshape(2, 2))\
+            f"var{i}": (("x", "y"), np.arange(4*i+1, 4*(i+1)+1).reshape(2, 2))\
             for i in range(nb_var)
         },
         coords={"x": [10, 20], "y": [1, 2]},
@@ -87,13 +87,13 @@ def test_fit_data(normalizers, multinormalizer, data):
     for i, normalizer in enumerate(normalizers):
         for attr in get_class_attributes(normalizer):
             if check_equality(getattr(normalizer, attr), getattr(multinormalizer.method_vars_list[i][0], attr)):
-                LOGGER.info(f"\u2705 Attribute {attr} is equal between individual normalizer and multinormalizer")
+                LOGGER.info(f"\u2705 Attribute {attr} is equal between {normalizer.name} and multinormalizer.{multinormalizer.method_vars_list[i][0].name}")
             else:
-                LOGGER.error(f"\u274c Attribute {attr} is not equal between individual normalizer and multinormalizer")
+                LOGGER.error(f"\u274c Attribute {attr} is not equal between {normalizer.name} and multinormalizer.{multinormalizer.method_vars_list[i][0].name}")
                 err = True
 
     if err:
-        raise ValueError("Attributes are not equal between individual normalizer and multinormalizer")
+        raise ValueError("Attributes are not equal between (at least) one of the individual normalizer and the multinormalizer")
     LOGGER.info("Fitting data seems to work\n")
 
     return normalizers, multinormalizer
@@ -189,13 +189,13 @@ def test_load_from_dict(normalizers, multinormalizer, normalizers_dicts, multi_d
     for i, norma_loaded in enumerate(normalizers_loaded):
         for attr in get_class_attributes(norma_loaded):
             if check_equality(getattr(norma_loaded, attr), getattr(multi_loaded.method_vars_list[i][0], attr)):
-                LOGGER.info(f"\u2705 Attribute {attr} is equal between individual normalizer and multinormalizer")
+                LOGGER.info(f"\u2705 Attribute {attr} is equal between {norma_loaded.name} and multinormalizer.{multi_loaded.method_vars_list[i][0].name}")
             else:
-                LOGGER.error(f"\u274c Attribute {attr} is not equal between individual normalizer and multinormalizer")
+                LOGGER.error(f"\u274c Attribute {attr} is not equal between {norma_loaded.name} and multinormalizer.{multi_loaded.method_vars_list[i][0].name}")
                 err = True
 
     if err:
-        raise ValueError("Attributes are not equal between individual normalizer and multinormalizer")
+        raise ValueError("Attributes are not equal between (at least) one of the individual normalizer and the multinormalizer")
     LOGGER.info("Loading from dict seems to work\n")
 
     return normalizers_loaded, multi_loaded
@@ -255,13 +255,13 @@ def test_load_from_json(normalizers, multinormalizer, filepaths):
     for i, norma_loaded in enumerate(normalizers_loaded):
         for attr in get_class_attributes(norma_loaded):
             if check_equality(getattr(norma_loaded, attr), getattr(multi_loaded.method_vars_list[i][0], attr)):
-                LOGGER.info(f"\u2705 Attribute {attr} is equal between individual normalizer and multinormalizer")
+                LOGGER.info(f"\u2705 Attribute {attr} is equal between {norma_loaded.name} and multinormalizer.{multi_loaded.method_vars_list[i][0].name}")
             else:
-                LOGGER.error(f"\u274c Attribute {attr} is not equal between individual normalizer and multinormalizer")
+                LOGGER.error(f"\u274c Attribute {attr} is not equal between {norma_loaded.name} and multinormalizer.{multi_loaded.method_vars_list[i][0].name}")
                 err = True
 
     if err:
-        raise ValueError("Attributes are not equal between individual normalizer and multinormalizer")
+        raise ValueError("Attributes are not equal between (at least) one of the individual normalizer and the multinormalizer")
     LOGGER.info("Loading from json seems to work\n")
 
     return normalizers_loaded, multi_loaded
