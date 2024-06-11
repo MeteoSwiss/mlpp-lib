@@ -407,8 +407,277 @@ class RobustScaling(Normalizer):
             json.dump(out_dict, outfile, indent=4)
 
 
+@dataclass
+class MaxAbsScaler(Normalizer):
+
+    absmax: xr.Dataset = field(default=None)
+    fillvalue: dict[str, float] = field(init=True, default=-5)
+    name = "MaxAbsScaler"
+
+    def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
+        if variables is None:
+            variables = list(dataset.data_vars)
+        if not all(var in dataset.data_vars for var in variables):
+            raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
+
+        self.absmax = dataset[variables].max(dims).compute().copy()
+        self.fillvalue = self.fillvalue
+
+    def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+        if self.absmax is None:
+            raise ValueError("MaxAbsScaler wasn't fit to data")
+
+        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+            if variables is None:
+                variables = ds.data_vars
+            for var in variables:
+                assert var in self.absmax.data_vars, f"{var} not in MaxAbsScaler"
+
+                scaled_var = (ds[var] / self.absmax[var]).astype("float32")
+
+                if self.fillvalue is not None:
+                    scaled_var = scaled_var.fillna(self.fillvalue)
+
+                ds[var] = scaled_var
+            return ds
+        
+        return tuple(f(ds, variables) for ds in datasets)
+    
+    def inverse_transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+        if self.absmax is None:
+            raise ValueError("MaxAbsScaler wasn't fit to data")
+        
+        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+            if variables is None:
+                variables = ds.data_vars
+            ds = xr.where(ds > self.fillvalue, ds, np.nan)
+            for var in variables:
+                assert var in self.absmax.data_vars, f"{var} not in MaxAbsScaler"
+
+                unscaled_var = (ds[var] * self.absmax[var]).astype("float32")
+                ds[var] = unscaled_var
+            return ds
+        
+        return tuple(f(ds, variables) for ds in datasets)
+    
+    @classmethod
+    def from_dict(cls, in_dict: dict) -> Self:
+        absmax = xr.Dataset.from_dict(in_dict["absmax"])
+        return cls(absmax)
+    
+    def to_dict(self):
+        out_dict = {
+            "absmax": self.absmax.to_dict(),
+        }
+        return out_dict
+    
+    @classmethod
+    def from_json(cls, in_fn: str) -> Self:
+        with open(in_fn, "r") as f:
+            in_dict = json.load(f)
+        return cls.from_dict(in_dict)
+    
+    def save_json(self, out_fn: str) -> None:
+        if self.absmax is None:
+            raise ValueError("MaxAbsScaler wasn't fit to data")
+        out_dict = self.to_dict()
+        with open(out_fn, "w") as outfile:
+            json.dump(out_dict, outfile, indent=4)
 
 
+@dataclass
+class BoxCox(Normalizer):
+
+    lambda_: float = field(default=2)
+    fillvalue: dict[str, float] = field(init=True, default=-5)
+    name = "BoxCox"
+
+    def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
+        if variables is None:
+            variables = list(dataset.data_vars)
+        if not all(var in dataset.data_vars for var in variables):
+            raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
+
+        self.lambda_ = self.lambda_
+        self.fillvalue = self.fillvalue
+
+    def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+        if self.lambda_ is None:
+            raise ValueError("BoxCox wasn't fit to data")
+
+        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+            if variables is None:
+                variables = ds.data_vars
+            for var in variables:
+                assert var in ds, f"{var} not in input dataset"
+
+                scaled_var = (ds[var] ** self.lambda_ - 1) / self.lambda_ if self.lambda_ != 0 else np.log(ds[var])
+
+                if self.fillvalue is not None:
+                    scaled_var = scaled_var.fillna(self.fillvalue)
+
+                ds[var] = scaled_var
+            return ds
+        
+        return tuple(f(ds, variables) for ds in datasets)
+    
+    def inverse_transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+        if self.lambda_ is None:
+            raise ValueError("BoxCox wasn't fit to data")
+        
+        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+            if variables is None:
+                variables = ds.data_vars
+            ds = xr.where(ds > self.fillvalue, ds, np.nan)
+            for var in variables:
+                assert var in ds, f"{var} not in input dataset"
+
+                unscaled_var = (ds[var] * self.lambda_ + 1) ** (1 / self.lambda_) if self.lambda_ != 0 else np.exp(ds[var])
+
+                ds[var] = unscaled_var
+            return ds
+
+        return tuple(f(ds, variables) for ds in datasets)
+    
+    @classmethod
+    def from_dict(cls, in_dict: dict) -> Self:
+        lambda_ = in_dict["lambda_"]
+        return cls(lambda_)
+    
+    def to_dict(self):
+        out_dict = {
+            "lambda_": self.lambda_,
+        }
+        return out_dict
+    
+    @classmethod
+    def from_json(cls, in_fn: str) -> Self:
+        with open(in_fn, "r") as f:
+            in_dict = json.load(f)
+        return cls.from_dict(in_dict)
+    
+    def save_json(self, out_fn: str) -> None:
+        if self.lambda_ is None:
+            raise ValueError("BoxCox wasn't fit to data")
+        out_dict = self.to_dict()
+        with open(out_fn, "w") as outfile:
+            json.dump(out_dict, outfile, indent=4)
+
+
+@dataclass
+class YeoJohnson(Normalizer):
+
+    lambda_: float = field(default=3)
+    fillvalue: dict[str, float] = field(init=True, default=-5)
+    name = "YeoJohnson"
+
+    def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
+        if variables is None:
+            variables = list(dataset.data_vars)
+        if not all(var in dataset.data_vars for var in variables):
+            raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
+
+        self.lambda_ = self.lambda_
+        self.fillvalue = self.fillvalue
+
+
+    def yeo_johnson_transform(self, x: float, lmbda: float) -> np.ndarray:
+        if lmbda == 0:
+            return np.log1p(x)
+        elif lmbda == 2:
+            return -np.log1p(-x)
+        elif x>=0:
+            return ((x + 1) ** lmbda - 1) / lmbda
+        else:
+            return -(((-x + 1) ** (2 - lmbda)) - 1) / (2 - lmbda)
+        
+    def yeo_johnson_inverse_transform(self, x: float, lmbda: float) -> np.ndarray:
+        if lmbda == 0:
+            return np.expm1(x)
+        elif lmbda == 2:
+            return -np.expm1(-x)
+        elif x>=0:
+            return ((lmbda * x + 1) ** (1 / lmbda)) - 1
+        else:
+            return -((-lmbda * x + 1) ** (1 / (2 - lmbda))) + 1
+        
+
+    def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+        if self.lambda_ is None:
+            raise ValueError("YeoJohnson wasn't fit to data")
+
+        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+            if variables is None:
+                variables = ds.data_vars
+            for var in variables:
+                assert var in ds, f"{var} not in input dataset"
+
+                scaled_var = xr.apply_ufunc(
+                    self.yeo_johnson_transform,
+                    ds[var],
+                    self.lambda_,
+                    dask="parallelized",
+                    output_dtypes=[np.float32],
+                    vectorize=True,
+                )
+
+                if self.fillvalue is not None:
+                    scaled_var = scaled_var.fillna(self.fillvalue)
+
+                ds[var] = scaled_var
+            return ds
+        
+        return tuple(f(ds, variables) for ds in datasets)
+    
+    def inverse_transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+        if self.lambda_ is None:
+            raise ValueError("YeoJohnson wasn't fit to data")
+        
+        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+            if variables is None:
+                variables = ds.data_vars
+            ds = xr.where(ds > self.fillvalue, ds, np.nan)
+            for var in variables:
+                assert var in ds, f"{var} not in input dataset"
+
+                unscaled_var = xr.apply_ufunc(
+                    self.yeo_johnson_inverse_transform,
+                    ds[var],
+                    self.lambda_,
+                    dask="parallelized",
+                    output_dtypes=[np.float32],
+                    vectorize=True,
+                )
+
+                ds[var] = unscaled_var
+            return ds
+        
+        return tuple(f(ds, variables) for ds in datasets)
+                     
+    @classmethod
+    def from_dict(cls, in_dict: dict) -> Self:
+        lambda_ = in_dict["lambda_"]
+        return cls(lambda_)
+
+    def to_dict(self):
+        out_dict = {
+            "lambda_": self.lambda_,
+        }
+        return out_dict
+
+    @classmethod
+    def from_json(cls, in_fn: str) -> Self:
+        with open(in_fn, "r") as f:
+            in_dict = json.load(f)
+        return cls.from_dict(in_dict)
+
+    def save_json(self, out_fn: str) -> None:
+        if self.lambda_ is None:
+            raise ValueError("YeoJohnson wasn't fit to data")
+        out_dict = self.to_dict()
+        with open(out_fn, "w") as outfile:
+            json.dump(out_dict, outfile, indent=4)
+    
 
 
 def standardize_split_dataset(
