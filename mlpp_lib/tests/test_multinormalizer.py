@@ -101,7 +101,6 @@ def test_transform_data(normalizers, multinormalizer, data):
     data_individual = data.copy()
     data_multi = data.copy()
     for i, norma in enumerate(normalizers):
-
         data_individual = norma.transform(data_individual, variables=[f"var{i}"])[0]
 
     data_multi = multinormalizer.transform(data_multi)[0]
@@ -174,7 +173,7 @@ def test_load_from_dict(normalizers, multinormalizer, normalizers_dicts, multi_d
         normalizer_load = st.create_instance_from_str(normalizer.name).from_dict(normalizers_dicts[f"{normalizer.name}"])
         normalizers_loaded.append(normalizer_load)
 
-    multi_loaded = st.create_instance_from_dict(multi_dict)
+    multi_loaded = st.create_instance_from_str(multinormalizer.name).from_dict(multi_dict)
 
     err = False
 
@@ -206,7 +205,6 @@ def test_main(normalizer_list):
     normalizers, multinormalizer = test_fit_data(normalizer_individual, multinormalizer, data)
 
     data_individual, data_multi = test_transform_data(normalizers, multinormalizer, data)
-    LOGGER.info(data_individual)
 
     data_individual, data_multi = test_inverse_transform_data(normalizers, multinormalizer, data_individual, data_multi, data)
 
