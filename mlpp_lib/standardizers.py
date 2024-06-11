@@ -325,8 +325,86 @@ class MinMaxScaler(Normalizer):
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
 
+@dataclass
+class RobustScaling(Normalizer):
 
+    median: xr.Dataset = field(default=None)
+    iqr: xr.Dataset = field(default=None)
+    fillvalue: dict[str, float] = field(init=True, default=-5)
+    name = "RobustScaling"
 
+    def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
+        if variables is None:
+            variables = list(dataset.data_vars)
+        if not all(var in dataset.data_vars for var in variables):
+            raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
+
+        self.median = dataset[variables].median(dims).compute().copy()
+        self.iqr = (dataset[variables].quantile(0.75, dims).compute() - dataset[variables].quantile(0.25, dims).compute()).copy()
+        self.fillvalue = self.fillvalue
+
+    def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+        if self.median is None:
+            raise ValueError("RobustScaling wasn't fit to data")
+
+        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+            if variables is None:
+                variables = ds.data_vars
+            for var in variables:
+                assert var in self.median.data_vars, f"{var} not in RobustScaling"
+
+                scaled_var = ((ds[var] - self.median[var]) / self.iqr[var]).astype("float32")
+
+                if self.fillvalue is not None:
+                    scaled_var = scaled_var.fillna(self.fillvalue)
+
+                ds[var] = scaled_var
+            return ds
+        
+        return tuple(f(ds, variables) for ds in datasets)
+    
+    def inverse_transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+        if self.median is None:
+            raise ValueError("RobustScaling wasn't fit to data")
+        
+        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+            if variables is None:
+                variables = ds.data_vars
+            ds = xr.where(ds > self.fillvalue, ds, np.nan)
+            for var in variables:
+                assert var in self.median.data_vars, f"{var} not in RobustScaling"
+
+                unscaled_var = (ds[var] * self.iqr[var] + self.median[var]).astype("float32")
+                ds[var] = unscaled_var
+            return ds
+        
+        return tuple(f(ds, variables) for ds in datasets)
+    
+    @classmethod
+    def from_dict(cls, in_dict: dict) -> Self:
+        median = xr.Dataset.from_dict(in_dict["median"])
+        iqr = xr.Dataset.from_dict(in_dict["iqr"])
+        return cls(median, iqr)
+    
+    def to_dict(self):
+        out_dict = {
+            "median": self.median.to_dict(),
+            "iqr": self.iqr.to_dict(),
+        }
+        return out_dict
+    
+    @classmethod
+    def from_json(cls, in_fn: str) -> Self:
+        with open(in_fn, "r") as f:
+            in_dict = json.load(f)
+        return cls.from_dict(in_dict)
+    
+    def save_json(self, out_fn: str) -> None:
+        if self.median is None:
+            raise ValueError("RobustScaling wasn't fit to data")
+        out_dict = self.to_dict()
+        with open(out_fn, "w") as outfile:
+            json.dump(out_dict, outfile, indent=4)
 
 
 
