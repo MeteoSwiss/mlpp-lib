@@ -70,11 +70,13 @@ def create_dummy_dataset(nb_var=2):
         },
         coords={"x": [10, 20], "y": [1, 2]},
     )
+    LOGGER.info(f"Data:\n{data}")
     return data
 
 
 def test_fit_data(normalizers, multinormalizer, data):
 
+    LOGGER.info("Testing fit()...")
     for i, norma in enumerate(normalizers):
         norma.fit(data, variables=[f"var{i}"])
 
@@ -92,12 +94,14 @@ def test_fit_data(normalizers, multinormalizer, data):
 
     if err:
         raise ValueError("Attributes are not equal between individual normalizer and multinormalizer")
+    LOGGER.info("Fitting data seems to work\n")
 
     return normalizers, multinormalizer
 
 
 def test_transform_data(normalizers, multinormalizer, data):
 
+    LOGGER.info("Testing transform()...")
     data_individual = data.copy()
     data_multi = data.copy()
     for i, norma in enumerate(normalizers):
@@ -115,12 +119,14 @@ def test_transform_data(normalizers, multinormalizer, data):
 
     if err:
         raise ValueError("Data is not equal after transformation")
+    LOGGER.info("Transforming data seems to work\n")
 
     return data_individual, data_multi
 
 
 def test_inverse_transform_data(normalizers, multinormalizer, data_individual, data_multi, data):
 
+    LOGGER.info("Testing inverse_transform()...")
     for i, norma in enumerate(normalizers):
         data_individual = norma.inverse_transform(data_individual, variables=[f"var{i}"])[0]
 
@@ -142,12 +148,14 @@ def test_inverse_transform_data(normalizers, multinormalizer, data_individual, d
 
     if err:
         raise ValueError("Data is not equal after inverse transformation")
+    LOGGER.info("Inverse transforming data seems to work\n")
 
     return data_individual, data_multi
 
 
 def test_save_as_dict(normalizers, multinormalizer):
 
+    LOGGER.info("Testing to_dict()...")
     normalizers_dicts = {}
     for i, normalizer in enumerate(normalizers):
         norma_dict = normalizer.to_dict()
@@ -158,7 +166,7 @@ def test_save_as_dict(normalizers, multinormalizer):
     multi_dict = multinormalizer.to_dict()
 
     if check_equality(normalizers_dicts, multi_dict):
-        LOGGER.info("\u2705 Normalizers are equal after saving as dict")
+        LOGGER.info("\u2705 Normalizers are equal after saving as dict\n")
     else:
         LOGGER.error("\u274c Normalizers are not equal after saving as dict")
         raise ValueError("Normalizers are not equal after saving as dict")
@@ -168,6 +176,7 @@ def test_save_as_dict(normalizers, multinormalizer):
 
 def test_load_from_dict(normalizers, multinormalizer, normalizers_dicts, multi_dict):
 
+    LOGGER.info("Testing from_dict()...")
     normalizers_loaded = []
     for i, normalizer in enumerate(normalizers):
         normalizer_load = st.create_instance_from_str(normalizer.name).from_dict(normalizers_dicts[f"{normalizer.name}"])
@@ -187,13 +196,81 @@ def test_load_from_dict(normalizers, multinormalizer, normalizers_dicts, multi_d
 
     if err:
         raise ValueError("Attributes are not equal between individual normalizer and multinormalizer")
+    LOGGER.info("Loading from dict seems to work\n")
 
     return normalizers_loaded, multi_loaded
 
 
+def test_save_to_json(normalizers, multinormalizer, file_path):
+
+    LOGGER.info("Testing save_json()...")
+    filepaths = [f"{file_path}_{normalizers[i].name}.json" for i in range(len(normalizers))] + [f"{file_path}_{multinormalizer.name}.json"]
+    err = False
+    for i, normalizer in enumerate(normalizers):
+        try:
+            normalizer.save_json(out_fn=filepaths[i])
+        except Exception as e:
+            LOGGER.error(f"\u274c Error saving {normalizer.name}: {e}")
+            err = True
+
+    try:
+        multinormalizer.save_json(out_fn=filepaths[-1])
+    except Exception as e:
+        LOGGER.error(f"\u274c Error saving {multinormalizer.name}: {e}")
+        err = True
+
+    if err:
+        raise ValueError("Error during saving as json")
+    LOGGER.info("\u2705 Everything saved as json\n")
+
+    return filepaths
+
+
+def test_load_from_json(normalizers, multinormalizer, filepaths):
+
+    LOGGER.info("Testing from_json()...")
+    normalizers_loaded = []
+    err = False
+    for i, normalizer in enumerate(normalizers):
+        try:
+            normalizer_load = st.create_instance_from_str(normalizer.name).from_json(in_fn=filepaths[i])
+            normalizers_loaded.append(normalizer_load)
+        except Exception as e:
+            LOGGER.error(f"\u274c Error loading {normalizer.name}: {e}")
+            err = True
+
+    try:
+        multi_loaded = st.create_instance_from_str(multinormalizer.name).from_json(in_fn=filepaths[-1])
+    except Exception as e:
+        LOGGER.error(f"\u274c Error loading {multinormalizer.name}: {e}")
+        err = True
+
+    if err:
+        raise ValueError("Error during loading from json")
+    else:
+        LOGGER.info("\u2705 Everything loaded from json")
+
+    err = False
+
+    for i, norma_loaded in enumerate(normalizers_loaded):
+        for attr in get_class_attributes(norma_loaded):
+            if check_equality(getattr(norma_loaded, attr), getattr(multi_loaded.method_vars_list[i][0], attr)):
+                LOGGER.info(f"\u2705 Attribute {attr} is equal between individual normalizer and multinormalizer")
+            else:
+                LOGGER.error(f"\u274c Attribute {attr} is not equal between individual normalizer and multinormalizer")
+                err = True
+
+    if err:
+        raise ValueError("Attributes are not equal between individual normalizer and multinormalizer")
+    LOGGER.info("Loading from json seems to work\n")
+
+    return normalizers_loaded, multi_loaded
+
+
+
 def test_main(normalizer_list):
 
-    data = create_dummy_dataset()
+    data = create_dummy_dataset(nb_var=len(normalizer_list))
     normalizer_individual = []
     method_var_dict = {normalizer: [f"var{i}"] for i, normalizer in enumerate(normalizer_list)}
     LOGGER.info(f"Method var dict: {method_var_dict}")
@@ -210,7 +287,11 @@ def test_main(normalizer_list):
 
     normalizers_dicts, multi_dict = test_save_as_dict(normalizers, multinormalizer)
 
-    normalizers_loaded, multi_loaded = test_load_from_dict(normalizers, multinormalizer, normalizers_dicts, multi_dict)
+    _, _ = test_load_from_dict(normalizers, multinormalizer, normalizers_dicts, multi_dict)
+
+    filepaths = test_save_to_json(normalizers, multinormalizer, "./test_multi")
+
+    _, _ = test_load_from_json(normalizers, multinormalizer, filepaths)
 
 
 if __name__ == "__main__":
