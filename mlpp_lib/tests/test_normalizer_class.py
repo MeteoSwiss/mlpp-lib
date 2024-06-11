@@ -62,19 +62,19 @@ def check_equality(ds1, ds2):
         return False
 
 
-def create_dummy_dataset():
+def create_dummy_dataset(nb_var=2):
     data = xr.Dataset(
         {
-            "a": (("x", "y"), [[1, 2], [3, 4]]),
-            "b": (("x", "y"), [[5, 6], [7, 8]]),
+            f"var{i}": (("x", "y"), np.arange(4**i, 4**(i+1)).reshape(2, 2))\
+            for i in range(nb_var)
         },
         coords={"x": [10, 20], "y": [1, 2]},
     )
     return data
 
 
-def test_fit_transform(n1, n2):
-    data = create_dummy_dataset()
+def test_fit_transform(n1, n2, nb_var=2):
+    data = create_dummy_dataset(nb_var=nb_var)
     LOGGER.info(f"Data: {data}")
 
     n1.fit(data)
@@ -298,7 +298,46 @@ def test_minmaxscaler():
     test_inv_transform(n1, n2, data, ds1, ds2)
 
 
+def test_multiple_normalizers(normalizers_list):
 
+    LOGGER.info("\n")
+    LOGGER.info("Testing Multiple Normalizers")
+
+    n1s = [st.create_instance_from_str(normalizer) for normalizer in normalizers_list]
+    n2 = st.MultiNormalizer(method_var_dict={normalizer: [f"var{i}"] for i, normalizer in enumerate(normalizers_list)})
+
+    # Test the fit and transform functions
+    
+    LOGGER.info("Testing fit and transform functions")
+    n1, n2, data, ds1, ds2 = test_fit_transform(n1, n2, nb_var=4)
+
+    # Test the saving
+
+    LOGGER.info("Testing to_dict function")
+    out_dict1, out_dict2 = test_todict(n1, n2)
+
+    # test loading from a dictionary
+
+    LOGGER.info("Testing from_dict function")
+    test_fromdict(out_dict1, out_dict2, n1, n2)
+
+    # test saving to json
+
+    LOGGER.info("Testing save_json function")
+    n1.save_json("./test_multiple.json")
+    n2.save_json("./test_multiple2.json")
+
+    LOGGER.info("Saving to json test passed")
+
+    # test loading from json
+
+    LOGGER.info("Testing load_json function")
+    test_load_json("./test_multiple.json", "./test_multiple2.json", n1, n2)
+
+    # test_inverse_transform
+
+    LOGGER.info("Testing inverse_transform function")
+    test_inv_transform(n1, n2, data, ds1, ds2)
 
 
 
