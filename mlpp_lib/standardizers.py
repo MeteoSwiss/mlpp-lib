@@ -62,25 +62,25 @@ class MultiNormalizer(Normalizer):
     Abstract class for normalizing data in a xarray.Dataset object with different normalizations.
     """
 
+    name = "MultiNormalizer"
+
     def __init__(self, method_var_dict: dict[str, list[str]] = None):
         seen_vars = []
         self.method_vars_list = []
 
-        if method_var_dict is None:
-            raise ValueError("method_var_dict should be provided! Cannot infer normalization methods from 'None'")
-        
-        for method, variables in method_var_dict.items():
-            vars_to_remove = [var for var in variables if var in seen_vars]
-            method_cls = create_instance_from_str(method) # ensure the proper functionning in case it is not an str
-            
-            if len(vars_to_remove) > 0:
-                LOGGER.info(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another normalization method")
-                variables = [var for var in variables if var not in vars_to_remove]
-            
-            self.method_vars_list.append((method_cls, variables))
+        if method_var_dict is not None:
+            for method, variables in method_var_dict.items():
+                vars_to_remove = [var for var in variables if var in seen_vars]
+                method_cls = create_instance_from_str(method) # ensure the proper functionning in case it is not an str
+                
+                if len(vars_to_remove) > 0:
+                    LOGGER.info(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another normalization method")
+                    variables = [var for var in variables if var not in vars_to_remove]
+                
+                self.method_vars_list.append((method_cls, variables))
 
 
-    def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
+    def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
         
         for i in range(len(self.method_vars_list)):
             method, variables = self.method_vars_list[i]
@@ -93,6 +93,7 @@ class MultiNormalizer(Normalizer):
         for item in self.method_vars_list:
             method, variables = item
             datasets = method.transform(*datasets, variables=variables)
+
         return datasets
     
     
@@ -167,16 +168,20 @@ class Standardizer(Normalizer):
     def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
         if self.mean is None:
             raise ValueError("Standardizer wasn't fit to data")
-        
+
         def f(ds: xr.Dataset, variables: Optional[list] = None):
             
             if variables is None:
                 variables = list(ds.data_vars)
             for var in variables:
                 assert var in self.mean.data_vars, f"{var} not in Standardizer"
-            ds = ((ds - self.mean) / self.std).astype("float32")
-            if self.fillvalue is not None:
-                ds = ds.fillna(self.fillvalue)
+
+                standardized_var = ((ds[var] - self.mean[var]) / self.std[var]).astype("float32")
+                if self.fillvalue is not None:
+                    standardized_var = standardized_var.fillna(self.fillvalue)
+                
+                ds[var] = standardized_var
+
             return ds
 
         return tuple(f(ds, variables) for ds in datasets)
@@ -189,10 +194,15 @@ class Standardizer(Normalizer):
         def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
             if variables is None:
                 variables = ds.data_vars
+
+            ds = xr.where(ds > self.fillvalue, ds, np.nan)
             for var in variables:
                 assert var in self.mean.data_vars, f"{var} not in Standardizer"
-            ds = xr.where(ds > self.fillvalue, ds, np.nan)
-            return (ds * self.std + self.mean).astype("float32")
+            
+                unstandardized_var = (ds[var] * self.std[var] + self.mean[var]).astype("float32")
+                ds[var] = unstandardized_var
+            
+            return ds
 
         return tuple(f(ds, variables) for ds in datasets)
 
@@ -232,6 +242,7 @@ class MinMaxScaler(Normalizer):
 
     minimum: xr.Dataset = field(default=None)
     maximum: xr.Dataset = field(default=None)
+    fillvalue: dict[str, float] = field(init=True, default=-5)
     name = "MinMaxScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -242,6 +253,7 @@ class MinMaxScaler(Normalizer):
 
         self.minimum = dataset[variables].min(dims).compute().copy()
         self.maximum = dataset[variables].max(dims).compute().copy()
+        self.fillvalue = self.fillvalue
 
     def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
         if self.minimum is None:
@@ -252,7 +264,14 @@ class MinMaxScaler(Normalizer):
                 variables = ds.data_vars
             for var in variables:
                 assert var in self.minimum.data_vars, f"{var} not in MinMaxScaler"
-            return ((ds - self.minimum) / (self.maximum - self.minimum)).astype("float32")
+
+                scaled_var = ((ds[var] - self.minimum[var]) / (self.maximum[var] - self.minimum[var])).astype("float32")
+
+                if self.fillvalue is not None:
+                    scaled_var = scaled_var.fillna(self.fillvalue)
+
+                ds[var] = scaled_var  
+            return ds
         
         return tuple(f(ds, variables) for ds in datasets)
     
@@ -264,9 +283,15 @@ class MinMaxScaler(Normalizer):
         def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
             if variables is None:
                 variables = ds.data_vars
+            
+            ds = xr.where(ds > self.fillvalue, ds, np.nan)
             for var in variables:
                 assert var in self.minimum.data_vars, f"{var} not in MinMaxScaler"
-            return (ds * (self.maximum - self.minimum) + self.minimum).astype("float32")
+
+                unscaled_var = (ds[var] * (self.maximum[var] - self.minimum[var]) + self.minimum[var]).astype("float32")
+                ds[var] = unscaled_var
+            
+            return ds
         
         return tuple(f(ds, variables) for ds in datasets)
     
