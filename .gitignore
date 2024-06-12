@@ -7,3 +7,4 @@ dev_*
 dev_*/
 mlpp_lib/tests/*.json
 mlpp_lib/tests/*.log
+mlpp_lib/tests/test_time_split.yaml
