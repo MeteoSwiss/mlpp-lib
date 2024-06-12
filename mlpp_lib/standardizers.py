@@ -13,12 +13,12 @@ LOGGER = logging.getLogger(__name__)
 
 
 
-def create_instance_from_str(class_name: str):
+def create_normalizer_from_str(class_name: str, fillvalue: float):
 
     cls = globals()[class_name]
 
     if issubclass(cls, Normalizer):
-        return cls()
+        return cls(fillvalue=fillvalue)
     else:
         raise ValueError(f"{class_name} is not a subclass of Normalizer")
 
@@ -64,14 +64,15 @@ class MultiNormalizer(Normalizer):
 
     name = "MultiNormalizer"
 
-    def __init__(self, method_var_dict: dict[str, list[str]] = None):
+    def __init__(self, method_var_dict: dict[str, list[str]] = None, fillvalue: float = -5):
         seen_vars = []
         self.method_vars_list = []
+        self.fillvalue = fillvalue
 
         if method_var_dict is not None:
             for method, variables in method_var_dict.items():
                 vars_to_remove = [var for var in variables if var in seen_vars]
-                method_cls = create_instance_from_str(method) # ensure the proper functionning in case it is not an str
+                method_cls = create_normalizer_from_str(method, fillvalue=self.fillvalue) # ensure the proper functionning in case it is not an str
                 
                 if len(vars_to_remove) > 0:
                     LOGGER.info(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another normalization method")
@@ -110,7 +111,7 @@ class MultiNormalizer(Normalizer):
     def from_dict(cls, in_dict: dict) -> Self:
         method_var_dict = {}
         for method_name, inner_dict in in_dict.items():
-            tmp_class = create_instance_from_str(method_name)
+            tmp_class = create_normalizer_from_str(method_name)
             subclass = tmp_class.from_dict(inner_dict)
             variables = inner_dict["channels"]
             method_var_dict[subclass.name] = variables
@@ -326,12 +327,12 @@ class MinMaxScaler(Normalizer):
             json.dump(out_dict, outfile, indent=4)
 
 @dataclass
-class RobustScaling(Normalizer):
+class RobustScaler(Normalizer):
 
     median: xr.Dataset = field(default=None)
     iqr: xr.Dataset = field(default=None)
     fillvalue: dict[str, float] = field(init=True, default=-5)
-    name = "RobustScaling"
+    name = "RobustScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
         if variables is None:
@@ -486,7 +487,7 @@ class MaxAbsScaler(Normalizer):
 
 
 @dataclass
-class BoxCox(Normalizer):
+class BoxCoxScaler(Normalizer):
 
     lambda_: float = field(default=2)
     fillvalue: dict[str, float] = field(init=True, default=-5)
@@ -565,7 +566,7 @@ class BoxCox(Normalizer):
 
 
 @dataclass
-class YeoJohnson(Normalizer):
+class YeoJohnsonScaler(Normalizer):
 
     lambda_: float = field(default=3)
     fillvalue: dict[str, float] = field(init=True, default=-5)

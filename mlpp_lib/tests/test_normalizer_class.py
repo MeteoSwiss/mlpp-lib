@@ -303,7 +303,7 @@ def test_multiple_normalizers(normalizers_list):
     LOGGER.info("\n")
     LOGGER.info("Testing Multiple Normalizers")
 
-    n1s = [st.create_instance_from_str(normalizer) for normalizer in normalizers_list]
+    n1s = [st.create_normalizer_from_str(normalizer) for normalizer in normalizers_list]
     n2 = st.MultiNormalizer(method_var_dict={normalizer: [f"var{i}"] for i, normalizer in enumerate(normalizers_list)})
 
     # Test the fit and transform functions

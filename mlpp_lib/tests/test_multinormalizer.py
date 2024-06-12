@@ -179,10 +179,10 @@ def test_load_from_dict(normalizers, multinormalizer, normalizers_dicts, multi_d
     LOGGER.info("Testing from_dict()...")
     normalizers_loaded = []
     for i, normalizer in enumerate(normalizers):
-        normalizer_load = st.create_instance_from_str(normalizer.name).from_dict(normalizers_dicts[f"{normalizer.name}"])
+        normalizer_load = st.create_normalizer_from_str(normalizer.name).from_dict(normalizers_dicts[f"{normalizer.name}"])
         normalizers_loaded.append(normalizer_load)
 
-    multi_loaded = st.create_instance_from_str(multinormalizer.name).from_dict(multi_dict)
+    multi_loaded = st.create_normalizer_from_str(multinormalizer.name).from_dict(multi_dict)
 
     err = False
 
@@ -233,14 +233,14 @@ def test_load_from_json(normalizers, multinormalizer, filepaths):
     err = False
     for i, normalizer in enumerate(normalizers):
         try:
-            normalizer_load = st.create_instance_from_str(normalizer.name).from_json(in_fn=filepaths[i])
+            normalizer_load = st.create_normalizer_from_str(normalizer.name).from_json(in_fn=filepaths[i])
             normalizers_loaded.append(normalizer_load)
         except Exception as e:
             LOGGER.error(f"\u274c Error loading {normalizer.name}: {e}")
             err = True
 
     try:
-        multi_loaded = st.create_instance_from_str(multinormalizer.name).from_json(in_fn=filepaths[-1])
+        multi_loaded = st.create_normalizer_from_str(multinormalizer.name).from_json(in_fn=filepaths[-1])
     except Exception as e:
         LOGGER.error(f"\u274c Error loading {multinormalizer.name}: {e}")
         err = True
@@ -277,7 +277,7 @@ def test_main(normalizer_list):
     multinormalizer = st.MultiNormalizer(method_var_dict=method_var_dict)
     
     for normalizer in normalizer_list:
-        normalizer_individual.append(st.create_instance_from_str(normalizer))
+        normalizer_individual.append(st.create_normalizer_from_str(normalizer))
 
     normalizers, multinormalizer = test_fit_data(normalizer_individual, multinormalizer, data)
 
