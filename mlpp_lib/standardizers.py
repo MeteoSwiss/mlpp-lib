@@ -8,17 +8,21 @@ from abc import abstractmethod
 import numpy as np
 import xarray as xr
 from typing_extensions import Self
+from mlpp_lib.utils import calculate_median
 
 LOGGER = logging.getLogger(__name__)
 
 
 
-def create_normalizer_from_str(class_name: str, fillvalue: float):
+def create_normalizer_from_str(class_name: str, inputs: Optional[dict] = None, fillvalue: Optional[float] = -999):
 
     cls = globals()[class_name]
 
     if issubclass(cls, Normalizer):
-        return cls(fillvalue=fillvalue)
+        if inputs is None:
+            return cls(fillvalue=fillvalue)
+        else:
+            return cls(fillvalue=fillvalue, **inputs)
     else:
         raise ValueError(f"{class_name} is not a subclass of Normalizer")
 
@@ -64,44 +68,53 @@ class MultiNormalizer(Normalizer):
 
     name = "MultiNormalizer"
 
-    def __init__(self, method_var_dict: dict[str, list[str]] = None, fillvalue: float = -5):
+    # TODO: when provided with nothing use, Standardizer as the only method
+    def __init__(self, method_var_dict: dict[str, tuple[list[str], dict[str, float]]] = None, fillvalue: float = -999):
         seen_vars = []
-        self.method_vars_list = []
+        self.parameters = []
         self.fillvalue = fillvalue
 
         if method_var_dict is not None:
-            for method, variables in method_var_dict.items():
+            for method, params in method_var_dict.items():
+                variables, input_params = params
+                if input_params == {}:
+                    input_params = None
                 vars_to_remove = [var for var in variables if var in seen_vars]
-                method_cls = create_normalizer_from_str(method, fillvalue=self.fillvalue) # ensure the proper functionning in case it is not an str
+                
+                method_cls = create_normalizer_from_str(method, inputs=input_params, fillvalue=self.fillvalue) # ensure the proper functionning in case it is not an str
                 
                 if len(vars_to_remove) > 0:
                     LOGGER.info(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another normalization method")
                     variables = [var for var in variables if var not in vars_to_remove]
                 
-                self.method_vars_list.append((method_cls, variables))
+                self.parameters.append((method_cls, variables, input_params))
 
 
     def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
         
-        for i in range(len(self.method_vars_list)):
-            method, variables = self.method_vars_list[i]
-            method.fit(dataset=dataset, variables = variables, dims = dims)
-            self.method_vars_list[i] = (method, variables)
+        for i in range(len(self.parameters)):
+            normalizer, variables, inputs = self.parameters[i]
+            normalizer.fit(dataset=dataset, variables = variables, dims = dims)
+            self.parameters[i] = (normalizer, variables, inputs)
 
     
     def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         
-        for item in self.method_vars_list:
-            method, variables = item
-            datasets = method.transform(*datasets, variables=variables)
+        for parameter in self.parameters:
+            method, variables, _ = parameter
+            try:
+                datasets = method.transform(*datasets, variables=variables)
+            except TypeError:
+                LOGGER.error(f"Error in {method.name} for variables {variables}")
+                LOGGER.error(f"lambda {method.lambda_} with type {type(method.lambda_)}")
 
         return datasets
     
     
     def inverse_transform(self, *datasets: xr.Dataset) -> xr.Dataset:
         
-        for item in self.method_vars_list:
-            method, variables = item
+        for parameter in self.parameters:
+            method, variables, _ = parameter
             datasets = method.inverse_transform(*datasets, variables=variables)
 
         return datasets
@@ -114,14 +127,16 @@ class MultiNormalizer(Normalizer):
             tmp_class = create_normalizer_from_str(method_name)
             subclass = tmp_class.from_dict(inner_dict)
             variables = inner_dict["channels"]
-            method_var_dict[subclass.name] = variables
+            # TODO: the following line is a bit convoluted, maybe there is a better way to do it
+            inputs = {key: inner_dict[key] for key in inner_dict if type(inner_dict[key]) in [int, float] and key != "fillvalue"}
+            method_var_dict[subclass.name] = (variables, inputs)
         return cls(method_var_dict)
     
     
     def to_dict(self):
         out_dict = {}
-        for item in self.method_vars_list:
-            method, variables = item
+        for parameter in self.parameters:
+            method, variables, _ = parameter
             out_dict_tmp = method.to_dict()
             out_dict_tmp["channels"] = variables
             out_dict[method.name] = out_dict_tmp
@@ -149,7 +164,7 @@ class Standardizer(Normalizer):
 
     mean: xr.Dataset = field(default=None)
     std: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(init=True, default=-5)
+    fillvalue: dict[str, float] = field(init=True, default=-999)
     name = "Standardizer"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -243,7 +258,7 @@ class MinMaxScaler(Normalizer):
 
     minimum: xr.Dataset = field(default=None)
     maximum: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(init=True, default=-5)
+    fillvalue: dict[str, float] = field(init=True, default=-999)
     name = "MinMaxScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -326,12 +341,15 @@ class MinMaxScaler(Normalizer):
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
 
+"""
+# I can't make it work with the calculation of the median
+# TODO: find a way to do it
 @dataclass
 class RobustScaler(Normalizer):
 
     median: xr.Dataset = field(default=None)
     iqr: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(init=True, default=-5)
+    fillvalue: dict[str, float] = field(init=True, default=-999)
     name = "RobustScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -340,7 +358,7 @@ class RobustScaler(Normalizer):
         if not all(var in dataset.data_vars for var in variables):
             raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
 
-        self.median = dataset[variables].median(dims).compute().copy()
+        self.median = calculate_median(dataset=dataset, variables=variables, dims=dims).compute().copy()
         self.iqr = (dataset[variables].quantile(0.75, dims).compute() - dataset[variables].quantile(0.25, dims).compute()).copy()
         self.fillvalue = self.fillvalue
 
@@ -405,14 +423,14 @@ class RobustScaler(Normalizer):
             raise ValueError("RobustScaling wasn't fit to data")
         out_dict = self.to_dict()
         with open(out_fn, "w") as outfile:
-            json.dump(out_dict, outfile, indent=4)
+            json.dump(out_dict, outfile, indent=4)"""
 
 
 @dataclass
 class MaxAbsScaler(Normalizer):
 
     absmax: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(init=True, default=-5)
+    fillvalue: dict[str, float] = field(init=True, default=-999)
     name = "MaxAbsScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -490,8 +508,8 @@ class MaxAbsScaler(Normalizer):
 class BoxCoxScaler(Normalizer):
 
     lambda_: float = field(default=2)
-    fillvalue: dict[str, float] = field(init=True, default=-5)
-    name = "BoxCox"
+    fillvalue: dict[str, float] = field(init=True, default=-999)
+    name = "BoxCoxScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
         if variables is None:
@@ -569,8 +587,8 @@ class BoxCoxScaler(Normalizer):
 class YeoJohnsonScaler(Normalizer):
 
     lambda_: float = field(default=3)
-    fillvalue: dict[str, float] = field(init=True, default=-5)
-    name = "YeoJohnson"
+    fillvalue: dict[str, float] = field(init=True, default=-999)
+    name = "YeoJohnsonScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
         if variables is None:
