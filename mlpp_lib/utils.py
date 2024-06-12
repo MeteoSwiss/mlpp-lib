@@ -210,3 +210,19 @@ def as_weather(dataset: xr.Dataset) -> xr.Dataset:
             new_set[source_var] = dataset[source_var]
 
     return new_set
+
+
+def calculate_median(dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None) -> xr.Dataset:
+    """Calculate the median of the dataset. Because dask can't do it when provided with all dimensions ..."""
+    
+    # Convert dimension names to indices
+    if dims is None:
+        dims = dataset.dims
+
+    dim_indices = [dataset[v].get_axis_num(dim) for v in variables for dim in dims if dim in dataset[v].dims]
+    # Convert to NumPy array and compute median
+    np_array = dataset[variables].to_array().values
+    median = np.median(np_array, axis=tuple(dim_indices))
+    # Create a new Dataset with the median values
+    return xr.Dataset({'median': (['variable'], median)}, coords={'variable': variables})
+    return xr.Dataset(medians)
