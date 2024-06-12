@@ -86,10 +86,10 @@ def test_fit_data(normalizers, multinormalizer, data):
 
     for i, normalizer in enumerate(normalizers):
         for attr in get_class_attributes(normalizer):
-            if check_equality(getattr(normalizer, attr), getattr(multinormalizer.method_vars_list[i][0], attr)):
-                LOGGER.info(f"\u2705 Attribute {attr} is equal between {normalizer.name} and multinormalizer.{multinormalizer.method_vars_list[i][0].name}")
+            if check_equality(getattr(normalizer, attr), getattr(multinormalizer.parameters[i][0], attr)):
+                LOGGER.info(f"\u2705 Attribute {attr} is equal between {normalizer.name} and multinormalizer.{multinormalizer.parameters[i][0].name}")
             else:
-                LOGGER.error(f"\u274c Attribute {attr} is not equal between {normalizer.name} and multinormalizer.{multinormalizer.method_vars_list[i][0].name}")
+                LOGGER.error(f"\u274c Attribute {attr} is not equal between {normalizer.name} and multinormalizer.{multinormalizer.parameters[i][0].name}")
                 err = True
 
     if err:
@@ -188,10 +188,10 @@ def test_load_from_dict(normalizers, multinormalizer, normalizers_dicts, multi_d
 
     for i, norma_loaded in enumerate(normalizers_loaded):
         for attr in get_class_attributes(norma_loaded):
-            if check_equality(getattr(norma_loaded, attr), getattr(multi_loaded.method_vars_list[i][0], attr)):
-                LOGGER.info(f"\u2705 Attribute {attr} is equal between {norma_loaded.name} and multinormalizer.{multi_loaded.method_vars_list[i][0].name}")
+            if check_equality(getattr(norma_loaded, attr), getattr(multi_loaded.parameters[i][0], attr)):
+                LOGGER.info(f"\u2705 Attribute {attr} is equal between {norma_loaded.name} and multinormalizer.{multi_loaded.parameters[i][0].name}")
             else:
-                LOGGER.error(f"\u274c Attribute {attr} is not equal between {norma_loaded.name} and multinormalizer.{multi_loaded.method_vars_list[i][0].name}")
+                LOGGER.error(f"\u274c Attribute {attr} is not equal between {norma_loaded.name} and multinormalizer.{multi_loaded.parameters[i][0].name}")
                 err = True
 
     if err:
@@ -254,10 +254,10 @@ def test_load_from_json(normalizers, multinormalizer, filepaths):
 
     for i, norma_loaded in enumerate(normalizers_loaded):
         for attr in get_class_attributes(norma_loaded):
-            if check_equality(getattr(norma_loaded, attr), getattr(multi_loaded.method_vars_list[i][0], attr)):
-                LOGGER.info(f"\u2705 Attribute {attr} is equal between {norma_loaded.name} and multinormalizer.{multi_loaded.method_vars_list[i][0].name}")
+            if check_equality(getattr(norma_loaded, attr), getattr(multi_loaded.parameters[i][0], attr)):
+                LOGGER.info(f"\u2705 Attribute {attr} is equal between {norma_loaded.name} and multinormalizer.{multi_loaded.parameters[i][0].name}")
             else:
-                LOGGER.error(f"\u274c Attribute {attr} is not equal between {norma_loaded.name} and multinormalizer.{multi_loaded.method_vars_list[i][0].name}")
+                LOGGER.error(f"\u274c Attribute {attr} is not equal between {norma_loaded.name} and multinormalizer.{multi_loaded.parameters[i][0].name}")
                 err = True
 
     if err:
@@ -272,12 +272,17 @@ def test_main(normalizer_list):
 
     data = create_dummy_dataset(nb_var=len(normalizer_list))
     normalizer_individual = []
-    method_var_dict = {normalizer: [f"var{i}"] for i, normalizer in enumerate(normalizer_list)}
+    method_var_dict = {normalizer: ([f"var{i}"],{}) for i, normalizer in enumerate(normalizer_list)}
+    if "BoxCoxScaler" in normalizer_list:
+        method_var_dict["BoxCoxScaler"] = (method_var_dict["BoxCoxScaler"][0], {"lambda_": 0.5})
+    if "YeoJohnsonScaler" in normalizer_list:
+        method_var_dict["YeoJohnsonScaler"] = (method_var_dict["YeoJohnsonScaler"][0], {"lambda_": 0.3})
+
     LOGGER.info(f"Method var dict: {method_var_dict}")
     multinormalizer = st.MultiNormalizer(method_var_dict=method_var_dict)
     
     for normalizer in normalizer_list:
-        normalizer_individual.append(st.create_normalizer_from_str(normalizer))
+        normalizer_individual.append(st.create_normalizer_from_str(normalizer, inputs=method_var_dict[normalizer][1]))
 
     normalizers, multinormalizer = test_fit_data(normalizer_individual, multinormalizer, data)
 
