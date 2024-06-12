@@ -15,7 +15,7 @@ from .standardizers import Normalizer, MultiNormalizer, Standardizer
 
 LOGGER = logging.getLogger(__name__)
 
-
+# TODO ? Rename all standardizers into Normalizer/MultiNormalizer ??
 class DataModule:
     """A class to encapsulate everything involved in mlpp data processing.
 
@@ -161,6 +161,17 @@ class DataModule:
 
             self.standardizer = Standardizer()
             self.standardizer.fit(self.train[0])
+        
+        # With my new normalizer class, normalizer is usually not fitted. TODO: find a better way to do this
+        try:
+            self.standardizer.transform(self.train[0])
+        except ValueError as e:
+            if "wasn't fit to data" in str(e):
+                LOGGER.error("Standardizer wasn't fitted to data. Fitting it now ...")
+                self.standardizer.fit(self.train[0])
+            else:
+                raise e
+
 
         if stage == "fit" or stage is None:
             self.train = (
