@@ -11,7 +11,7 @@ import xarray as xr
 from typing_extensions import Self
 
 from .model_selection import DataSplitter
-from .standardizers import Standardizer
+from .standardizers import Normalizer, MultiNormalizer, Standardizer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class DataModule:
         group_samples: Optional[dict[str:int]] = None,
         data_dir: Optional[str] = None,
         filter: Optional[DataFilter] = None,
-        standardizer: Optional[Standardizer] = None,
+        standardizer: Optional[Normalizer] = None,
         sample_weighting: Optional[Sequence[Hashable] or Hashable or xr.Dataset] = None,
         thinning: Optional[Mapping[str, int]] = None,
     ):
