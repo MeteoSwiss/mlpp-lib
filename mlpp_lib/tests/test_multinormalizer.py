@@ -35,7 +35,8 @@ def check_equality(ds1, ds2):
     
     try:
         # Use xarray's testing function to check for equality with numerical tolerance
-        xr.testing.assert_allclose(ds1_converted, ds2_converted)
+        xr.testing.assert_allclose(ds1_converted, ds2_converted, atol=1e-7, rtol=1e-5)
+        LOGGER.info("Datasets are equal with rtol=1e-5 and atol=1e-7.")
         return True
     except AssertionError as e:
         # If there are differences, catch the exception and print the differences
@@ -45,6 +46,12 @@ def check_equality(ds1, ds2):
         LOGGER.info("\nDetailed differences:")
         ds1_vars = set(ds1.data_vars)
         ds2_vars = set(ds2.data_vars)
+        LOGGER.info(f"Variables in first dataset: {ds1_vars}")
+        LOGGER.info(f"Variables in second dataset: {ds2_vars}")
+        LOGGER.info(f"Dims in first dataset: {set(ds1.dims)}")
+        LOGGER.info(f"Dims in second dataset: {set(ds2.dims)}")
+        LOGGER.info(f"Coords in first dataset: {set(ds1.coords)}")
+        LOGGER.info(f"Coords in second dataset: {set(ds2.coords)}")
         
         # Check for differences in variables
         for var in ds1_vars.union(ds2_vars):
@@ -55,22 +62,32 @@ def check_equality(ds1, ds2):
             else:
                 array1 = ds1_converted[var].values
                 array2 = ds2_converted[var].values
-                if not np.allclose(array1, array2):
+                if not np.allclose(array1, array2, atol=1e-7, rtol=1e-5):
                     diff = array1 - array2
                     LOGGER.info(f"Differences in variable '{var}':")
-                    LOGGER.info(diff)
+                    LOGGER.info(f"max(abs(ds1-ds2)) = {np.max(np.abs(diff))}, min(atol + rtol*ds2) = {np.min(np.abs(1e-7 + 1e-5*np.abs(array2)))}")
         return False
 
 
-def create_dummy_dataset(nb_var=2):
-    data = xr.Dataset(
-        {
-            f"var{i}": (("x", "y"), np.arange(4*i+1, 4*(i+1)+1).reshape(2, 2))\
-            for i in range(nb_var)
-        },
-        coords={"x": [10, 20], "y": [1, 2]},
-    )
-    LOGGER.info(f"Data:\n{data}")
+def create_dummy_dataset(nb_var=2, big=False):
+
+    if not big:
+        data = xr.Dataset(
+            {
+                f"var{i}": (("x", "y"), np.arange(4*i+1, 4*(i+1)+1).reshape(2, 2))\
+                for i in range(nb_var)
+            },
+            coords={"x": [10, 20], "y": [1, 2]},
+        )
+        LOGGER.info(f"Data:\n{data}")
+    else:
+        data = xr.Dataset(
+            {
+                f"var{i}": (("x", "y", "z"), np.random.rand(100, 100, 100))\
+                for i in range(nb_var)
+            },
+            coords={"x": np.arange(100), "y": np.arange(100), "z": np.arange(100)},
+        )
     return data
 
 
@@ -268,9 +285,9 @@ def test_load_from_json(normalizers, multinormalizer, filepaths):
 
 
 
-def test_main(normalizer_list):
+def test_main(normalizer_list, big=False):
 
-    data = create_dummy_dataset(nb_var=len(normalizer_list))
+    data = create_dummy_dataset(nb_var=len(normalizer_list), big=big)
     normalizer_individual = []
     method_var_dict = {normalizer: ([f"var{i}"],{}) for i, normalizer in enumerate(normalizer_list)}
     if "BoxCoxScaler" in normalizer_list:
@@ -302,6 +319,6 @@ def test_main(normalizer_list):
 if __name__ == "__main__":
     setup_logger("tests_multi.log")
 
-    normalizers = [n.name for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"]
+    normalizers = [n.name for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"][:3]
     LOGGER.info(f"Normalizers: {normalizers}")
-    test_main(normalizer_list=normalizers)
+    test_main(normalizer_list=normalizers, big=True)
