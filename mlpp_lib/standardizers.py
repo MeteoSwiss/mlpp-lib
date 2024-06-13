@@ -8,21 +8,23 @@ from abc import abstractmethod
 import numpy as np
 import xarray as xr
 from typing_extensions import Self
-from mlpp_lib.utils import calculate_median
+#from mlpp_lib.utils import calculate_median
 
 LOGGER = logging.getLogger(__name__)
 
 
 
-def create_normalizer_from_str(class_name: str, inputs: Optional[dict] = None, fillvalue: Optional[float] = -999):
+def create_normalizer_from_str(class_name: str, inputs: Optional[dict] = None):
 
     cls = globals()[class_name]
 
     if issubclass(cls, Normalizer):
         if inputs is None:
-            return cls(fillvalue=fillvalue)
+            return cls(fillvalue=-999)
         else:
-            return cls(fillvalue=fillvalue, **inputs)
+            if "fillvalue" not in inputs.keys():
+                inputs["fillvalue"] = -999
+            return cls(**inputs)
     else:
         raise ValueError(f"{class_name} is not a subclass of Normalizer")
 
@@ -77,17 +79,19 @@ class MultiNormalizer(Normalizer):
         if method_var_dict is not None:
             for method, params in method_var_dict.items():
                 variables, input_params = params
-                if input_params == {}:
-                    input_params = None
+                
+                if input_params == {} or "fillvalue" not in input_params.keys():
+                    input_params["fillvalue"] = self.fillvalue
                 vars_to_remove = [var for var in variables if var in seen_vars]
                 
-                method_cls = create_normalizer_from_str(method, inputs=input_params, fillvalue=self.fillvalue) # ensure the proper functionning in case it is not an str
+                method_cls = create_normalizer_from_str(method, inputs=input_params) # ensure the proper functionning in case it is not an str
                 
                 if len(vars_to_remove) > 0:
                     LOGGER.info(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another normalization method")
                     variables = [var for var in variables if var not in vars_to_remove]
                 
                 self.parameters.append((method_cls, variables, input_params))
+        LOGGER.info(f"Created MultiNormalizer with parameters {self.parameters}")
 
 
     def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
@@ -102,11 +106,7 @@ class MultiNormalizer(Normalizer):
         
         for parameter in self.parameters:
             method, variables, _ = parameter
-            try:
-                datasets = method.transform(*datasets, variables=variables)
-            except TypeError:
-                LOGGER.error(f"Error in {method.name} for variables {variables}")
-                LOGGER.error(f"lambda {method.lambda_} with type {type(method.lambda_)}")
+            datasets = method.transform(*datasets, variables=variables)
 
         return datasets
     
@@ -128,7 +128,7 @@ class MultiNormalizer(Normalizer):
             subclass = tmp_class.from_dict(inner_dict)
             variables = inner_dict["channels"]
             # TODO: the following line is a bit convoluted, maybe there is a better way to do it
-            inputs = {key: inner_dict[key] for key in inner_dict if type(inner_dict[key]) in [int, float] and key != "fillvalue"}
+            inputs = {key: getattr(subclass, key) for key in inner_dict if getattr(subclass, key, None) is not None}
             method_var_dict[subclass.name] = (variables, inputs)
         return cls(method_var_dict)
     
@@ -323,6 +323,7 @@ class MinMaxScaler(Normalizer):
         out_dict = {
             "minimum": self.minimum.to_dict(),
             "maximum": self.maximum.to_dict(),
+            "fillvalue": self.fillvalue,
         }
         return out_dict
     
@@ -341,7 +342,6 @@ class MinMaxScaler(Normalizer):
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
 
-"""
 # I can't make it work with the calculation of the median
 # TODO: find a way to do it
 @dataclass
@@ -358,7 +358,7 @@ class RobustScaler(Normalizer):
         if not all(var in dataset.data_vars for var in variables):
             raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
 
-        self.median = calculate_median(dataset=dataset, variables=variables, dims=dims).compute().copy()
+        self.median = dataset[variables].quantile(0.5, dims).compute().copy()
         self.iqr = (dataset[variables].quantile(0.75, dims).compute() - dataset[variables].quantile(0.25, dims).compute()).copy()
         self.fillvalue = self.fillvalue
 
@@ -378,6 +378,8 @@ class RobustScaler(Normalizer):
                     scaled_var = scaled_var.fillna(self.fillvalue)
 
                 ds[var] = scaled_var
+                if "quantile" in ds.coords:
+                    ds = ds.drop("quantile")
             return ds
         
         return tuple(f(ds, variables) for ds in datasets)
@@ -395,6 +397,10 @@ class RobustScaler(Normalizer):
 
                 unscaled_var = (ds[var] * self.iqr[var] + self.median[var]).astype("float32")
                 ds[var] = unscaled_var
+
+                
+            if "quantile" in ds.coords:
+                ds = ds.drop("quantile")
             return ds
         
         return tuple(f(ds, variables) for ds in datasets)
@@ -409,6 +415,7 @@ class RobustScaler(Normalizer):
         out_dict = {
             "median": self.median.to_dict(),
             "iqr": self.iqr.to_dict(),
+            "fillvalue": self.fillvalue,
         }
         return out_dict
     
@@ -423,7 +430,7 @@ class RobustScaler(Normalizer):
             raise ValueError("RobustScaling wasn't fit to data")
         out_dict = self.to_dict()
         with open(out_fn, "w") as outfile:
-            json.dump(out_dict, outfile, indent=4)"""
+            json.dump(out_dict, outfile, indent=4)
 
 
 @dataclass
@@ -487,6 +494,7 @@ class MaxAbsScaler(Normalizer):
     def to_dict(self):
         out_dict = {
             "absmax": self.absmax.to_dict(),
+            "fillvalue": self.fillvalue,
         }
         return out_dict
     
@@ -566,6 +574,7 @@ class BoxCoxScaler(Normalizer):
     def to_dict(self):
         out_dict = {
             "lambda_": self.lambda_,
+            "fillvalue": self.fillvalue,
         }
         return out_dict
     
@@ -681,6 +690,7 @@ class YeoJohnsonScaler(Normalizer):
     def to_dict(self):
         out_dict = {
             "lambda_": self.lambda_,
+            "fillvalue": self.fillvalue,
         }
         return out_dict
 
