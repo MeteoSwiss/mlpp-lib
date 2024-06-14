@@ -71,6 +71,7 @@ class MultiNormalizer(Normalizer):
     name = "MultiNormalizer"
 
     # TODO: when provided with nothing use, Standardizer as the only method
+    # TODO: ADD a default normalizer for featuires that are not specified !! Urgent
     def __init__(self, method_var_dict: dict[str, tuple[list[str], dict[str, float]]] = None, fillvalue: float = -999):
         seen_vars = []
         self.parameters = []
@@ -80,6 +81,8 @@ class MultiNormalizer(Normalizer):
             for method, params in method_var_dict.items():
                 variables, input_params = params
                 
+                if input_params is None:
+                    input_params = {}
                 if input_params == {} or "fillvalue" not in input_params.keys():
                     input_params["fillvalue"] = self.fillvalue
                 vars_to_remove = [var for var in variables if var in seen_vars]
@@ -90,8 +93,8 @@ class MultiNormalizer(Normalizer):
                     LOGGER.info(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another normalization method")
                     variables = [var for var in variables if var not in vars_to_remove]
                 
+                LOGGER.info(f"{method_cls.name}: {len(variables)} variables.")
                 self.parameters.append((method_cls, variables, input_params))
-        LOGGER.info(f"Created MultiNormalizer with parameters {self.parameters}")
 
 
     def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
@@ -107,7 +110,6 @@ class MultiNormalizer(Normalizer):
         for parameter in self.parameters:
             method, variables, _ = parameter
             datasets = method.transform(*datasets, variables=variables)
-
         return datasets
     
     
@@ -634,7 +636,9 @@ class YeoJohnsonScaler(Normalizer):
         if self.lambda_ is None:
             raise ValueError("YeoJohnson wasn't fit to data")
 
+        nans_before = np.count_nonzero(np.isnan(datasets[0].to_array()))
         def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+
             if variables is None:
                 variables = ds.data_vars
             for var in variables:
