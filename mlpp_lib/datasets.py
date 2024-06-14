@@ -164,14 +164,13 @@ class DataModule:
         
         # With my new normalizer class, normalizer is usually not fitted. TODO: find a better way to do this
         try:
-            self.standardizer.transform(self.train[0])
+            self.standardizer.transform(self.train[0].copy())
         except ValueError as e:
             if "wasn't fit to data" in str(e):
                 LOGGER.error("Standardizer wasn't fitted to data. Fitting it now ...")
                 self.standardizer.fit(self.train[0])
             else:
                 raise e
-
 
         if stage == "fit" or stage is None:
             self.train = (
