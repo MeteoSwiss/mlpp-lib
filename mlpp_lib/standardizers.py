@@ -72,10 +72,14 @@ class MultiNormalizer(Normalizer):
 
     # TODO: when provided with nothing use, Standardizer as the only method
     # TODO: ADD a default normalizer for featuires that are not specified !! Urgent
-    def __init__(self, method_var_dict: dict[str, tuple[list[str], dict[str, float]]] = None, fillvalue: float = -999):
+    def __init__(self, method_var_dict: dict[str, tuple[list[str], dict[str, float]]] = None, 
+                 default_norma: str = "Standardizer", fillvalue: float = -999):
         seen_vars = []
         self.parameters = []
         self.fillvalue = fillvalue
+        self.all_vars = []
+        self.all_normas = []
+        self.default_norma = default_norma
 
         if method_var_dict is not None:
             for method, params in method_var_dict.items():
@@ -95,10 +99,22 @@ class MultiNormalizer(Normalizer):
                 
                 LOGGER.info(f"{method_cls.name}: {len(variables)} variables.")
                 self.parameters.append((method_cls, variables, input_params))
+                self.all_vars.extend(variables)
 
 
     def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
         
+        datavars = list(dataset.data_vars)
+        remaining_var = list(set(datavars) - set(self.all_vars))
+        if len(remaining_var) > 0:
+            LOGGER.info(f"Variables {[var for var in remaining_var]} are not assigned to any normalization method. They will be assigned to {self.default_norma}")
+            if self.default_norma in self.all_normas:
+                index = self.all_normas.index(self.default_norma)
+                self.parameters[index][1].extend(remaining_var)
+            else:
+                self.parameters.append((create_normalizer_from_str(self.default_norma), remaining_var, {"fillvalue": self.fillvalue}))
+            self.all_vars.extend(remaining_var)
+
         for i in range(len(self.parameters)):
             normalizer, variables, inputs = self.parameters[i]
             normalizer.fit(dataset=dataset, variables = variables, dims = dims)
