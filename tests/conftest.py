@@ -86,10 +86,10 @@ def multinormalizer() -> xr.Dataset:
     """
     import mlpp_lib.standardizers as st
 
-    normalizer_list = [n() for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"]
+    normalizer_list = [n.name for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"]
     method_var_dict = {normalizer: ([f"var{i}"],{}) for i, normalizer in enumerate(normalizer_list)}
     multinormalizer = st.MultiNormalizer(method_var_dict)
-    
+
     return multinormalizer
 
 
