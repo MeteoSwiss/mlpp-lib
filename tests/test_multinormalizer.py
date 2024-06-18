@@ -14,8 +14,6 @@ def test_fit(normalizers, multinormalizer, features_multi):
         for normalizer in normalizers
     )
 
-    return normalizers, multinormalizer
-
 
 def test_transform(normalizers, multinormalizer, features_multi):
 
