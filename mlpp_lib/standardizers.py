@@ -54,13 +54,18 @@ class Normalizer:
     def to_dict():
         pass
 
-    @abstractmethod
-    def from_json():
-        pass
-
-    @abstractmethod
-    def save_json():
-        pass
+    @classmethod
+    def from_json(cls, in_fn: str) -> Self:
+        with open(in_fn, "r") as f:
+            in_dict = json.load(f)
+        return cls.from_dict(in_dict)
+    
+    def save_json(self, out_fn: str) -> None:
+        out_dict = self.to_dict()
+        if len(out_dict) == 0 or out_dict[list(out_dict.keys())[0]] is None:
+            raise ValueError(f"{self.name} wasn't fit to data")
+        with open(out_fn, "w") as outfile:
+            json.dump(out_dict, outfile, indent=4)
 
 
 class MultiNormalizer(Normalizer):
@@ -70,8 +75,6 @@ class MultiNormalizer(Normalizer):
 
     name = "MultiNormalizer"
 
-    # TODO: when provided with nothing use, Standardizer as the only method
-    # TODO: ADD a default normalizer for featuires that are not specified !! Urgent
     def __init__(self, method_var_dict: dict[str, tuple[list[str], dict[str, float]]] = None, 
                  default_norma: str = "Standardizer", fillvalue: float = -999):
         seen_vars = []
@@ -161,19 +164,6 @@ class MultiNormalizer(Normalizer):
         return out_dict
 
 
-    @classmethod
-    def from_json(cls, in_fn: str) -> Self:
-        with open(in_fn, "r") as f:
-            in_dict = json.load(f)
-        return cls.from_dict(in_dict)
-    
-    
-    def save_json(self, out_fn) -> None:
-        out_dict = self.to_dict()
-        with open(out_fn, "w") as outfile:
-            json.dump(out_dict, outfile, indent=4)
-
-
 @dataclass
 class Standardizer(Normalizer):
     """
@@ -255,18 +245,6 @@ class Standardizer(Normalizer):
         }
         return out_dict
 
-    @classmethod
-    def from_json(cls, in_fn: str) -> Self:
-        with open(in_fn, "r") as f:
-            in_dict = json.load(f)
-        return cls.from_dict(in_dict)
-
-    def save_json(self, out_fn: str) -> None:
-        if self.mean is None:
-            raise ValueError("Standardizer wasn't fit to data")
-        out_dict = self.to_dict()
-        with open(out_fn, "w") as outfile:
-            json.dump(out_dict, outfile, indent=4)
 
 @dataclass
 class MinMaxScaler(Normalizer):
@@ -346,20 +324,6 @@ class MinMaxScaler(Normalizer):
         return out_dict
     
 
-    @classmethod
-    def from_json(cls, in_fn: str) -> Self:
-        with open(in_fn, "r") as f:
-            in_dict = json.load(f)
-        return cls.from_dict(in_dict)
-    
-
-    def save_json(self, out_fn: str) -> None:
-        if self.minimum is None:
-            raise ValueError("MinMaxScaler wasn't fit to data")
-        out_dict = self.to_dict()
-        with open(out_fn, "w") as outfile:
-            json.dump(out_dict, outfile, indent=4)
-
 # I can't make it work with the calculation of the median
 # TODO: find a way to do it
 @dataclass
@@ -379,6 +343,9 @@ class RobustScaler(Normalizer):
         self.median = dataset[variables].quantile(0.5, dims).compute().copy()
         self.iqr = (dataset[variables].quantile(0.75, dims).compute() - dataset[variables].quantile(0.25, dims).compute()).copy()
         self.fillvalue = self.fillvalue
+
+        # Check for near-zero iqrs and set them equal to one
+        self.iqr = xr.where(self.iqr < 1e-6, 1, self.iqr)
 
     def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
         if self.median is None:
@@ -436,19 +403,6 @@ class RobustScaler(Normalizer):
             "fillvalue": self.fillvalue,
         }
         return out_dict
-    
-    @classmethod
-    def from_json(cls, in_fn: str) -> Self:
-        with open(in_fn, "r") as f:
-            in_dict = json.load(f)
-        return cls.from_dict(in_dict)
-    
-    def save_json(self, out_fn: str) -> None:
-        if self.median is None:
-            raise ValueError("RobustScaling wasn't fit to data")
-        out_dict = self.to_dict()
-        with open(out_fn, "w") as outfile:
-            json.dump(out_dict, outfile, indent=4)
 
 
 @dataclass
@@ -466,6 +420,9 @@ class MaxAbsScaler(Normalizer):
 
         self.absmax = dataset[variables].max(dims).compute().copy()
         self.fillvalue = self.fillvalue
+
+        # Check for near-zero abs maxs and set them equal to one
+        self.absmax = xr.where(self.absmax < 1e-6, 1, self.absmax)
 
     def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
         if self.absmax is None:
@@ -515,19 +472,6 @@ class MaxAbsScaler(Normalizer):
             "fillvalue": self.fillvalue,
         }
         return out_dict
-    
-    @classmethod
-    def from_json(cls, in_fn: str) -> Self:
-        with open(in_fn, "r") as f:
-            in_dict = json.load(f)
-        return cls.from_dict(in_dict)
-    
-    def save_json(self, out_fn: str) -> None:
-        if self.absmax is None:
-            raise ValueError("MaxAbsScaler wasn't fit to data")
-        out_dict = self.to_dict()
-        with open(out_fn, "w") as outfile:
-            json.dump(out_dict, outfile, indent=4)
 
 
 @dataclass
@@ -595,19 +539,6 @@ class BoxCoxScaler(Normalizer):
             "fillvalue": self.fillvalue,
         }
         return out_dict
-    
-    @classmethod
-    def from_json(cls, in_fn: str) -> Self:
-        with open(in_fn, "r") as f:
-            in_dict = json.load(f)
-        return cls.from_dict(in_dict)
-    
-    def save_json(self, out_fn: str) -> None:
-        if self.lambda_ is None:
-            raise ValueError("BoxCox wasn't fit to data")
-        out_dict = self.to_dict()
-        with open(out_fn, "w") as outfile:
-            json.dump(out_dict, outfile, indent=4)
 
 
 @dataclass
@@ -652,7 +583,6 @@ class YeoJohnsonScaler(Normalizer):
         if self.lambda_ is None:
             raise ValueError("YeoJohnson wasn't fit to data")
 
-        nans_before = np.count_nonzero(np.isnan(datasets[0].to_array()))
         def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
 
             if variables is None:
@@ -713,21 +643,7 @@ class YeoJohnsonScaler(Normalizer):
             "fillvalue": self.fillvalue,
         }
         return out_dict
-
-    @classmethod
-    def from_json(cls, in_fn: str) -> Self:
-        with open(in_fn, "r") as f:
-            in_dict = json.load(f)
-        return cls.from_dict(in_dict)
-
-    def save_json(self, out_fn: str) -> None:
-        if self.lambda_ is None:
-            raise ValueError("YeoJohnson wasn't fit to data")
-        out_dict = self.to_dict()
-        with open(out_fn, "w") as outfile:
-            json.dump(out_dict, outfile, indent=4)
     
-
 
 def standardize_split_dataset(
     split_dataset: dict[str, xr.Dataset],
