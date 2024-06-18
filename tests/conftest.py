@@ -42,6 +42,58 @@ def features_dataset() -> xr.Dataset:
 
 
 @pytest.fixture
+def features_multi() -> xr.Dataset:
+    """
+    Create a dataset as if it was loaded from `features.zarr`.
+    Coherent with the number of normalizers defined in the standardizers file.
+    """
+    import mlpp_lib.standardizers as st
+
+    rng = np.random.default_rng(1)
+    X = rng.standard_normal(size=(*SHAPE, len([n.name for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"])))
+    X[(X > 4.5) | (X < -4.5)] = np.nan
+    features = xr.Dataset(
+        {
+            f"var{i}": (DIMS, X[..., i]) for i in range(X.shape[-1])
+        },
+        coords={
+            "forecast_reference_time": REFTIMES,
+            "t": LEADTIMES,
+            "station": STATIONS,
+        },
+    )
+
+    return features
+
+
+@pytest.fixture
+def normalizers() -> list:
+    """
+    Create a list of normalizers.
+    The list consists of all available normalizers except the multi-normalizer.
+    """
+    import mlpp_lib.standardizers as st
+
+    normalizers = [n.name for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"]
+
+    return normalizers
+
+
+@pytest.fixture
+def multinormalizer() -> xr.Dataset:
+    """
+    Create a multi-normalizer.
+    """
+    import mlpp_lib.standardizers as st
+
+    normalizer_list = [n() for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"]
+    method_var_dict = {normalizer: ([f"var{i}"],{}) for i, normalizer in enumerate(normalizer_list)}
+    multinormalizer = st.MultiNormalizer(method_var_dict)
+    
+    return multinormalizer
+
+
+@pytest.fixture
 def targets_dataset() -> xr.Dataset:
     """
     Create a dataset as if it was loaded from `targets.zarr`.
