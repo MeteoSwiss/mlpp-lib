@@ -27,6 +27,10 @@ def create_normalizer_from_str(class_name: str, inputs: Optional[dict] = None):
             return cls(**inputs)
     else:
         raise ValueError(f"{class_name} is not a subclass of Normalizer")
+    
+def get_class_attributes(cls):
+    class_attrs = {name: field.default for name, field in cls.__dataclass_fields__.items()}
+    return class_attrs
 
 class Normalizer:
     """
@@ -103,6 +107,7 @@ class MultiNormalizer(Normalizer):
                 LOGGER.info(f"{method_cls.name}: {len(variables)} variables.")
                 self.parameters.append((method_cls, variables, input_params))
                 self.all_vars.extend(variables)
+                self.all_normas.append(method_cls.name)
 
 
     def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
@@ -144,13 +149,22 @@ class MultiNormalizer(Normalizer):
     @classmethod
     def from_dict(cls, in_dict: dict) -> Self:
         method_var_dict = {}
-        for method_name, inner_dict in in_dict.items():
-            tmp_class = create_normalizer_from_str(method_name)
-            subclass = tmp_class.from_dict(inner_dict)
-            variables = inner_dict["channels"]
-            # TODO: the following line is a bit convoluted, maybe there is a better way to do it
-            inputs = {key: getattr(subclass, key) for key in inner_dict if getattr(subclass, key, None) is not None}
+
+        # check whether dict corresponds to old Standardizer format
+        first_key = list(in_dict.keys())[0]
+        if all([getattr(subclass, first_key, None) is None for subclass in globals().values() if isinstance(subclass, Normalizer)]):
+            subclass = Standardizer().from_dict(in_dict)
+            variables = list(subclass.mean.data_vars)
+            inputs = {"mean": subclass.mean, "std": subclass.std, "fillvalue": subclass.fillvalue}
             method_var_dict[subclass.name] = (variables, inputs)
+        else:
+            for method_name, inner_dict in in_dict.items():
+                tmp_class = create_normalizer_from_str(method_name)
+                subclass = tmp_class.from_dict(inner_dict)
+                variables = inner_dict["channels"]
+                # TODO: the following line is a bit convoluted, maybe there is a better way to do it
+                inputs = {key: getattr(subclass, key) for key in inner_dict if getattr(subclass, key, None) is not None}
+                method_var_dict[subclass.name] = (variables, inputs)
         return cls(method_var_dict)
     
     
@@ -162,6 +176,50 @@ class MultiNormalizer(Normalizer):
             out_dict_tmp["channels"] = variables
             out_dict[method.name] = out_dict_tmp
         return out_dict
+    
+
+@dataclass
+class Identity(Normalizer):
+    """
+    Identity normalizer, returns the input data without any transformation.
+    """
+
+    fillvalue: float = field(default=-5)
+    name = "Identity"
+
+    def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
+        self.fillvalue = self.fillvalue
+
+    def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+
+        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+            if variables is None:
+                variables = list(ds.data_vars)
+            for var in variables:
+                assert var in self.mean.data_vars, f"{var} not in Standardizer"
+
+                identity_value = ds[var].astype("float32")
+                if self.fillvalue is not None:
+                    identity_value = identity_value.fillna(self.fillvalue)
+                ds[var] = identity_value
+            return ds
+        
+        return tuple(f(ds, variables) for ds in datasets)
+    
+    def inverse_transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+        
+        return tuple(xr.where(ds > self.fillvalue, ds, np.nan) for ds in datasets)
+    
+    @classmethod
+    def from_dict(cls, in_dict: dict) -> Self:
+        fillvalue = in_dict["fillvalue"]
+        return cls(fillvalue)
+    
+    def to_dict(self):
+        out_dict = {
+            "fillvalue": self.fillvalue,
+        }
+        return out_dict
 
 
 @dataclass
@@ -172,7 +230,7 @@ class Standardizer(Normalizer):
 
     mean: xr.Dataset = field(default=None)
     std: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(init=True, default=-999)
+    fillvalue: dict[str, float] = field(init=True, default=-5)
     name = "Standardizer"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -254,7 +312,7 @@ class MinMaxScaler(Normalizer):
 
     minimum: xr.Dataset = field(default=None)
     maximum: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(init=True, default=-999)
+    fillvalue: dict[str, float] = field(init=True, default=-5)
     name = "MinMaxScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -282,7 +340,7 @@ class MinMaxScaler(Normalizer):
                 if self.fillvalue is not None:
                     scaled_var = scaled_var.fillna(self.fillvalue)
 
-                ds[var] = scaled_var  
+                ds[var] = scaled_var
             return ds
         
         return tuple(f(ds, variables) for ds in datasets)
@@ -331,7 +389,7 @@ class RobustScaler(Normalizer):
 
     median: xr.Dataset = field(default=None)
     iqr: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(init=True, default=-999)
+    fillvalue: dict[str, float] = field(init=True, default=-5)
     name = "RobustScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -409,7 +467,7 @@ class RobustScaler(Normalizer):
 class MaxAbsScaler(Normalizer):
 
     absmax: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(init=True, default=-999)
+    fillvalue: dict[str, float] = field(init=True, default=-5)
     name = "MaxAbsScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -418,11 +476,9 @@ class MaxAbsScaler(Normalizer):
         if not all(var in dataset.data_vars for var in variables):
             raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
 
-        self.absmax = dataset[variables].max(dims).compute().copy()
+        self.absmax = abs(dataset[variables]).max(dims).compute().copy()
         self.fillvalue = self.fillvalue
 
-        # Check for near-zero abs maxs and set them equal to one
-        self.absmax = xr.where(self.absmax < 1e-6, 1, self.absmax)
 
     def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
         if self.absmax is None:
@@ -477,8 +533,8 @@ class MaxAbsScaler(Normalizer):
 @dataclass
 class BoxCoxScaler(Normalizer):
 
-    lambda_: float = field(default=2)
-    fillvalue: dict[str, float] = field(init=True, default=-999)
+    lambda_: float = field(default=0.5)
+    fillvalue: dict[str, float] = field(init=True, default=-5)
     name = "BoxCoxScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -544,8 +600,8 @@ class BoxCoxScaler(Normalizer):
 @dataclass
 class YeoJohnsonScaler(Normalizer):
 
-    lambda_: float = field(default=3)
-    fillvalue: dict[str, float] = field(init=True, default=-999)
+    lambda_: float = field(default=0.5)
+    fillvalue: dict[str, float] = field(init=True, default=-5)
     name = "YeoJohnsonScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
