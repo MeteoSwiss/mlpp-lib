@@ -74,7 +74,7 @@ def normalizers() -> list:
     """
     import mlpp_lib.standardizers as st
 
-    normalizers = [n.name for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"]
+    normalizers = [st.create_normalizer_from_str(n.name) for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"]
 
     return normalizers
 
