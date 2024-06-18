@@ -384,7 +384,7 @@ class MinMaxScaler(Normalizer):
 
 # I can't make it work with the calculation of the median
 # TODO: find a way to do it
-@dataclass
+"""@dataclass
 class RobustScaler(Normalizer):
 
     median: xr.Dataset = field(default=None)
@@ -460,7 +460,7 @@ class RobustScaler(Normalizer):
             "iqr": self.iqr.to_dict(),
             "fillvalue": self.fillvalue,
         }
-        return out_dict
+        return out_dict"""
 
 
 @dataclass
