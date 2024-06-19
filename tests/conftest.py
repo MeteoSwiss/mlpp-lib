@@ -51,6 +51,7 @@ def features_multi() -> xr.Dataset:
 
     rng = np.random.default_rng(1)
     X = rng.standard_normal(size=(*SHAPE, len([n.name for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"])))
+    X = np.float32(X)
     X[(X > 4.5) | (X < -4.5)] = np.nan
     features = xr.Dataset(
         {
