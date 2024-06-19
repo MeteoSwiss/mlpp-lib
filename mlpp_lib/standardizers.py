@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 from abc import abstractmethod
+import sys
 
 import numpy as np
 import xarray as xr
@@ -20,10 +21,10 @@ def create_normalizer_from_str(class_name: str, inputs: Optional[dict] = None):
 
     if issubclass(cls, Normalizer):
         if inputs is None:
-            return cls(fillvalue=-5)
+            return cls(fillvalue=-10)
         else:
             if "fillvalue" not in inputs.keys():
-                inputs["fillvalue"] = -5
+                inputs["fillvalue"] = -10
             return cls(**inputs)
     else:
         raise ValueError(f"{class_name} is not a subclass of Normalizer")
@@ -80,7 +81,7 @@ class MultiNormalizer(Normalizer):
     name = "MultiNormalizer"
 
     def __init__(self, method_var_dict: dict[str, tuple[list[str], dict[str, float]]] = None, 
-                 default_norma: str = "Standardizer", fillvalue: float = -5):
+                 default_norma: str = "Standardizer", fillvalue: float = -10):
         seen_vars = []
         self.parameters = []
         self.fillvalue = fillvalue
@@ -185,7 +186,7 @@ class Identity(Normalizer):
     Identity normalizer, returns the input data without any transformation.
     """
 
-    fillvalue: float = field(default=-5)
+    fillvalue: float = field(default=-10)
     name = "Identity"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -229,7 +230,7 @@ class Standardizer(Normalizer):
 
     mean: xr.Dataset = field(default=None)
     std: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(init=True, default=-5)
+    fillvalue: dict[str, float] = field(init=True, default=-10)
     name = "Standardizer"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -311,7 +312,7 @@ class MinMaxScaler(Normalizer):
 
     minimum: xr.Dataset = field(default=None)
     maximum: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(init=True, default=-5)
+    fillvalue: dict[str, float] = field(init=True, default=-10)
     name = "MinMaxScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -388,7 +389,7 @@ class RobustScaler(Normalizer):
 
     median: xr.Dataset = field(default=None)
     iqr: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(init=True, default=-5)
+    fillvalue: dict[str, float] = field(init=True, default=-10)
     name = "RobustScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -466,7 +467,7 @@ class RobustScaler(Normalizer):
 class MaxAbsScaler(Normalizer):
 
     absmax: xr.Dataset = field(default=None)
-    fillvalue: dict[str, float] = field(init=True, default=-5)
+    fillvalue: dict[str, float] = field(init=True, default=-10)
     name = "MaxAbsScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -533,7 +534,7 @@ class MaxAbsScaler(Normalizer):
 class YeoJohnsonScaler(Normalizer):
 
     lambda_: float = field(default=0.5)
-    fillvalue: dict[str, float] = field(init=True, default=-5)
+    fillvalue: dict[str, float] = field(init=True, default=-10)
     name = "YeoJohnsonScaler"
 
     def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
@@ -545,8 +546,9 @@ class YeoJohnsonScaler(Normalizer):
         self.lambda_ = self.lambda_
         self.fillvalue = self.fillvalue
 
-
+    @classmethod
     def yeo_johnson_transform(self, x: float, lmbda: float) -> np.ndarray:
+        
         if x >= 0:
             if lmbda == 0:
                 return np.log1p(x)
@@ -558,8 +560,11 @@ class YeoJohnsonScaler(Normalizer):
             else:
                 return -((-x + 1) ** (2 - lmbda) - 1) / (2 - lmbda)
             
-        
+    @classmethod    
     def yeo_johnson_inverse_transform(self, x: float, lmbda: float) -> np.ndarray:
+        
+        if np.isnan(x):
+            return x
         if x >= 0:
             if lmbda == 0:
                 return np.expm1(x)
@@ -570,7 +575,6 @@ class YeoJohnsonScaler(Normalizer):
                 return -np.expm1(-x)
             else:
                 return 1 - (-(2 - lmbda) * x + 1) ** (1 / (2 - lmbda))
-        
 
     def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
         if self.lambda_ is None:
@@ -587,7 +591,6 @@ class YeoJohnsonScaler(Normalizer):
                     self.yeo_johnson_transform,
                     ds[var],
                     self.lambda_,
-                    dask="parallelized",
                     output_dtypes=[np.float32],
                     vectorize=True,
                 )
@@ -615,7 +618,6 @@ class YeoJohnsonScaler(Normalizer):
                     self.yeo_johnson_inverse_transform,
                     ds[var],
                     self.lambda_,
-                    dask="parallelized",
                     output_dtypes=[np.float32],
                     vectorize=True,
                 )
