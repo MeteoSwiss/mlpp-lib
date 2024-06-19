@@ -196,8 +196,6 @@ class Identity(Normalizer):
             if variables is None:
                 variables = list(ds.data_vars)
             for var in variables:
-                assert var in self.mean.data_vars, f"{var} not in Standardizer"
-
                 identity_value = ds[var].astype("float32")
                 if self.fillvalue is not None:
                     identity_value = identity_value.fillna(self.fillvalue)
