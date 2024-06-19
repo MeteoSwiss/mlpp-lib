@@ -20,10 +20,10 @@ def create_normalizer_from_str(class_name: str, inputs: Optional[dict] = None):
 
     if issubclass(cls, Normalizer):
         if inputs is None:
-            return cls(fillvalue=-999)
+            return cls(fillvalue=-5)
         else:
             if "fillvalue" not in inputs.keys():
-                inputs["fillvalue"] = -999
+                inputs["fillvalue"] = -5
             return cls(**inputs)
     else:
         raise ValueError(f"{class_name} is not a subclass of Normalizer")
@@ -71,7 +71,7 @@ class Normalizer:
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
 
-
+@dataclass
 class MultiNormalizer(Normalizer):
     """
     Abstract class for normalizing data in a xarray.Dataset object with different normalizations.
@@ -80,7 +80,7 @@ class MultiNormalizer(Normalizer):
     name = "MultiNormalizer"
 
     def __init__(self, method_var_dict: dict[str, tuple[list[str], dict[str, float]]] = None, 
-                 default_norma: str = "Standardizer", fillvalue: float = -999):
+                 default_norma: str = "Standardizer", fillvalue: float = -5):
         seen_vars = []
         self.parameters = []
         self.fillvalue = fillvalue
@@ -152,7 +152,8 @@ class MultiNormalizer(Normalizer):
 
         # check whether dict corresponds to old Standardizer format
         first_key = list(in_dict.keys())[0]
-        if all([getattr(subclass, first_key, None) is None for subclass in globals().values() if isinstance(subclass, Normalizer)]):
+        list_of_classes = [cls.__name__ for cls in Normalizer.__subclasses__() if cls.__name__!='MultiNormalizer']
+        if first_key not in list_of_classes:
             subclass = Standardizer().from_dict(in_dict)
             variables = list(subclass.mean.data_vars)
             inputs = {"mean": subclass.mean, "std": subclass.std, "fillvalue": subclass.fillvalue}
@@ -238,8 +239,8 @@ class Standardizer(Normalizer):
         if not all(var in dataset.data_vars for var in variables):
             raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
 
-        self.mean = dataset[variables].mean(dims).compute().copy()
-        self.std = dataset[variables].std(dims).compute().copy()
+        self.mean = dataset[variables].mean(dims).compute().copy().astype("float32")
+        self.std = dataset[variables].std(dims).compute().copy().astype("float32")
         self.fillvalue = self.fillvalue
         # Check for near-zero standard deviations and set them equal to one
         self.std = xr.where(self.std < 1e-6, 1, self.std)
@@ -319,8 +320,8 @@ class MinMaxScaler(Normalizer):
         if not all(var in dataset.data_vars for var in variables):
             raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
 
-        self.minimum = dataset[variables].min(dims).compute().copy()
-        self.maximum = dataset[variables].max(dims).compute().copy()
+        self.minimum = dataset[variables].min(dims).compute().copy().astype("float32")
+        self.maximum = dataset[variables].max(dims).compute().copy().astype("float32")
         self.fillvalue = self.fillvalue
 
     def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
@@ -474,7 +475,7 @@ class MaxAbsScaler(Normalizer):
         if not all(var in dataset.data_vars for var in variables):
             raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
 
-        self.absmax = abs(dataset[variables]).max(dims).compute().copy()
+        self.absmax = abs(dataset[variables]).max(dims).compute().copy().astype("float32")
         self.fillvalue = self.fillvalue
 
 
@@ -529,73 +530,6 @@ class MaxAbsScaler(Normalizer):
 
 
 @dataclass
-class BoxCoxScaler(Normalizer):
-
-    lambda_: float = field(default=0.5)
-    fillvalue: dict[str, float] = field(init=True, default=-5)
-    name = "BoxCoxScaler"
-
-    def fit(self, dataset: xr.Dataset, variables: Optional[list] = None, dims: Optional[list] = None):
-        if variables is None:
-            variables = list(dataset.data_vars)
-        if not all(var in dataset.data_vars for var in variables):
-            raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
-
-        self.lambda_ = self.lambda_
-        self.fillvalue = self.fillvalue
-
-    def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
-        if self.lambda_ is None:
-            raise ValueError("BoxCox wasn't fit to data")
-
-        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
-            if variables is None:
-                variables = ds.data_vars
-            for var in variables:
-                assert var in ds, f"{var} not in input dataset"
-
-                scaled_var = (ds[var] ** self.lambda_ - 1) / self.lambda_ if self.lambda_ != 0 else np.log(ds[var])
-
-                if self.fillvalue is not None:
-                    scaled_var = scaled_var.fillna(self.fillvalue)
-
-                ds[var] = scaled_var
-            return ds
-        
-        return tuple(f(ds, variables) for ds in datasets)
-    
-    def inverse_transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
-        if self.lambda_ is None:
-            raise ValueError("BoxCox wasn't fit to data")
-        
-        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
-            if variables is None:
-                variables = ds.data_vars
-            ds = xr.where(ds > self.fillvalue, ds, np.nan)
-            for var in variables:
-                assert var in ds, f"{var} not in input dataset"
-
-                unscaled_var = (ds[var] * self.lambda_ + 1) ** (1 / self.lambda_) if self.lambda_ != 0 else np.exp(ds[var])
-
-                ds[var] = unscaled_var
-            return ds
-
-        return tuple(f(ds, variables) for ds in datasets)
-    
-    @classmethod
-    def from_dict(cls, in_dict: dict) -> Self:
-        lambda_ = in_dict["lambda_"]
-        return cls(lambda_)
-    
-    def to_dict(self):
-        out_dict = {
-            "lambda_": self.lambda_,
-            "fillvalue": self.fillvalue,
-        }
-        return out_dict
-
-
-@dataclass
 class YeoJohnsonScaler(Normalizer):
 
     lambda_: float = field(default=0.5)
@@ -613,24 +547,29 @@ class YeoJohnsonScaler(Normalizer):
 
 
     def yeo_johnson_transform(self, x: float, lmbda: float) -> np.ndarray:
-        if lmbda == 0:
-            return np.log1p(x)
-        elif lmbda == 2:
-            return -np.log1p(-x)
-        elif x>=0:
-            return ((x + 1) ** lmbda - 1) / lmbda
+        if x >= 0:
+            if lmbda == 0:
+                return np.log1p(x)
+            else:
+                return ((x + 1) ** lmbda - 1) / lmbda
         else:
-            return -(((-x + 1) ** (2 - lmbda)) - 1) / (2 - lmbda)
+            if lmbda == 2:
+                return -np.log1p(-x)
+            else:
+                return -((-x + 1) ** (2 - lmbda) - 1) / (2 - lmbda)
+            
         
     def yeo_johnson_inverse_transform(self, x: float, lmbda: float) -> np.ndarray:
-        if lmbda == 0:
-            return np.expm1(x)
-        elif lmbda == 2:
-            return -np.expm1(-x)
-        elif x>=0:
-            return ((lmbda * x + 1) ** (1 / lmbda)) - 1
+        if x >= 0:
+            if lmbda == 0:
+                return np.expm1(x)
+            else:
+                return ((lmbda * x + 1) ** (1 / lmbda)) - 1
         else:
-            return -((-lmbda * x + 1) ** (1 / (2 - lmbda))) + 1
+            if lmbda == 2:
+                return -np.expm1(-x)
+            else:
+                return 1 - (-(2 - lmbda) * x + 1) ** (1 / (2 - lmbda))
         
 
     def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
