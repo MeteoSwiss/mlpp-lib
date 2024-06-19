@@ -8,7 +8,7 @@ def test_fit(features_dataset):
     standardizer.fit(features_dataset)
     assert all(var in standardizer.mean.data_vars for var in features_dataset.data_vars)
     assert all(var in standardizer.std.data_vars for var in features_dataset.data_vars)
-    assert standardizer.fillvalue == -5
+    assert standardizer.fillvalue == -10
 
 
 def test_transform(features_dataset):
