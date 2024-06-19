@@ -240,8 +240,8 @@ class Standardizer(Normalizer):
         if not all(var in dataset.data_vars for var in variables):
             raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
 
-        self.mean = dataset[variables].mean(dims).compute().copy().astype("float32")
-        self.std = dataset[variables].std(dims).compute().copy().astype("float32")
+        self.mean = dataset[variables].mean(dims).compute().copy()
+        self.std = dataset[variables].std(dims).compute().copy()
         self.fillvalue = self.fillvalue
         # Check for near-zero standard deviations and set them equal to one
         self.std = xr.where(self.std < 1e-6, 1, self.std)
@@ -253,18 +253,19 @@ class Standardizer(Normalizer):
 
         def f(ds: xr.Dataset, variables: Optional[list] = None):
             
+            ds_copy = ds.copy()
             if variables is None:
-                variables = list(ds.data_vars)
+                variables = list(ds_copy.data_vars)
             for var in variables:
                 assert var in self.mean.data_vars, f"{var} not in Standardizer"
 
-                standardized_var = ((ds[var] - self.mean[var]) / self.std[var]).astype("float32")
+                standardized_var = ((ds_copy[var] - self.mean[var]) / self.std[var]).astype("float32")
                 if self.fillvalue is not None:
                     standardized_var = standardized_var.fillna(self.fillvalue)
                 
-                ds[var] = standardized_var
+                ds_copy[var] = standardized_var
 
-            return ds
+            return ds_copy
 
         return tuple(f(ds, variables) for ds in datasets)
     
@@ -321,8 +322,8 @@ class MinMaxScaler(Normalizer):
         if not all(var in dataset.data_vars for var in variables):
             raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
 
-        self.minimum = dataset[variables].min(dims).compute().copy().astype("float32")
-        self.maximum = dataset[variables].max(dims).compute().copy().astype("float32")
+        self.minimum = dataset[variables].min(dims).compute().copy()
+        self.maximum = dataset[variables].max(dims).compute().copy()
         self.fillvalue = self.fillvalue
 
     def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
@@ -330,18 +331,20 @@ class MinMaxScaler(Normalizer):
             raise ValueError("MinMaxScaler wasn't fit to data")
 
         def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+
+            ds_copy = ds.copy()
             if variables is None:
-                variables = ds.data_vars
+                variables = ds_copy.data_vars
             for var in variables:
                 assert var in self.minimum.data_vars, f"{var} not in MinMaxScaler"
 
-                scaled_var = ((ds[var] - self.minimum[var]) / (self.maximum[var] - self.minimum[var])).astype("float32")
+                scaled_var = ((ds_copy[var] - self.minimum[var]) / (self.maximum[var] - self.minimum[var])).astype("float32")
 
                 if self.fillvalue is not None:
                     scaled_var = scaled_var.fillna(self.fillvalue)
 
-                ds[var] = scaled_var
-            return ds
+                ds_copy[var] = scaled_var
+            return ds_copy
         
         return tuple(f(ds, variables) for ds in datasets)
     
@@ -476,7 +479,7 @@ class MaxAbsScaler(Normalizer):
         if not all(var in dataset.data_vars for var in variables):
             raise KeyError(f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}")
 
-        self.absmax = abs(dataset[variables]).max(dims).compute().copy().astype("float32")
+        self.absmax = abs(dataset[variables]).max(dims).compute().copy()
         self.fillvalue = self.fillvalue
 
 
@@ -485,18 +488,20 @@ class MaxAbsScaler(Normalizer):
             raise ValueError("MaxAbsScaler wasn't fit to data")
 
         def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+
+            ds_copy = ds.copy()
             if variables is None:
-                variables = ds.data_vars
+                variables = ds_copy.data_vars
             for var in variables:
                 assert var in self.absmax.data_vars, f"{var} not in MaxAbsScaler"
 
-                scaled_var = (ds[var] / self.absmax[var]).astype("float32")
+                scaled_var = (ds_copy[var] / self.absmax[var]).astype("float32")
 
                 if self.fillvalue is not None:
                     scaled_var = scaled_var.fillna(self.fillvalue)
 
-                ds[var] = scaled_var
-            return ds
+                ds_copy[var] = scaled_var
+            return ds_copy
         
         return tuple(f(ds, variables) for ds in datasets)
     
@@ -581,15 +586,16 @@ class YeoJohnsonScaler(Normalizer):
             raise ValueError("YeoJohnson wasn't fit to data")
 
         def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
-
+            
+            ds_copy = ds.copy()
             if variables is None:
-                variables = ds.data_vars
+                variables = ds_copy.data_vars
             for var in variables:
-                assert var in ds, f"{var} not in input dataset"
+                assert var in ds_copy, f"{var} not in input dataset"
 
                 scaled_var = xr.apply_ufunc(
                     self.yeo_johnson_transform,
-                    ds[var],
+                    ds_copy[var],
                     self.lambda_,
                     output_dtypes=[np.float32],
                     vectorize=True,
@@ -598,8 +604,8 @@ class YeoJohnsonScaler(Normalizer):
                 if self.fillvalue is not None:
                     scaled_var = scaled_var.fillna(self.fillvalue)
 
-                ds[var] = scaled_var
-            return ds
+                ds_copy[var] = scaled_var
+            return ds_copy
         
         return tuple(f(ds, variables) for ds in datasets)
     
