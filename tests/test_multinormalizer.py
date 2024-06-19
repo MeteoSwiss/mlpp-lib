@@ -47,36 +47,10 @@ def test_inverse_transform(normalizers, multinormalizer, features_multi):
     ds_multi = multinormalizer.transform(features_multi)[0]
     inv_ds_multi = multinormalizer.inverse_transform(ds_multi)[0]
 
-    # not sure why we need that, np.allclose should set nans equal ...
-    inv_ds_multi = xr.where(xr.apply_ufunc(np.isnan, inv_ds_multi), -5, inv_ds_multi)
-    inv_ds_individual = xr.where(xr.apply_ufunc(np.isnan, inv_ds_individual), -5, inv_ds_individual)
-    original_data = xr.where(xr.apply_ufunc(np.isnan, original_data), -5, original_data)
-
     assert all(
         np.allclose(inv_ds_individual[f"var{i}"].values, inv_ds_multi[f"var{i}"].values, equal_nan=True)
         for i in range(len(normalizers))
     ), "Inverse transform is not equal between individual normalizers and multinormalizer"
-
-    """SHAPE = original_data["var0"].values.shape
-    break_ = False
-    for i in range(5):
-        print(normalizers[i].name)
-        for a in range(SHAPE[0]):
-            for b in range(SHAPE[1]):
-                for c in range(SHAPE[2]):
-                    lhs = np.abs(original_data[f"var{i}"].values[a, b, c] - inv_ds_individual[f"var{i}"].values[a, b, c])
-                    rhs = 1e-6 + 1e-5 * np.abs(inv_ds_individual[f"var{i}"].values[a, b, c])
-                    if lhs > rhs:
-                        print(a, b, c)
-                        print(original_data[f"var{i}"].values[a, b, c], inv_ds_individual[f"var{i}"].values[a, b, c])
-                        break_ = True
-                    if break_:
-                        break
-                if break_:
-                    break
-            if break_:
-                break
-        break_ = False"""
 
     assert all(
         np.allclose(original_data[f"var{i}"].values, inv_ds_individual[f"var{i}"].values, equal_nan=True, atol=1e-6)
