@@ -4,12 +4,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 from abc import abstractmethod
-import sys
 
 import numpy as np
 import xarray as xr
 from typing_extensions import Self
-#from mlpp_lib.utils import calculate_median
 
 LOGGER = logging.getLogger(__name__)
 
@@ -28,10 +26,6 @@ def create_normalization_from_str(class_name: str, inputs: Optional[dict] = None
             return cls(**inputs)
     else:
         raise ValueError(f"{class_name} is not a subclass of Normalization")
-    
-def get_class_attributes(cls):
-    class_attrs = {name: field.default for name, field in cls.__dataclass_fields__.items()}
-    return class_attrs
 
 
 @dataclass
@@ -70,7 +64,6 @@ class Normalizer:
                     LOGGER.error(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another normalization method.\nRemoving thenm from this normalization.")
                     variables = [var for var in variables if var not in vars_to_remove]
                 
-                LOGGER.info(f"{method_cls.name}: {len(variables)} variables.")
                 self.parameters.append((method_cls, variables, input_params))
                 self.all_vars.extend(variables)
 
@@ -155,8 +148,7 @@ class Normalizer:
 
 class Normalization:
     """
-    Abstract class for normalizing data in a xarray.Dataset object.
-    In principle it should not be instantiated, it only adds an extra level of abstraction.
+    Abstract class for nromalization techniques in a xarray.Dataset object.
     """
 
     @abstractmethod
@@ -223,7 +215,7 @@ class Identity(Normalization):
 @dataclass
 class Standardizer(Normalization):
     """
-    Standardizes data in a xarray.Dataset object with a z-normalization.
+    Standardizes data (z-normalization) in a xarray.Dataset object.
     """
 
     mean: xr.Dataset = field(default=None)
@@ -250,9 +242,7 @@ class Standardizer(Normalization):
             raise ValueError("Standardizer wasn't fit to data")
 
         def f(ds: xr.Dataset, variables: Optional[list] = None):
-            print(f"Standardizing {variables}")
-            print(f"vars in ds: {ds.data_vars}")
-            print(f"vars in mean: {self.mean.data_vars}")
+            
             ds_copy = ds.copy()
             if variables is None:
                 variables = list(ds_copy.data_vars)
