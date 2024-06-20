@@ -1,4 +1,4 @@
-from mlpp_lib.standardizers import MultiNormalizer, Standardizer, get_class_attributes
+from mlpp_lib.standardizers import Normalizer, Standardizer, get_class_attributes
 import numpy as np
 import xarray as xr
 
@@ -69,7 +69,7 @@ def test_serialization(multinormalizer, features_multi, tmp_path):
 
     multinormalizer.fit(features_multi)
     multinormalizer.save_json(fn_multi)
-    new_multinormalizer = MultiNormalizer.from_json(fn_multi)
+    new_multinormalizer = Normalizer.from_json(fn_multi)
 
     assert all(
         np.allclose(getattr(multinormalizer, attr), getattr(new_multinormalizer, attr), equal_nan=True)
@@ -77,14 +77,12 @@ def test_serialization(multinormalizer, features_multi, tmp_path):
     )
 
 
-def test_retro_compatibility(features_multi, tmp_path):
-
-    fn_multi = f"{tmp_path}/multinormalizer.json"
+def test_retro_compatibility(features_multi):
 
     standardizer = Standardizer()
     standardizer.fit(features_multi)
-    standardizer.save_json(fn_multi)
-    multinormalizer = MultiNormalizer.from_json(fn_multi)
+    dict_stand = standardizer.to_dict()
+    multinormalizer = Normalizer.from_dict(dict_stand)
     
     assert all(
         [np.allclose(getattr(multinormalizer.parameters[0][0], attr)[var].values, getattr(standardizer, attr)[var].values, equal_nan=True)
