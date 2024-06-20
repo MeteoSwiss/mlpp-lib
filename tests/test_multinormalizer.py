@@ -2,6 +2,11 @@ from mlpp_lib.standardizers import Normalizer, Standardizer, get_class_attribute
 import numpy as np
 import xarray as xr
 
+
+def get_class_attributes(cls):
+    class_attrs = {name: field.default for name, field in cls.__dataclass_fields__.items()}
+    return class_attrs
+
 def test_fit(normalizers, multinormalizer, features_multi):
 
     for i, normalizer in enumerate(normalizers):
