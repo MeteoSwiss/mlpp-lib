@@ -50,7 +50,7 @@ def features_multi() -> xr.Dataset:
     import mlpp_lib.standardizers as st
 
     rng = np.random.default_rng(1)
-    X = rng.standard_normal(size=(*SHAPE, len([n.name for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"])))
+    X = rng.standard_normal(size=(*SHAPE, len([n.name for n in st.Normalization.__subclasses__()])))
     X = np.float64(X)
     X[(X > 4.5) | (X < -4.5)] = np.nan
     features = xr.Dataset(
@@ -75,7 +75,7 @@ def normalizers() -> list:
     """
     import mlpp_lib.standardizers as st
 
-    normalizers = [st.create_normalizer_from_str(n.name) for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"]
+    normalizers = [st.create_normalization_from_str(n.name) for n in st.Normalization.__subclasses__()]
 
     return normalizers
 
@@ -87,9 +87,9 @@ def multinormalizer() -> xr.Dataset:
     """
     import mlpp_lib.standardizers as st
 
-    normalizer_list = [n.name for n in st.Normalizer.__subclasses__() if not n.name == "MultiNormalizer"]
+    normalizer_list = [n.name for n in st.Normalization.__subclasses__()]
     method_var_dict = {normalizer: ([f"var{i}"],{}) for i, normalizer in enumerate(normalizer_list)}
-    multinormalizer = st.MultiNormalizer(method_var_dict)
+    multinormalizer = st.Normalizer(method_var_dict)
 
     return multinormalizer
 
