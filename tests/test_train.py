@@ -7,7 +7,7 @@ from keras.engine.functional import Functional
 import xarray as xr
 
 from mlpp_lib import train
-from mlpp_lib.standardizers import Standardizer
+from mlpp_lib.standardizers import Normalizer
 from mlpp_lib.datasets import DataModule, DataSplitter
 
 from .test_model_selection import ValidDataSplitterOptions
@@ -124,14 +124,18 @@ def test_train_fromfile(tmp_path, cfg):
     splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
     batch_dims = ["forecast_reference_time", "t", "station"]
     datamodule = DataModule(
-        cfg["features"], cfg["targets"], batch_dims, splitter, tmp_path.as_posix() + "/"
+        features=cfg["features"], 
+        targets=cfg["targets"], 
+        batch_dims=batch_dims, 
+        splitter=splitter, 
+        data_dir=tmp_path.as_posix() + "/"
     )
     results = train.train(cfg, datamodule)
 
     assert len(results) == 4
     assert isinstance(results[0], Functional)  # model
     assert isinstance(results[1], dict)  # custom_objects
-    assert isinstance(results[2], Standardizer)  # standardizer
+    assert isinstance(results[2], Normalizer)  # standardizer
     assert isinstance(results[3], dict)  # history
 
     assert all([np.isfinite(v).all() for v in results[3].values()])
@@ -164,7 +168,7 @@ def test_train_fromds(features_dataset, targets_dataset, cfg):
     assert len(results) == 4
     assert isinstance(results[0], Functional)  # model
     assert isinstance(results[1], dict)  # custom_objects
-    assert isinstance(results[2], Standardizer)  # standardizer
+    assert isinstance(results[2], Normalizer)  # standardizer
     assert isinstance(results[3], dict)  # history
 
     assert all([np.isfinite(v).all() for v in results[3].values()])
