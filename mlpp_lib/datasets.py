@@ -160,7 +160,8 @@ class DataModule:
                 raise ValueError("Must provide standardizer for `test` stage.")
             else:
                 self.normalizer = Normalizer({"Identity": (list(self.train[0].data_vars), {})})
-                self.normalizer.fit(self.train[0])
+                
+        self.normalizer.fit(self.train[0])
 
         if stage == "fit" or stage is None:
             self.train = (
