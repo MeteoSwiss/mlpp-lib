@@ -15,7 +15,6 @@ from .standardizers import Normalization, Normalizer
 
 LOGGER = logging.getLogger(__name__)
 
-# TODO ? Rename all standardizers into Normalizer/MultiNormalizer ??
 class DataModule:
     """A class to encapsulate everything involved in mlpp data processing.
 
@@ -45,8 +44,8 @@ class DataModule:
         and targets are lists of names.
     filter: `DataFilter`, optional
         The object that handles the data filtering.
-    standardizer: `Standardizer`, optional
-        The object to standardize data, already fitted on the training data.
+    normalizer: `Normalizer`, optional
+        The object to normalize data, already fitted on the training data.
         Must be provided if `.setup("test")` is called.
     sample_weighting: list of str or str or xr.Dataset, optional
         Name(s) of the variable(s) used for weighting dataset samples or an xr.Dataset
@@ -146,7 +145,7 @@ class DataModule:
             )
         if stage == "test" or stage is None:
             self.test = self.splitter.get_partition(
-                *args, partition="test", thinning=self.thinning 
+                *args, partition="test", thinning=self.thinning
             )
 
     def apply_filter(self):
@@ -155,7 +154,7 @@ class DataModule:
 
     def standardize(self, stage=None):
         LOGGER.info("Standardizing data.")
-        print(stage, self.normalizer.parameters[0][0].mean.data_vars if self.normalizer is not None else None)
+        
         if self.normalizer is None:
             if stage == "test":
                 raise ValueError("Must provide standardizer for `test` stage.")
