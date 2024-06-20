@@ -1,4 +1,4 @@
-from mlpp_lib.standardizers import Normalizer, Standardizer, get_class_attributes
+from mlpp_lib.standardizers import Normalizer, Standardizer
 import numpy as np
 import xarray as xr
 
