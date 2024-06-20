@@ -37,12 +37,12 @@ class Normalizer:
     name = "Normalizer"
 
     def __init__(self, method_var_dict: dict[str, tuple[list[str], dict[str, float]]] = None, 
-                 default_norma: str = "Standardizer", fillvalue: float = -5):
+                 default_norma: Optional[str] = None, fillvalue: float = -5):
 
         self.all_vars = []
         self.parameters = []
         self.fillvalue = fillvalue
-        self.default_norma = default_norma
+        self.default_norma = default_norma if default_norma is not None else "Standardizer"
         self.default_norma_index = None
 
         if method_var_dict is not None:
