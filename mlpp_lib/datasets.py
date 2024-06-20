@@ -11,7 +11,7 @@ import xarray as xr
 from typing_extensions import Self
 
 from .model_selection import DataSplitter
-from .standardizers import Normalizer, MultiNormalizer, Standardizer
+from .standardizers import Normalization, Normalizer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class DataModule:
         group_samples: Optional[dict[str:int]] = None,
         data_dir: Optional[str] = None,
         filter: Optional[DataFilter] = None,
-        standardizer: Optional[Normalizer] = None,
+        normalizer: Optional[Normalizer] = None,
         sample_weighting: Optional[Sequence[Hashable] or Hashable or xr.Dataset] = None,
         thinning: Optional[Mapping[str, int]] = None,
     ):
@@ -76,7 +76,7 @@ class DataModule:
         self.splitter = splitter
         self.group_samples = group_samples
         self.filter = filter
-        self.standardizer = standardizer
+        self.normalizer = normalizer
         self.sample_weighting = (
             list(sample_weighting)
             if isinstance(sample_weighting, str)
@@ -146,7 +146,7 @@ class DataModule:
             )
         if stage == "test" or stage is None:
             self.test = self.splitter.get_partition(
-                *args, partition="test", thinning=self.thinning
+                *args, partition="test", thinning=self.thinning 
             )
 
     def apply_filter(self):
@@ -155,30 +155,21 @@ class DataModule:
 
     def standardize(self, stage=None):
         LOGGER.info("Standardizing data.")
-        if self.standardizer is None:
+        print(stage, self.normalizer.parameters[0][0].mean.data_vars if self.normalizer is not None else None)
+        if self.normalizer is None:
             if stage == "test":
                 raise ValueError("Must provide standardizer for `test` stage.")
-
-            self.standardizer = Standardizer()
-            self.standardizer.fit(self.train[0])
-        
-        # With my new normalizer class, normalizer is usually not fitted. TODO: find a better way to do this
-        try:
-            self.standardizer.transform(self.train[0].copy())
-        except ValueError as e:
-            if "wasn't fit to data" in str(e):
-                LOGGER.error("Standardizer wasn't fitted to data. Fitting it now ...")
-                self.standardizer.fit(self.train[0])
             else:
-                raise e
+                self.normalizer = Normalizer({"Identity": (list(self.train[0].data_vars), {})})
+                self.normalizer.fit(self.train[0])
 
         if stage == "fit" or stage is None:
             self.train = (
-                tuple(self.standardizer.transform(self.train[0])) + self.train[1:]
+                tuple(self.normalizer.transform(self.train[0])) + self.train[1:]
             )
-            self.val = tuple(self.standardizer.transform(self.val[0])) + self.val[1:]
+            self.val = tuple(self.normalizer.transform(self.val[0])) + self.val[1:]
         if stage == "test" or stage is None:
-            self.test = tuple(self.standardizer.transform(self.test[0])) + self.test[1:]
+            self.test = tuple(self.normalizer.transform(self.test[0])) + self.test[1:]
 
     def as_datasets(self, stage=None):
         batch_dims = self.batch_dims
