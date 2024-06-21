@@ -11,7 +11,7 @@ import xarray as xr
 from typing_extensions import Self
 
 from .model_selection import DataSplitter
-from .standardizers import Normalization, Normalizer
+from .standardizers import DataTransformer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -44,8 +44,8 @@ class DataModule:
         and targets are lists of names.
     filter: `DataFilter`, optional
         The object that handles the data filtering.
-    normalizer: `Normalizer`, optional
-        The object to normalize data, already fitted on the training data.
+    data_transformer: `DataTransformer`, optional
+        The object to transform data.
         Must be provided if `.setup("test")` is called.
     sample_weighting: list of str or str or xr.Dataset, optional
         Name(s) of the variable(s) used for weighting dataset samples or an xr.Dataset
@@ -63,7 +63,7 @@ class DataModule:
         group_samples: Optional[dict[str:int]] = None,
         data_dir: Optional[str] = None,
         filter: Optional[DataFilter] = None,
-        normalizer: Optional[Normalizer] = None,
+        data_transformer: Optional[DataTransformer] = None,
         sample_weighting: Optional[Sequence[Hashable] or Hashable or xr.Dataset] = None,
         thinning: Optional[Mapping[str, int]] = None,
     ):
@@ -75,7 +75,7 @@ class DataModule:
         self.splitter = splitter
         self.group_samples = group_samples
         self.filter = filter
-        self.normalizer = normalizer
+        self.data_transformer = data_transformer
         self.sample_weighting = (
             list(sample_weighting)
             if isinstance(sample_weighting, str)
@@ -155,21 +155,21 @@ class DataModule:
     def standardize(self, stage=None):
         LOGGER.info("Standardizing data.")
         
-        if self.normalizer is None:
+        if self.data_transformer is None:
             if stage == "test":
                 raise ValueError("Must provide standardizer for `test` stage.")
             else:
-                self.normalizer = Normalizer({"Identity": (list(self.train[0].data_vars), {})})
-                
-        self.normalizer.fit(self.train[0])
+                self.data_transformer = DataTransformer({"Identity": (list(self.train[0].data_vars), {})})
+        
 
-        if stage == "fit" or stage is None:
+        if stage == "fit" or stage is None:        
+            self.data_transformer.fit(self.train[0])
             self.train = (
-                tuple(self.normalizer.transform(self.train[0])) + self.train[1:]
+                tuple(self.data_transformer.transform(self.train[0])) + self.train[1:]
             )
-            self.val = tuple(self.normalizer.transform(self.val[0])) + self.val[1:]
+            self.val = tuple(self.data_transformer.transform(self.val[0])) + self.val[1:]
         if stage == "test" or stage is None:
-            self.test = tuple(self.normalizer.transform(self.test[0])) + self.test[1:]
+            self.test = tuple(self.data_transformer.transform(self.test[0])) + self.test[1:]
 
     def as_datasets(self, stage=None):
         batch_dims = self.batch_dims

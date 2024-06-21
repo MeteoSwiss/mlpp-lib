@@ -13,11 +13,11 @@ LOGGER = logging.getLogger(__name__)
 
 
 
-def create_normalization_from_str(class_name: str, inputs: Optional[dict] = None):
+def create_transformation_from_str(class_name: str, inputs: Optional[dict] = None):
 
     cls = globals()[class_name]
 
-    if issubclass(cls, Normalization):
+    if issubclass(cls, DataTransformation):
         if inputs is None:
             return cls(fillvalue=-5)
         else:
@@ -25,15 +25,15 @@ def create_normalization_from_str(class_name: str, inputs: Optional[dict] = None
                 inputs["fillvalue"] = -5
             return cls(**inputs)
     else:
-        raise ValueError(f"{class_name} is not a subclass of Normalization")
+        raise ValueError(f"{class_name} is not a subclass of DataTransformation")
 
 
 @dataclass
-class Normalizer:
+class DataTransformer:
     """
-    Class to handle the normalization of data in a xarray.Dataset object with different techniques.
+    Class to handle the transformation of data in a xarray.Dataset object with different techniques.
     """
-    name = "Normalizer"
+    name = "DataTransformer"
 
     def __init__(self, method_var_dict: dict[str, tuple[list[str], dict[str, float]]] = None, 
                  default_norma: Optional[str] = None, fillvalue: float = -5):
@@ -57,10 +57,10 @@ class Normalizer:
                     input_params["fillvalue"] = self.fillvalue
                 vars_to_remove = [var for var in variables if var in self.all_vars]
                 
-                method_cls = create_normalization_from_str(method, inputs=input_params)
+                method_cls = create_transformation_from_str(method, inputs=input_params)
                 
                 if len(vars_to_remove) > 0:
-                    LOGGER.error(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another normalization method.\nRemoving thenm from this normalization.")
+                    LOGGER.error(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another transformation method.\nRemoving thenm from this transformation.")
                     variables = [var for var in variables if var not in vars_to_remove]
                 
                 self.parameters.append((method_cls, variables, input_params))
@@ -72,17 +72,17 @@ class Normalizer:
         datavars = list(dataset.data_vars)
         remaining_var = list(set(datavars) - set(self.all_vars))
         if len(remaining_var) > 0:
-            LOGGER.info(f"Variables {[var for var in remaining_var]} are not assigned to any normalization method. They will be assigned to {self.default_norma}")
+            LOGGER.info(f"Variables {[var for var in remaining_var]} are not assigned to any transformation method. They will be assigned to {self.default_norma}")
             if self.default_norma_index is not None:
                 self.parameters[self.default_norma_index][1].extend(remaining_var)
             else:
-                self.parameters.append((create_normalization_from_str(self.default_norma), remaining_var, {"fillvalue": self.fillvalue}))
+                self.parameters.append((create_transformation_from_str(self.default_norma), remaining_var, {"fillvalue": self.fillvalue}))
             self.all_vars.extend(remaining_var)
 
         for i in range(len(self.parameters)):
-            normalizer, variables, inputs = self.parameters[i]
-            normalizer.fit(dataset=dataset, variables = variables, dims = dims)
-            self.parameters[i] = (normalizer, variables, inputs)
+            transformation, variables, inputs = self.parameters[i]
+            transformation.fit(dataset=dataset, variables = variables, dims = dims)
+            self.parameters[i] = (transformation, variables, inputs)
 
     
     def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
@@ -110,13 +110,13 @@ class Normalizer:
 
         # check whether dict corresponds to old Standardizer format
         first_key = list(in_dict.keys())[0]
-        if first_key not in [cls.__name__ for cls in Normalization.__subclasses__()]:
+        if first_key not in [cls.__name__ for cls in DataTransformation.__subclasses__()]:
             subclass = Standardizer().from_dict(in_dict)
             inputs = {"mean": subclass.mean, "std": subclass.std, "fillvalue": subclass.fillvalue}
             method_var_dict[subclass.name] = (list(subclass.mean.data_vars), inputs)
         else:
             for method_name, inner_dict in in_dict.items():
-                tmp_class = create_normalization_from_str(method_name).from_dict(inner_dict)
+                tmp_class = create_transformation_from_str(method_name).from_dict(inner_dict)
                 inputs = {key: getattr(tmp_class, key) for key in inner_dict if getattr(tmp_class, key, None) is not None}
                 method_var_dict[tmp_class.name] = (inner_dict["channels"], inputs)
         return cls(method_var_dict)
@@ -144,7 +144,7 @@ class Normalizer:
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
 
-class Normalization:
+class DataTransformation:
     """
     Abstract class for nromalization techniques in a xarray.Dataset object.
     """
@@ -170,9 +170,9 @@ class Normalization:
         pass
 
 @dataclass
-class Identity(Normalization):
+class Identity(DataTransformation):
     """
-    Identity normalizer, returns the input data without any transformation.
+    Identity transformation, returns the input data without any transformation.
     """
 
     fillvalue: float = field(default=-5)
@@ -211,9 +211,9 @@ class Identity(Normalization):
 
 
 @dataclass
-class Standardizer(Normalization):
+class Standardizer(DataTransformation):
     """
-    Standardizes data (z-normalization) in a xarray.Dataset object.
+    Tranforms data using a z-normalization in a xarray.Dataset object.
     """
 
     mean: xr.Dataset = field(default=None)
@@ -293,9 +293,9 @@ class Standardizer(Normalization):
 
 
 @dataclass
-class MinMaxScaler(Normalization):
+class MinMaxScaler(DataTransformation):
     """
-    Normalize data using a min/max scaling in a xarray.Dataset object.
+    Tranforms data using a min/max scaling in a xarray.Dataset object.
     """
 
     minimum: xr.Dataset = field(default=None)
@@ -373,9 +373,9 @@ class MinMaxScaler(Normalization):
 
 
 @dataclass
-class MaxAbsScaler(Normalization):
+class MaxAbsScaler(DataTransformation):
     """
-    Normalize data using a max absolute scaling in a xarray.Dataset object.
+    Tranforms data using a max absolute scaling in a xarray.Dataset object.
     """
 
     absmax: xr.Dataset = field(default=None)

@@ -45,12 +45,12 @@ def features_dataset() -> xr.Dataset:
 def features_multi() -> xr.Dataset:
     """
     Create a dataset as if it was loaded from `features.zarr`.
-    Coherent with the number of normalizers defined in the standardizers file.
+    Coherent with the number of data transformations defined in the standardizers file.
     """
     import mlpp_lib.standardizers as st
 
     rng = np.random.default_rng(1)
-    X = rng.standard_normal(size=(*SHAPE, len([n.name for n in st.Normalization.__subclasses__()])))
+    X = rng.standard_normal(size=(*SHAPE, len([n.name for n in st.DataTransformation.__subclasses__()])))
     X = np.float64(X)
     X[(X > 4.5) | (X < -4.5)] = np.nan
     features = xr.Dataset(
@@ -68,30 +68,30 @@ def features_multi() -> xr.Dataset:
 
 
 @pytest.fixture
-def normalizers() -> list:
+def datatransformations() -> list:
     """
-    Create a list of normalizers.
-    The list consists of all available normalizers except the multi-normalizer.
+    Create a list of data transformations.
+    The list consists of all available data transformations.
     """
     import mlpp_lib.standardizers as st
 
-    normalizers = [st.create_normalization_from_str(n.name) for n in st.Normalization.__subclasses__()]
+    datatransformations = [st.create_transformation_from_str(n.name) for n in st.DataTransformation.__subclasses__()]
 
-    return normalizers
+    return datatransformations
 
 
 @pytest.fixture
-def multinormalizer() -> xr.Dataset:
+def data_transformer() -> xr.Dataset:
     """
-    Create a multi-normalizer.
+    Create a datatransformer.
     """
     import mlpp_lib.standardizers as st
 
-    normalizer_list = [n.name for n in st.Normalization.__subclasses__()]
-    method_var_dict = {normalizer: ([f"var{i}"],{}) for i, normalizer in enumerate(normalizer_list)}
-    multinormalizer = st.Normalizer(method_var_dict)
+    transformations_list = [n.name for n in st.DataTransformation.__subclasses__()]
+    method_var_dict = {transformation: ([f"var{i}"],{}) for i, transformation in enumerate(transformations_list)}
+    data_transformer = st.DataTransformer(method_var_dict)
 
-    return multinormalizer
+    return data_transformer
 
 
 @pytest.fixture
