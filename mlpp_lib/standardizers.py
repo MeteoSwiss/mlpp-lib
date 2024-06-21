@@ -33,7 +33,6 @@ class Normalizer:
     """
     Class to handle the normalization of data in a xarray.Dataset object with different techniques.
     """
-
     name = "Normalizer"
 
     def __init__(self, method_var_dict: dict[str, tuple[list[str], dict[str, float]]] = None, 
@@ -54,7 +53,7 @@ class Normalizer:
                 
                 if input_params is None:
                     input_params = {}
-                if input_params == {} or "fillvalue" not in input_params.keys():
+                if "fillvalue" not in input_params.keys():
                     input_params["fillvalue"] = self.fillvalue
                 vars_to_remove = [var for var in variables if var in self.all_vars]
                 
@@ -111,8 +110,7 @@ class Normalizer:
 
         # check whether dict corresponds to old Standardizer format
         first_key = list(in_dict.keys())[0]
-        list_of_classes = [cls.__name__ for cls in Normalization.__subclasses__()]
-        if first_key not in list_of_classes:
+        if first_key not in [cls.__name__ for cls in Normalization.__subclasses__()]:
             subclass = Standardizer().from_dict(in_dict)
             inputs = {"mean": subclass.mean, "std": subclass.std, "fillvalue": subclass.fillvalue}
             method_var_dict[subclass.name] = (list(subclass.mean.data_vars), inputs)
@@ -235,7 +233,6 @@ class Standardizer(Normalization):
         self.fillvalue = self.fillvalue
         # Check for near-zero standard deviations and set them equal to one
         self.std = xr.where(self.std < 1e-6, 1, self.std)
-
 
     def transform(self, *datasets: xr.Dataset, variables: Optional[list] = None) -> tuple[xr.Dataset, ...]:
         if self.mean is None:
