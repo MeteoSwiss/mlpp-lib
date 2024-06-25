@@ -63,7 +63,7 @@ class TestDataModule:
             self.batch_dims,
             self.splitter,
             data_dir=tmp_path.as_posix() + "/",
-            data_transformer=data_transformer,
+            normalizer=data_transformer,
         )
         dm.setup("test")
 

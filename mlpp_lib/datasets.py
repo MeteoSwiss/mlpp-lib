@@ -19,7 +19,7 @@ class DataModule:
     """A class to encapsulate everything involved in mlpp data processing.
 
     1. Take xarray objects or load and select variables from `.zarr` archives.
-    2. Filter, split, standardize.
+    2. Filter, split, normalize.
     3. Load into mlpp `Dataset`
     4. Reshape/mask as needed.
     5. Serve the `Dataset` or wrap it inside a `DataLoader`
@@ -100,7 +100,7 @@ class DataModule:
         if self.filter is not None:
             self.apply_filter()
         self.select_splits(stage=stage)
-        self.standardize(stage=stage)
+        self.normalize(stage=stage)
         self.as_datasets(stage=stage)
 
     def load_raw(self):
@@ -152,7 +152,7 @@ class DataModule:
         LOGGER.info("Applying filter to features and targets.")
         self.x, self.y = self.filter.apply(self.x, self.y)
 
-    def standardize(self, stage=None):
+    def normalize(self, stage=None):
         LOGGER.info("Standardizing data.")
         
         if self.normalizer is None:
