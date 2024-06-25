@@ -124,4 +124,4 @@ def train(
     for k in history:
         history[k] = list(map(float, history[k]))
 
-    return model, custom_objects, datamodule.data_transformer, history
+    return model, custom_objects, datamodule.normalizer, history
