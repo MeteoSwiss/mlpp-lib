@@ -102,7 +102,6 @@ class DataSplitter:
         seed: Optional[int] = 10,
         time_dim_name: str = "forecast_reference_time",
     ):
-        
         if not time_split.keys() == station_split.keys():
             raise ValueError(
                 "Time split and station split must be defined "
@@ -257,8 +256,6 @@ class DataSplitter:
 
         if self.station_split_method == "random":
             out = random_split(self.station_index, fractions, seed=self.seed)
-            LOGGER.info(f"Random station split with seed {self.seed}")
-            LOGGER.info(f"Station split (test): {out['test']}")
         elif self.station_split_method == "sequential":
             out = sequential_split(self.station_index, fractions)
         return out
