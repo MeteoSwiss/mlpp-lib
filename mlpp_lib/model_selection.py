@@ -105,8 +105,7 @@ class DataSplitter:
         if not time_split.keys() == station_split.keys():
             raise ValueError(
                 "Time split and station split must be defined "
-                "with the same partitions!\n"
-                f"{time_split.keys()} != {station_split.keys()}"
+                "with the same partitions!"
             )
         self.partition_names = list(time_split.keys())
         self._check_time(time_split, time_split_method)
