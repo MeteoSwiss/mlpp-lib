@@ -102,7 +102,6 @@ class DataSplitter:
         seed: Optional[int] = 10,
         time_dim_name: str = "forecast_reference_time",
     ):
-
         if not time_split.keys() == station_split.keys():
             raise ValueError(
                 "Time split and station split must be defined "
@@ -362,7 +361,7 @@ def random_split(
     seed: int = 10,
 ) -> dict[str, np.ndarray]:
     """Split an input index array randomly"""
-    np.random.seed(seed)
+    np.random.PCG64(seed)
 
     assert np.isclose(sum(split_fractions.values()), 1.0)
 
