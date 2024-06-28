@@ -60,7 +60,7 @@ class DataTransformer:
                 method_cls = create_transformation_from_str(method, inputs=input_params)
                 
                 if len(vars_to_remove) > 0:
-                    LOGGER.error(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another transformation method.\nRemoving thenm from this transformation.")
+                    LOGGER.error(f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another transformation method.\nRemoving them from this transformation.")
                     variables = [var for var in variables if var not in vars_to_remove]
                 
                 self.parameters.append((method_cls, variables, input_params))
