@@ -362,7 +362,7 @@ def random_split(
     seed: int = 10,
 ) -> dict[str, np.ndarray]:
     """Split an input index array randomly"""
-    np.random.PCG64(seed)
+    np.random.seed(seed)
 
     assert np.isclose(sum(split_fractions.values()), 1.0)
 
