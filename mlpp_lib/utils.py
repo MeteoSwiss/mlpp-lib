@@ -115,12 +115,35 @@ def get_metric(metric: Union[str, dict]) -> Callable:
     return metric
 
 
+def get_scheduler(scheduler_config: dict) -> tf.keras.optimizers.schedules.LearningRateSchedule:
+    """Create a learning rate scheduler from a config dictionary."""
+
+    if isinstance(scheduler_config, dict):
+        scheduler_name = list(scheduler_config.keys())[0]
+        scheduler_options = scheduler_config[scheduler_name]
+    else:
+        LOGGER.info("Not using any schedulers.")
+        return None
+
+    if hasattr(tf.keras.optimizers.schedules, scheduler_name):
+        LOGGER.info(f"Using keras built-in learning rate scheduler: {scheduler_name}")
+        scheduler_obj = getattr(tf.keras.optimizers.schedules, scheduler_name)
+        scheduler = scheduler_obj(**scheduler_options)
+    else:
+        raise KeyError(f"The scheduler {scheduler_name} is not available.")
+
+    return scheduler
+
+
 def get_optimizer(optimizer: Union[str, dict]) -> Callable:
     """Get the optimizer, keras built-in only."""
 
     if isinstance(optimizer, dict):
         optimizer_name = list(optimizer.keys())[0]
         optimizer_options = optimizer[optimizer_name]
+        scheduler = get_scheduler(optimizer_options.pop("learning_rate", None))
+        if scheduler:
+            optimizer_options["learning_rate"] = scheduler
     else:
         optimizer_name = optimizer
         optimizer_options = {}
