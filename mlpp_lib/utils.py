@@ -128,7 +128,11 @@ def get_scheduler(scheduler_config: dict) -> tf.keras.optimizers.schedules.Learn
     if hasattr(tf.keras.optimizers.schedules, scheduler_name):
         LOGGER.info(f"Using keras built-in learning rate scheduler: {scheduler_name}")
         scheduler_obj = getattr(tf.keras.optimizers.schedules, scheduler_name)
-        scheduler = scheduler_obj(**scheduler_options)
+        scheduler = (
+            scheduler_obj(**scheduler_options)
+            if isinstance(scheduler_obj, type)
+            else scheduler_obj
+        )
     else:
         raise KeyError(f"The scheduler {scheduler_name} is not available.")
 
