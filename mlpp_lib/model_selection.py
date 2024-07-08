@@ -361,7 +361,7 @@ def random_split(
     seed: int = 10,
 ) -> dict[str, np.ndarray]:
     """Split an input index array randomly"""
-    np.random.PCG64(seed)
+    rng = np.random.default_rng(np.random.PCG64(seed))
 
     assert np.isclose(sum(split_fractions.values()), 1.0)
 
@@ -369,7 +369,7 @@ def random_split(
     partitions = list(split_fractions.keys())
     fractions = np.array(list(split_fractions.values()))
 
-    shuffled_index = np.random.permutation(index)
+    shuffled_index = rng.permutation(index)
     indices = np.floor(np.cumsum(fractions)[:-1] * n_samples).astype(int)
     sub_arrays = np.split(shuffled_index, indices)
     return dict(zip(partitions, sub_arrays))
