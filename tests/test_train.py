@@ -44,6 +44,34 @@ RUNS = [
         "optimizer": {"Adam": {"learning_rate": 0.1, "beta_1": 0.95}},
         "metrics": ["bias", "mean_absolute_error", {"MAEBusts": {"threshold": 0.5}}],
     },
+    # use a learning rate scheduler
+    {
+        "features": ["coe:x1"],
+        "targets": ["obs:y1"],
+        "model": {
+            "fully_connected_network": {
+                "hidden_layers": [10],
+                "probabilistic_layer": "IndependentNormal",
+            }
+        },
+        "loss": "crps_energy",
+        "optimizer": {
+            "Adam": {
+                "learning_rate": {
+                    "CosineDecayRestarts": {
+                        "initial_learning_rate": 0.001,
+                        "first_decay_steps": 20,
+                        "t_mul": 1.5,
+                        "m_mul": 1.1,
+                        "alpha": 0,
+                    }
+                }
+            }
+        },
+        "callbacks": [
+            {"EarlyStopping": {"patience": 10, "restore_best_weights": True}}
+        ],
+    },
     #
     {
         "features": ["coe:x1"],
