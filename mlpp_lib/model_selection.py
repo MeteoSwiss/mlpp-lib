@@ -202,7 +202,9 @@ class DataSplitter:
                 self._time_indexers.update(res)
             else:  # mixed fractions and labels
                 _time_split = self.time_split.copy()
-                self._time_indexers.update({"test": _time_split.pop("test")})
+                test_indexers = _time_split.pop("test")
+                test_indexers = [t for t in test_indexers if t in self.time_index]
+                self._time_indexers.update({"test": test_indexers})
                 res = self._time_partition_method(_time_split)
                 self._time_indexers.update(res)
 
@@ -238,7 +240,9 @@ class DataSplitter:
                 self._station_indexers.update(res)
             else:  # mixed fractions and labels
                 _station_split = self.station_split.copy()
-                self._station_indexers.update({"test": _station_split.pop("test")})
+                test_indexers = _station_split.pop("test")
+                test_indexers = [s for s in test_indexers if s in self.station_index]
+                self._station_indexers.update({"test": test_indexers})
                 res = self._station_partition_method(_station_split)
                 self._station_indexers.update(res)
         else:
