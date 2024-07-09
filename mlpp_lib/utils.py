@@ -116,7 +116,7 @@ def get_metric(metric: Union[str, dict]) -> Callable:
 
 
 def get_scheduler(
-    scheduler_config: Union[dict, str]
+    scheduler_config: Union[dict, None]
 ) -> Optional[tf.keras.optimizers.schedules.LearningRateSchedule]:
     """Create a learning rate scheduler from a config dictionary."""
 
@@ -129,12 +129,14 @@ def get_scheduler(
             "Scheduler configuration should contain exactly one scheduler name with its options."
         )
 
-    scheduler_name = list(scheduler_config.keys())[0]
+    scheduler_name = next(
+        iter(scheduler_config)
+    )  # first key is the name of the scheduler
     scheduler_options = scheduler_config[scheduler_name]
 
     if not isinstance(scheduler_options, dict):
         raise ValueError(
-            f"Scheduler options for {scheduler_name} should be a dictionary."
+            f"Scheduler options for '{scheduler_name}' should be a dictionary."
         )
 
     if hasattr(tf.keras.optimizers.schedules, scheduler_name):
@@ -155,8 +157,7 @@ def get_optimizer(optimizer: Union[str, dict]) -> Callable:
     if isinstance(optimizer, dict):
         optimizer_name = list(optimizer.keys())[0]
         optimizer_options = optimizer[optimizer_name]
-        scheduler = get_scheduler(optimizer_options.pop("learning_rate", None))
-        if scheduler:
+        if scheduler := get_scheduler(optimizer_options.pop("learning_rate", None)):
             optimizer_options["learning_rate"] = scheduler
     else:
         optimizer_name = optimizer
