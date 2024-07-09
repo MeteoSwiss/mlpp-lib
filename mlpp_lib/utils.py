@@ -115,26 +115,36 @@ def get_metric(metric: Union[str, dict]) -> Callable:
     return metric
 
 
-def get_scheduler(scheduler_config: dict) -> tf.keras.optimizers.schedules.LearningRateSchedule:
+def get_scheduler(
+    scheduler_config: Union[dict, str]
+) -> Optional[tf.keras.optimizers.schedules.LearningRateSchedule]:
     """Create a learning rate scheduler from a config dictionary."""
 
-    if isinstance(scheduler_config, dict):
-        scheduler_name = list(scheduler_config.keys())[0]
-        scheduler_options = scheduler_config[scheduler_name]
-    else:
-        LOGGER.info("Not using any schedulers.")
+    if not isinstance(scheduler_config, dict):
+        LOGGER.info("Not using a scheduler.")
         return None
+
+    if len(scheduler_config) != 1:
+        raise ValueError(
+            "Scheduler configuration should contain exactly one scheduler name with its options."
+        )
+
+    scheduler_name = list(scheduler_config.keys())[0]
+    scheduler_options = scheduler_config[scheduler_name]
+
+    if not isinstance(scheduler_options, dict):
+        raise ValueError(
+            f"Scheduler options for {scheduler_name} should be a dictionary."
+        )
 
     if hasattr(tf.keras.optimizers.schedules, scheduler_name):
         LOGGER.info(f"Using keras built-in learning rate scheduler: {scheduler_name}")
-        scheduler_obj = getattr(tf.keras.optimizers.schedules, scheduler_name)
-        scheduler = (
-            scheduler_obj(**scheduler_options)
-            if isinstance(scheduler_obj, type)
-            else scheduler_obj
-        )
+        scheduler_cls = getattr(tf.keras.optimizers.schedules, scheduler_name)
+        scheduler = scheduler_cls(**scheduler_options)
     else:
-        raise KeyError(f"The scheduler {scheduler_name} is not available.")
+        raise KeyError(
+            f"The scheduler '{scheduler_name}' is not available in tf.keras.optimizers.schedules."
+        )
 
     return scheduler
 
