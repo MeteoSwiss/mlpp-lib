@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mlpp-lib"
-version = "0.8.0"
+version = "0.9.0"
 description = "Collection of methods for ML-based postprocessing of weather forecasts."
 authors = ["Daniele Nerini <daniele.nerini@meteoswiss.ch>"]
 include = ["LICENSE", "README.md"]
