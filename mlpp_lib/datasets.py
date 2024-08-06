@@ -11,16 +11,15 @@ import xarray as xr
 from typing_extensions import Self
 
 from .model_selection import DataSplitter
-from .standardizers import Standardizer
+from .standardizers import DataTransformer
 
 LOGGER = logging.getLogger(__name__)
-
 
 class DataModule:
     """A class to encapsulate everything involved in mlpp data processing.
 
     1. Take xarray objects or load and select variables from `.zarr` archives.
-    2. Filter, split, standardize.
+    2. Filter, split, normalize.
     3. Load into mlpp `Dataset`
     4. Reshape/mask as needed.
     5. Serve the `Dataset` or wrap it inside a `DataLoader`
@@ -45,8 +44,8 @@ class DataModule:
         and targets are lists of names.
     filter: `DataFilter`, optional
         The object that handles the data filtering.
-    standardizer: `Standardizer`, optional
-        The object to standardize data, already fitted on the training data.
+    normalizer: `DataTransformer`, optional
+        The object to normalize data.
         Must be provided if `.setup("test")` is called.
     sample_weighting: list of str or str or xr.Dataset, optional
         Name(s) of the variable(s) used for weighting dataset samples or an xr.Dataset
@@ -64,7 +63,7 @@ class DataModule:
         group_samples: Optional[dict[str:int]] = None,
         data_dir: Optional[str] = None,
         filter: Optional[DataFilter] = None,
-        standardizer: Optional[Standardizer] = None,
+        normalizer: Optional[DataTransformer] = None,
         sample_weighting: Optional[Sequence[Hashable] or Hashable or xr.Dataset] = None,
         thinning: Optional[Mapping[str, int]] = None,
     ):
@@ -76,7 +75,7 @@ class DataModule:
         self.splitter = splitter
         self.group_samples = group_samples
         self.filter = filter
-        self.standardizer = standardizer
+        self.normalizer = normalizer
         self.sample_weighting = (
             list(sample_weighting)
             if isinstance(sample_weighting, str)
@@ -101,7 +100,7 @@ class DataModule:
         if self.filter is not None:
             self.apply_filter()
         self.select_splits(stage=stage)
-        self.standardize(stage=stage)
+        self.normalize(stage=stage)
         self.as_datasets(stage=stage)
 
     def load_raw(self):
@@ -153,22 +152,24 @@ class DataModule:
         LOGGER.info("Applying filter to features and targets.")
         self.x, self.y = self.filter.apply(self.x, self.y)
 
-    def standardize(self, stage=None):
+    def normalize(self, stage=None):
         LOGGER.info("Standardizing data.")
-        if self.standardizer is None:
+        
+        if self.normalizer is None:
             if stage == "test":
                 raise ValueError("Must provide standardizer for `test` stage.")
+            else:
+                self.normalizer = DataTransformer({"Identity": (list(self.train[0].data_vars), {})})
+        
 
-            self.standardizer = Standardizer()
-            self.standardizer.fit(self.train[0])
-
-        if stage == "fit" or stage is None:
+        if stage == "fit" or stage is None:        
+            self.normalizer.fit(self.train[0])
             self.train = (
-                tuple(self.standardizer.transform(self.train[0])) + self.train[1:]
+                tuple(self.normalizer.transform(self.train[0])) + self.train[1:]
             )
-            self.val = tuple(self.standardizer.transform(self.val[0])) + self.val[1:]
+            self.val = tuple(self.normalizer.transform(self.val[0])) + self.val[1:]
         if stage == "test" or stage is None:
-            self.test = tuple(self.standardizer.transform(self.test[0])) + self.test[1:]
+            self.test = tuple(self.normalizer.transform(self.test[0])) + self.test[1:]
 
     def as_datasets(self, stage=None):
         batch_dims = self.batch_dims

@@ -109,6 +109,8 @@ def train(
     )
 
     LOGGER.info("Start training.")
+    LOGGER.info(f"Len train data: {len(train_dataloader)}")
+    LOGGER.info(f"Len val data: {len(val_dataloader)}")
     res = model.fit(
         train_dataloader,
         epochs=cfg.get("epochs", 1),
@@ -130,4 +132,4 @@ def train(
     for k in history:
         history[k] = list(map(float, history[k]))
 
-    return model, custom_objects, datamodule.standardizer, history
+    return model, custom_objects, datamodule.normalizer, history
