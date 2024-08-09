@@ -19,7 +19,7 @@ from tensorflow_probability.python.layers import (
     IndependentLogistic,
     IndependentBernoulli,
     IndependentPoisson,
-    MixtureOf2Normal,
+    MixtureNormal,
 )
 
 
