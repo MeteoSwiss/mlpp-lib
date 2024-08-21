@@ -1,4 +1,5 @@
 import itertools
+from inspect import getmembers, isclass
 
 import numpy as np
 import pytest
@@ -6,7 +7,10 @@ import tensorflow as tf
 from keras.engine.functional import Functional
 from numpy.testing import assert_array_equal
 
-from mlpp_lib import models
+from mlpp_lib import models, probabilistic_layers
+
+
+PROB_LAYERS = [obj[0] for obj in getmembers(probabilistic_layers, isclass)]
 
 
 FCN_OPTIONS = dict(
@@ -17,7 +21,7 @@ FCN_OPTIONS = dict(
     dropout=[None, 0.1, [0.1, 0.0]],
     mc_dropout=[True, False],
     out_bias_init=["zeros", np.array([0.2]), np.array([0.2, 2.1])],
-    probabilistic_layer=[None, "IndependentNormal", "MultivariateNormalTriL"],
+    probabilistic_layer=[None] + PROB_LAYERS,
     skip_connection=[False, True],
 )
 
