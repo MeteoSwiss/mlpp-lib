@@ -13,13 +13,40 @@ from tensorflow_probability.python.layers.distribution_layer import (
 )
 
 
-# these work out of the box
+# these almost work out of the box
 from tensorflow_probability.python.layers import (
     IndependentNormal,
     IndependentLogistic,
     IndependentBernoulli,
     IndependentPoisson,
 )
+
+@tf.keras.saving.register_keras_serializable()
+class IndependentNormal(IndependentNormal):
+    @property
+    def output(self):  # this is necessary to use the layer within shap
+        return super().output[0]
+
+
+@tf.keras.saving.register_keras_serializable()
+class IndependentLogistic(IndependentLogistic):
+    @property
+    def output(self):
+        return super().output[0]
+
+
+@tf.keras.saving.register_keras_serializable()
+class IndependentBernoulli(IndependentBernoulli):
+    @property
+    def output(self):
+        return super().output[0]
+
+
+@tf.keras.saving.register_keras_serializable()
+class IndependentPoisson(IndependentPoisson):
+    @property
+    def output(self):
+        return super().output[0]
 
 
 @tf.keras.saving.register_keras_serializable()
