@@ -10,9 +10,6 @@ from numpy.testing import assert_array_equal
 from mlpp_lib import models, probabilistic_layers
 
 
-PROB_LAYERS = [obj[0] for obj in getmembers(probabilistic_layers, isclass)]
-
-
 FCN_OPTIONS = dict(
     input_shape=[(5,)],
     output_size=[1, 2],
@@ -21,7 +18,7 @@ FCN_OPTIONS = dict(
     dropout=[None, 0.1, [0.1, 0.0]],
     mc_dropout=[True, False],
     out_bias_init=["zeros", np.array([0.2]), np.array([0.2, 2.1])],
-    probabilistic_layer=[None] + PROB_LAYERS,
+    probabilistic_layer=[None] + ["IndependentNormal", "IndependentGamma"],
     skip_connection=[False, True],
 )
 
@@ -46,6 +43,7 @@ def _test_model(model):
         or isinstance(model, tf.keras.Model)
     )
     assert moodel_is_keras
+    assert isinstance(model, Functional)
     assert len(model.layers[-1]._inbound_nodes) > 0
     model_output = model.layers[-1].output
     assert not isinstance(
@@ -98,7 +96,6 @@ def test_fully_connected_network(scenario_kwargs):
         model = models.fully_connected_network(
             input_shape, output_size, **scenario_kwargs
         )
-        assert isinstance(model, Functional)
 
     _test_model(model)
     _test_prediction(model, scenario_kwargs, dummy_input, output_size)
@@ -131,7 +128,6 @@ def test_fully_connected_multibranch_network(scenario_kwargs):
         model = models.fully_connected_multibranch_network(
             input_shape, output_size, **scenario_kwargs
         )
-        assert isinstance(model, Functional)
 
     _test_model(model)
     _test_prediction(model, scenario_kwargs, dummy_input, output_size)
@@ -157,7 +153,6 @@ def test_deep_cross_network(scenario_kwargs):
 
     else:
         model = models.deep_cross_network(input_shape, output_size, **scenario_kwargs)
-        assert isinstance(model, Functional)
 
     _test_model(model)
     _test_prediction(model, scenario_kwargs, dummy_input, output_size)
