@@ -1,5 +1,4 @@
 import itertools
-from inspect import getmembers, isclass
 
 import numpy as np
 import pytest
@@ -7,7 +6,7 @@ import tensorflow as tf
 from keras.engine.functional import Functional
 from numpy.testing import assert_array_equal
 
-from mlpp_lib import models, probabilistic_layers
+from mlpp_lib import models
 
 
 FCN_OPTIONS = dict(
