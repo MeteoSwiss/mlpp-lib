@@ -38,6 +38,24 @@ DCN_SCENARIOS = [
 ]
 
 
+def _test_model(model):
+    moodel_is_keras = (
+        str(type(model)).endswith("keras.engine.sequential.Sequential'>")
+        or str(type(model)).endswith("keras.models.Sequential'>")
+        or str(type(model)).endswith("keras.engine.training.Model'>")
+        or isinstance(model, tf.keras.Model)
+    )
+    assert moodel_is_keras
+    assert len(model.layers[-1]._inbound_nodes) > 0
+    model_output = model.layers[-1].output
+    assert not isinstance(
+        model_output, list
+    ), "The model output must be a single tensor!"
+    assert (
+        len(model_output.shape) < 3
+    ), "The model output must be a vector or a single value!"
+
+
 def _test_prediction(model, scenario_kwargs, dummy_input, output_size):
     pred = model(dummy_input)
     assert pred.shape == (32, output_size)
@@ -82,6 +100,7 @@ def test_fully_connected_network(scenario_kwargs):
         )
         assert isinstance(model, Functional)
 
+    _test_model(model)
     _test_prediction(model, scenario_kwargs, dummy_input, output_size)
 
 
@@ -114,6 +133,7 @@ def test_fully_connected_multibranch_network(scenario_kwargs):
         )
         assert isinstance(model, Functional)
 
+    _test_model(model)
     _test_prediction(model, scenario_kwargs, dummy_input, output_size)
 
 
@@ -139,4 +159,5 @@ def test_deep_cross_network(scenario_kwargs):
         model = models.deep_cross_network(input_shape, output_size, **scenario_kwargs)
         assert isinstance(model, Functional)
 
+    _test_model(model)
     _test_prediction(model, scenario_kwargs, dummy_input, output_size)
