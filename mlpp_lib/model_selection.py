@@ -102,7 +102,6 @@ class DataSplitter:
         seed: Optional[int] = 10,
         time_dim_name: str = "forecast_reference_time",
     ):
-
         if not time_split.keys() == station_split.keys():
             raise ValueError(
                 "Time split and station split must be defined "
@@ -198,14 +197,14 @@ class DataSplitter:
             self._time_indexers = self.time_split
         else:
             self._time_indexers = {}
-            if all(
-                [isinstance(v, float) for v in self.time_split.values()]
-            ):  # only fractions
+            if all([isinstance(v, float) for v in self.time_split.values()]):
                 res = self._time_partition_method(self.time_split)
                 self._time_indexers.update(res)
-            else:  # mixed
+            else:  # mixed fractions and labels
                 _time_split = self.time_split.copy()
-                self._time_indexers.update({"test": _time_split.pop("test")})
+                test_indexers = _time_split.pop("test")
+                test_indexers = [t for t in test_indexers if t in self.time_index]
+                self._time_indexers.update({"test": test_indexers})
                 res = self._time_partition_method(_time_split)
                 self._time_indexers.update(res)
 
@@ -223,8 +222,11 @@ class DataSplitter:
             self.partitions[partition].update(indexer)
 
     def _time_partition_method(self, fractions: Mapping[str, float]):
+        time_index = [
+            t for t in self.time_index if t not in self._time_indexers.get("test", [])
+        ]
         if self.time_split_method == "sequential":
-            return sequential_split(self.time_index, fractions)
+            return sequential_split(time_index, fractions)
 
     def _station_partitioning(self):
         """
@@ -236,9 +238,11 @@ class DataSplitter:
             if all([isinstance(v, float) for v in self.station_split.values()]):
                 res = self._station_partition_method(self.station_split)
                 self._station_indexers.update(res)
-            else:
+            else:  # mixed fractions and labels
                 _station_split = self.station_split.copy()
-                self._station_indexers.update({"test": _station_split.pop("test")})
+                test_indexers = _station_split.pop("test")
+                test_indexers = [s for s in test_indexers if s in self.station_index]
+                self._station_indexers.update({"test": test_indexers})
                 res = self._station_partition_method(_station_split)
                 self._station_indexers.update(res)
         else:
@@ -254,10 +258,15 @@ class DataSplitter:
         self, fractions: Mapping[str, float]
     ) -> Mapping[str, np.ndarray]:
 
+        station_index = [
+            sta
+            for sta in self.station_index
+            if sta not in self._station_indexers.get("test", [])
+        ]
         if self.station_split_method == "random":
-            out = random_split(self.station_index, fractions, seed=self.seed)
+            out = random_split(station_index, fractions, seed=self.seed)
         elif self.station_split_method == "sequential":
-            out = sequential_split(self.station_index, fractions)
+            out = sequential_split(station_index, fractions)
         return out
 
     def _check_time(self, time_split: dict, time_split_method: str):
@@ -364,7 +373,7 @@ def random_split(
     seed: int = 10,
 ) -> dict[str, np.ndarray]:
     """Split an input index array randomly"""
-    np.random.seed(seed)
+    rng = np.random.default_rng(np.random.PCG64(seed))
 
     assert np.isclose(sum(split_fractions.values()), 1.0)
 
@@ -372,7 +381,7 @@ def random_split(
     partitions = list(split_fractions.keys())
     fractions = np.array(list(split_fractions.values()))
 
-    shuffled_index = np.random.permutation(index)
+    shuffled_index = rng.permutation(index)
     indices = np.floor(np.cumsum(fractions)[:-1] * n_samples).astype(int)
     sub_arrays = np.split(shuffled_index, indices)
     return dict(zip(partitions, sub_arrays))
