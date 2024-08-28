@@ -7,7 +7,7 @@ from keras.engine.functional import Functional
 import xarray as xr
 
 from mlpp_lib import train
-from mlpp_lib.standardizers import DataTransformer
+from mlpp_lib.normalizers import DataTransformer
 from mlpp_lib.datasets import DataModule, DataSplitter
 
 from .test_model_selection import ValidDataSplitterOptions

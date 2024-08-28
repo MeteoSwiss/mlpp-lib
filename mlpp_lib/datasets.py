@@ -11,7 +11,7 @@ import xarray as xr
 from typing_extensions import Self
 
 from .model_selection import DataSplitter
-from .standardizers import DataTransformer
+from .normalizers import DataTransformer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -153,11 +153,11 @@ class DataModule:
         self.x, self.y = self.filter.apply(self.x, self.y)
 
     def normalize(self, stage=None):
-        LOGGER.info("Standardizing data.")
+        LOGGER.info("Normalizing data.")
         
         if self.normalizer is None:
             if stage == "test":
-                raise ValueError("Must provide standardizer for `test` stage.")
+                raise ValueError("Must provide normalizer for `test` stage.")
             else:
                 self.normalizer = DataTransformer({"Identity": (list(self.train[0].data_vars), {})})
         
