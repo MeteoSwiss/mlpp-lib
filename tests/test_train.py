@@ -124,11 +124,11 @@ def test_train_fromfile(tmp_path, cfg):
     splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
     batch_dims = ["forecast_reference_time", "t", "station"]
     datamodule = DataModule(
-        features=cfg["features"], 
-        targets=cfg["targets"], 
-        batch_dims=batch_dims, 
-        splitter=splitter, 
-        data_dir=tmp_path.as_posix() + "/"
+        features=cfg["features"],
+        targets=cfg["targets"],
+        batch_dims=batch_dims,
+        splitter=splitter,
+        data_dir=tmp_path.as_posix() + "/",
     )
     results = train.train(cfg, datamodule)
 

@@ -50,13 +50,13 @@ def features_multi() -> xr.Dataset:
     import mlpp_lib.normalizers as no
 
     rng = np.random.default_rng(1)
-    X = rng.standard_normal(size=(*SHAPE, len([n.name for n in no.DataTransformation.__subclasses__()])))
+    X = rng.standard_normal(
+        size=(*SHAPE, len([n.name for n in no.DataTransformation.__subclasses__()]))
+    )
     X = np.float64(X)
     X[(X > 4.5) | (X < -4.5)] = np.nan
     features = xr.Dataset(
-        {
-            f"var{i}": (DIMS, X[..., i]) for i in range(X.shape[-1])
-        },
+        {f"var{i}": (DIMS, X[..., i]) for i in range(X.shape[-1])},
         coords={
             "forecast_reference_time": REFTIMES,
             "t": LEADTIMES,
@@ -75,7 +75,10 @@ def datatransformations() -> list:
     """
     import mlpp_lib.normalizers as no
 
-    datatransformations = [no.create_transformation_from_str(n.name) for n in no.DataTransformation.__subclasses__()]
+    datatransformations = [
+        no.create_transformation_from_str(n.name)
+        for n in no.DataTransformation.__subclasses__()
+    ]
 
     return datatransformations
 
@@ -88,7 +91,10 @@ def data_transformer() -> xr.Dataset:
     import mlpp_lib.normalizers as no
 
     transformations_list = [n.name for n in no.DataTransformation.__subclasses__()]
-    method_var_dict = {transformation: ([f"var{i}"],{}) for i, transformation in enumerate(transformations_list)}
+    method_var_dict = {
+        transformation: ([f"var{i}"], {})
+        for i, transformation in enumerate(transformations_list)
+    }
     data_transformer = no.DataTransformer(method_var_dict)
 
     return data_transformer

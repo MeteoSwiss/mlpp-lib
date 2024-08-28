@@ -15,6 +15,7 @@ from .normalizers import DataTransformer
 
 LOGGER = logging.getLogger(__name__)
 
+
 class DataModule:
     """A class to encapsulate everything involved in mlpp data processing.
 
@@ -154,15 +155,16 @@ class DataModule:
 
     def normalize(self, stage=None):
         LOGGER.info("Normalizing data.")
-        
+
         if self.normalizer is None:
             if stage == "test":
                 raise ValueError("Must provide normalizer for `test` stage.")
             else:
-                self.normalizer = DataTransformer({"Identity": (list(self.train[0].data_vars), {})})
-        
+                self.normalizer = DataTransformer(
+                    {"Identity": (list(self.train[0].data_vars), {})}
+                )
 
-        if stage == "fit" or stage is None:        
+        if stage == "fit" or stage is None:
             self.normalizer.fit(self.train[0])
             self.train = (
                 tuple(self.normalizer.transform(self.train[0])) + self.train[1:]
@@ -593,7 +595,9 @@ class DataLoader(tf.keras.utils.Sequence):
         self.shuffle = shuffle
         self.block_size = block_size
         self.num_samples = len(self.dataset.x)
-        self.num_batches = self.num_samples // batch_size if batch_size <= self.num_samples else 1
+        self.num_batches = (
+            self.num_samples // batch_size if batch_size <= self.num_samples else 1
+        )
         self._indices = tf.range(self.num_samples)
         self._seed = 0
         self._reset()
