@@ -4,6 +4,7 @@ import logging
 from typing import Hashable, Mapping, Optional, Sequence, Callable
 
 import dask.array as da
+import keras
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -550,7 +551,7 @@ class Dataset:
         return out
 
 
-class DataLoader(tf.keras.utils.Sequence):
+class DataLoader(keras.utils.Sequence):
     """A dataloader for mlpp.
 
     Parameters

@@ -1,5 +1,6 @@
 from inspect import getmembers, isclass
 
+import keras
 import numpy as np
 import pytest
 import tensorflow as tf
@@ -164,7 +165,7 @@ def test_multiscale_crps_array():
 
 def test_energy_score():
     n_events, n_dims = 10, 3
-    loss = losses.EnergyScore(reduction=tf.keras.losses.Reduction.NONE)
+    loss = losses.EnergyScore(reduction=keras.losses.Reduction.NONE)
     fct_dist = tfd.MultivariateNormalDiag(
         loc=tf.zeros((n_events, n_dims)),
         scale_diag=tf.ones((n_events, n_dims)),

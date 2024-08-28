@@ -2,6 +2,7 @@ import logging
 from pprint import pformat
 from typing import Optional
 
+import keras
 import tensorflow as tf
 
 from mlpp_lib.callbacks import TimeHistory, EnsembleMetrics
@@ -37,7 +38,7 @@ def get_log_params(param_run: dict) -> dict:
     return log_params
 
 
-def get_lr(optimizer: tf.keras.optimizers.Optimizer) -> float:
+def get_lr(optimizer: keras.optimizers.Optimizer) -> float:
     """Get the learning rate of the optimizer"""
     def lr(y_true, y_pred):
         return optimizer.lr
@@ -122,7 +123,7 @@ def train(
     # we don't need to export loss and metric functions for deployments
     model.compile(optimizer=optimizer, loss=None, metrics=None)
 
-    custom_objects = tf.keras.layers.serialize(model)
+    custom_objects = keras.layers.serialize(model)
 
     history = res.history
     # for some reasons, 'lr' is provided as float32

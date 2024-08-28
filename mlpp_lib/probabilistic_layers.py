@@ -22,7 +22,7 @@ from tensorflow_probability.python.layers import (
 )
 
 
-@tf.keras.saving.register_keras_serializable()
+@keras.saving.register_keras_serializable()
 class IndependentBeta(tfpl.DistributionLambda):
     """An independent 4-parameter Beta Keras layer."""
 
@@ -45,7 +45,7 @@ class IndependentBeta(tfpl.DistributionLambda):
             performance. When `False` invalid inputs may silently render incorrect
             outputs.
             Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
+        **kwargs: Additional keyword arguments passed to `keras.Layer`.
         """
         convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
 
@@ -135,7 +135,7 @@ class IndependentBeta(tfpl.DistributionLambda):
         return super(IndependentBeta, self).output[0]
 
 
-@tf.keras.saving.register_keras_serializable()
+@keras.saving.register_keras_serializable()
 class IndependentGamma(tfpl.DistributionLambda):
     """An independent gamma Keras layer."""
 
@@ -158,7 +158,7 @@ class IndependentGamma(tfpl.DistributionLambda):
             performance. When `False` invalid inputs may silently render incorrect
             outputs.
             Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
+        **kwargs: Additional keyword arguments passed to `keras.Layer`.
         """
         convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
 
@@ -245,7 +245,7 @@ class IndependentGamma(tfpl.DistributionLambda):
         return super(IndependentGamma, self).output[0]
 
 
-@tf.keras.saving.register_keras_serializable()
+@keras.saving.register_keras_serializable()
 class IndependentLogNormal(tfpl.DistributionLambda):
     """An independent LogNormal Keras layer."""
 
@@ -268,7 +268,7 @@ class IndependentLogNormal(tfpl.DistributionLambda):
             performance. When `False` invalid inputs may silently render incorrect
             outputs.
             Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
+        **kwargs: Additional keyword arguments passed to `keras.Layer`.
         """
         convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
 
@@ -353,7 +353,7 @@ class IndependentLogNormal(tfpl.DistributionLambda):
         return super(IndependentLogNormal, self).output[0]
 
 
-@tf.keras.saving.register_keras_serializable()
+@keras.saving.register_keras_serializable()
 class IndependentTruncatedNormal(tfpl.DistributionLambda):
     """An independent TruncatedNormal Keras layer."""
 
@@ -376,7 +376,7 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
             performance. When `False` invalid inputs may silently render incorrect
             outputs.
             Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
+        **kwargs: Additional keyword arguments passed to `keras.Layer`.
         """
         convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
 
@@ -463,7 +463,7 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
         return super(IndependentTruncatedNormal, self).output[0]
 
 
-@tf.keras.saving.register_keras_serializable()
+@keras.saving.register_keras_serializable()
 class IndependentWeibull(tfpl.DistributionLambda):
     """An independent Weibull Keras layer."""
 
@@ -486,7 +486,7 @@ class IndependentWeibull(tfpl.DistributionLambda):
             performance. When `False` invalid inputs may silently render incorrect
             outputs.
             Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
+        **kwargs: Additional keyword arguments passed to `keras.Layer`.
         """
         convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
 
@@ -574,7 +574,7 @@ class IndependentWeibull(tfpl.DistributionLambda):
         return super(IndependentWeibull, self).output[0]
 
 
-@tf.keras.saving.register_keras_serializable()
+@keras.saving.register_keras_serializable()
 class MultivariateNormalDiag(tfpl.DistributionLambda):
     """A `d`-variate normal Keras layer from `2* d` params,
     with a diagonal scale matrix.
@@ -600,7 +600,7 @@ class MultivariateNormalDiag(tfpl.DistributionLambda):
               performance. When `False` invalid inputs may silently render incorrect
               outputs.
               Default value: `False`.
-            **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
+            **kwargs: Additional keyword arguments passed to `keras.Layer`.
         """
         convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
 
@@ -670,7 +670,7 @@ class MultivariateNormalDiag(tfpl.DistributionLambda):
         return super(MultivariateNormalDiag, self).output[0]
 
 
-@tf.keras.saving.register_keras_serializable()
+@keras.saving.register_keras_serializable()
 class MultivariateNormalTriL(tfpl.MultivariateNormalTriL):
     def __init__(
         self,

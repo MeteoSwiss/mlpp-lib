@@ -1,8 +1,8 @@
 import itertools
 
+import keras
 import numpy as np
 import pytest
-import tensorflow as tf
 from keras.engine.functional import Functional
 from numpy.testing import assert_array_equal
 
@@ -52,7 +52,7 @@ def _test_prediction(model, scenario_kwargs, dummy_input, output_size):
 @pytest.mark.parametrize("scenario_kwargs", FCN_SCENARIOS)
 def test_fully_connected_network(scenario_kwargs):
 
-    tf.keras.backend.clear_session()
+    keras.backend.clear_session()
 
     scenario_kwargs = scenario_kwargs.copy()
     input_shape = scenario_kwargs.pop("input_shape")
@@ -84,7 +84,7 @@ def test_fully_connected_network(scenario_kwargs):
 @pytest.mark.parametrize("scenario_kwargs", FCN_SCENARIOS)
 def test_fully_connected_multibranch_network(scenario_kwargs):
 
-    tf.keras.backend.clear_session()
+    keras.backend.clear_session()
 
     scenario_kwargs = scenario_kwargs.copy()
     input_shape = scenario_kwargs.pop("input_shape")

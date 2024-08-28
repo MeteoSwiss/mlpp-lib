@@ -1,16 +1,17 @@
 import logging
 from typing import Optional, Union, Any
 
+import keras
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import (
+from keras.layers import (
     Add,
     Dense,
     Dropout,
     BatchNormalization,
     Activation,
 )
-from tensorflow.keras import Model, initializers
+from keras import Model, initializers
 
 from mlpp_lib.physical_layers import *
 from mlpp_lib.probabilistic_layers import *
@@ -26,7 +27,7 @@ else:
 _LOGGER = logging.getLogger(__name__)
 
 
-@tf.keras.saving.register_keras_serializable()
+@keras.saving.register_keras_serializable()
 class MonteCarloDropout(Dropout):
     def call(self, inputs):
         return super().call(inputs, training=True)
@@ -159,7 +160,7 @@ def fully_connected_network(
             f"but output size is {output_size}"
         )
 
-    inputs = tf.keras.Input(shape=input_shape)
+    inputs = keras.Input(shape=input_shape)
     x = _build_fcn_block(
         inputs,
         hidden_layers,
@@ -252,7 +253,7 @@ def fully_connected_multibranch_network(
     else:
         n_branches = output_size
 
-    inputs = tf.keras.Input(shape=input_shape)
+    inputs = keras.Input(shape=input_shape)
     all_branch_outputs = []
 
     for idx in range(n_branches):
@@ -268,7 +269,7 @@ def fully_connected_multibranch_network(
         )
         all_branch_outputs.append(x)
 
-    concatenated_x = tf.keras.layers.Concatenate()(all_branch_outputs)
+    concatenated_x = keras.layers.Concatenate()(all_branch_outputs)
     outputs = _build_fcn_output(
         concatenated_x, output_size, probabilistic_layer, out_bias_init
     )
@@ -348,14 +349,14 @@ def deep_cross_network(
         )
 
     # cross part
-    inputs = tf.keras.layers.Input(shape=input_shape)
+    inputs = keras.layers.Input(shape=input_shape)
     cross = inputs
     for _ in hidden_layers:
         units_ = cross.shape[-1]
         x = Dense(units_)(cross)
         cross = inputs * x + cross
     cross = BatchNormalization()(cross)
-    # cross = tf.keras.Model(inputs=inputs, outputs=cross, name="crossblock")
+    # cross = keras.Model(inputs=inputs, outputs=cross, name="crossblock")
 
     # deep part
     deep = inputs
@@ -370,7 +371,7 @@ def deep_cross_network(
     )
 
     # merge
-    merge = tf.keras.layers.Concatenate()([cross, deep])
+    merge = keras.layers.Concatenate()([cross, deep])
 
     if skip_connection:
         merge = Dense(input_shape[0])(merge)
@@ -425,7 +426,7 @@ def temporal_convolutional_network(
     if isinstance(out_bias_init, np.ndarray):
         out_bias_init = initializers.Constant(out_bias_init)
 
-    inputs = tf.keras.Input(shape=input_shape, name="input")
+    inputs = keras.Input(shape=input_shape, name="input")
     x_tcn = tcn.TCN(
         nb_filters=nb_filters,
         kernel_size=kernel_size,

@@ -1,5 +1,6 @@
 from inspect import getmembers, isclass
 
+import keras
 import numpy as np
 import pytest
 import tensorflow as tf
@@ -39,10 +40,10 @@ def test_probabilistic_model(layer):
     """Test model compile with prob layers"""
 
     layer_class = getattr(probabilistic_layers, layer)
-    tfkl = tf.keras.layers
+    tfkl = keras.layers
     input_shape = [28, 28, 1]
     encoded_shape = 2
-    encoder = tf.keras.Sequential(
+    encoder = keras.Sequential(
         [
             tfkl.InputLayer(input_shape=input_shape),
             tfkl.Flatten(),
@@ -53,7 +54,7 @@ def test_probabilistic_model(layer):
     )
     encoder.summary()
     encoder.compile()
-    assert isinstance(encoder, tf.keras.Sequential)
+    assert isinstance(encoder, keras.Sequential)
 
 
 @pytest.mark.parametrize("layer", LAYERS)

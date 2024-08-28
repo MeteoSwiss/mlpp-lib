@@ -5,7 +5,7 @@ def bias(y_true, y_pred):
     return tf.reduce_mean(y_pred - y_true, axis=-1)
 
 
-class MAEBusts(tf.keras.metrics.Metric):
+class MAEBusts(keras.metrics.Metric):
     """Compute frequency of occurrence of absolute errors > thr"""
 
     def __init__(self, threshold, name="mae_busts", **kwargs):

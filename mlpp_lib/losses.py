@@ -1,5 +1,6 @@
 from typing import Literal, Optional, Union
 
+import keras
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -103,7 +104,7 @@ def crps_energy(
     return crps[..., None]
 
 
-class WeightedCRPSEnergy(tf.keras.losses.Loss):
+class WeightedCRPSEnergy(keras.losses.Loss):
     """
     Compute threshold-weighted CRPS using its kernel score representation.
 
@@ -329,7 +330,7 @@ class MultiScaleCRPSEnergy(WeightedCRPSEnergy):
         return total_loss
 
 
-class EnergyScore(tf.keras.losses.Loss):
+class EnergyScore(keras.losses.Loss):
     """
     Compute Energy Score.
 
@@ -408,7 +409,7 @@ class EnergyScore(tf.keras.losses.Loss):
         return energy_score
 
 
-class MultivariateLoss(tf.keras.losses.Loss):
+class MultivariateLoss(keras.losses.Loss):
     """
     Compute losses for multivariate data.
 
@@ -578,7 +579,7 @@ class MultivariateLoss(tf.keras.losses.Loss):
         return y_true, y_pred
 
 
-class BinaryClassifierLoss(tf.keras.losses.Loss):
+class BinaryClassifierLoss(keras.losses.Loss):
     """
     Compute binary classification loss from continuous predictions based on a threshold.
 
@@ -648,14 +649,14 @@ class BinaryClassifierLoss(tf.keras.losses.Loss):
         y_pred_bool = tf.cast(y_pred_samples > threshold, dtype=y_true.dtype)
         y_pred_prob = tf.reduce_mean(y_pred_bool, axis=0)
 
-        loss = tf.keras.losses.binary_crossentropy(y_true_bool, y_pred_prob, axis=1)
+        loss = keras.losses.binary_crossentropy(y_true_bool, y_pred_prob, axis=1)
         if self.loss_type == "focal":
             loss = tf.pow(1 - tf.exp(-loss), 2)
 
         return loss
 
 
-class CombinedLoss(tf.keras.losses.Loss):
+class CombinedLoss(keras.losses.Loss):
     def __init__(self, losses):
         # Local import to avoid circular dependency with mlpp_lib.utils
         from mlpp_lib.utils import get_loss

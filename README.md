@@ -154,9 +154,9 @@ The library builds on top of the tensorflow + keras API and provides some useful
 ```python
 from mlpp_lib.models import fully_connected_network
 from mlpp_lib.losses import crps_energy
-import tensorflow as tf 
+import keras
 
-model: tf.keras.Model = fully_connected_network(
+model: keras.Model = fully_connected_network(
     input_shape = datamodule.train.x.shape[1:],
     output_size = datamodule.train.y.shape[-1],
     hidden_layers = [32, 32],

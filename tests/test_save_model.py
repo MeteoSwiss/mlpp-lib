@@ -1,6 +1,7 @@
 import subprocess
 from inspect import getmembers, isfunction, isclass
 
+import keras
 import numpy as np
 import pytest
 import tensorflow as tf
@@ -82,9 +83,9 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
     args = [
         "python",
         "-c",
-        "import tensorflow as tf;"
+        "import keras;"
         f"from mlpp_lib.probabilistic_layers import {prob_layer};"
-        f"tf.keras.saving.load_model('{tmp_path}', compile=False)",
+        f"keras.saving.load_model('{tmp_path}', compile=False)",
     ]
     completed_process = subprocess.run(args, shell=True)
     assert completed_process.returncode == 0, "failed to reload model"
@@ -93,10 +94,10 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
     args = [
         "python",
         "-c",
-        "import tensorflow as tf;"
+        "import keras;"
         f"from mlpp_lib.losses import {loss};"
         f"from mlpp_lib.probabilistic_layers import {prob_layer};"
-        f"tf.keras.saving.load_model('{tmp_path}', custom_objects={{'{loss}':{loss}}})",
+        f"keras.saving.load_model('{tmp_path}', custom_objects={{'{loss}':{loss}}})",
     ]
     completed_process = subprocess.run(args, shell=True)
     assert completed_process.returncode == 0, "failed to reload model"
@@ -104,8 +105,8 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
     input_arr = tf.random.uniform((1, 5))
     outputs = model(input_arr).mean()
     del model
-    tf.keras.backend.clear_session()
-    model = tf.keras.saving.load_model(tmp_path, compile=False)
+    keras.backend.clear_session()
+    model = keras.saving.load_model(tmp_path, compile=False)
     assert isinstance(model, Functional)
     np.testing.assert_allclose(model(input_arr).mean(), outputs)
 
@@ -124,7 +125,7 @@ def test_save_model_mlflow(tmp_path):
     )
     optimizer = get_optimizer("Adam")
     model.compile(optimizer=optimizer, loss=None, metrics=None)
-    custom_objects = tf.keras.layers.serialize(model)
+    custom_objects = keras.layers.serialize(model)
 
     model_info = mlflow.tensorflow.log_model(
             model,
@@ -133,6 +134,6 @@ def test_save_model_mlflow(tmp_path):
             keras_model_kwargs={"save_format": "h5"},
         )
 
-    tf.keras.backend.clear_session()
+    keras.backend.clear_session()
     model = mlflow.tensorflow.load_model(model_info.model_uri)
     assert isinstance(model, Functional)
