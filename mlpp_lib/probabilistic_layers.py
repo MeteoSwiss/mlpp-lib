@@ -25,7 +25,7 @@ from tensorflow_probability.python.layers import (
 
 @tf.keras.saving.register_keras_serializable()
 class IndependentBeta(tfpl.DistributionLambda):
-    """An independent 4-parameter Beta Keras layer with enforced concavity."""
+    """An independent 2-parameter Beta Keras layer"""
 
     def __init__(
         self,
@@ -84,18 +84,14 @@ class IndependentBeta(tfpl.DistributionLambda):
                 ],
                 axis=0,
             )
-            alpha, beta, shift, scale = tf.split(params, 4, axis=-1)
-            # alpha > 2 and beta > 2 produce a concave downward Beta
-            alpha = 2.0 + tf.math.softplus(tf.reshape(alpha, output_shape))
-            beta = 2.0 + tf.math.softplus(tf.reshape(beta, output_shape))
-            shift = tf.math.softplus(tf.reshape(shift, output_shape))
-            scale = tf.math.softplus(tf.reshape(scale, output_shape))
+            alpha, beta = tf.split(params, 2, axis=-1)
+
+            alpha = tf.math.softplus(tf.reshape(alpha, output_shape))
+            beta = tf.math.softplus(tf.reshape(beta, output_shape))
             betad = tfd.Beta(alpha, beta, validate_args=validate_args)
-            transf_betad = tfd.TransformedDistribution(
-                distribution=betad, bijector=tfb.Shift(shift)(tfb.Scale(scale))
-            )
+
             return independent_lib.Independent(
-                transf_betad,
+                betad,
                 reinterpreted_batch_ndims=tf.size(event_shape),
                 validate_args=validate_args,
             )
@@ -107,7 +103,7 @@ class IndependentBeta(tfpl.DistributionLambda):
             event_shape = tf.convert_to_tensor(
                 event_shape, name="event_shape", dtype_hint=tf.int32
             )
-            return np.int32(4) * _event_size(
+            return np.int32(2) * _event_size(
                 event_shape, name=name or "IndependentBeta_params_size"
             )
 
@@ -134,12 +130,12 @@ class IndependentBeta(tfpl.DistributionLambda):
     def output(self):
         """This allows the use of this layer with the shap package."""
         return super(IndependentBeta, self).output[0]
-    
+
 
 @tf.keras.saving.register_keras_serializable()
-class IndependentUShapedBeta(tfpl.DistributionLambda):
-    """An independent 4-parameter Beta Keras layer with enforced u-shape."""
-
+class IndependentTransformedBeta(tfpl.DistributionLambda):
+    """An independent 4-parameter Beta Keras layer"""
+    # INdependent
     def __init__(
         self,
         event_shape=(),
@@ -147,7 +143,7 @@ class IndependentUShapedBeta(tfpl.DistributionLambda):
         validate_args=False,
         **kwargs
     ):
-        """Initialize the `IndependentUShapedBeta` layer.
+        """Initialize the `IndependentTransformedBeta` layer.
         Args:
         event_shape: integer vector `Tensor` representing the shape of single
             draw from this distribution.
@@ -169,8 +165,8 @@ class IndependentUShapedBeta(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
-        super(IndependentUShapedBeta, self).__init__(
-            lambda t: IndependentUShapedBeta.new(t, event_shape, validate_args),
+        super(IndependentTransformedBeta, self).__init__(
+            lambda t: IndependentTransformedBeta.new(t, event_shape, validate_args),
             convert_to_tensor_fn,
             **kwargs
         )
@@ -182,7 +178,7 @@ class IndependentUShapedBeta(tfpl.DistributionLambda):
     @staticmethod
     def new(params, event_shape=(), validate_args=False, name=None):
         """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "IndependentBeta"):
+        with tf.name_scope(name or "IndependentTransformedBeta"):
             params = tf.convert_to_tensor(params, name="params")
             event_shape = dist_util.expand_to_vector(
                 tf.convert_to_tensor(
@@ -198,9 +194,9 @@ class IndependentUShapedBeta(tfpl.DistributionLambda):
                 axis=0,
             )
             alpha, beta, shift, scale = tf.split(params, 4, axis=-1)
-            # Ensure alpha and beta are both less than 1 for u-shaped form
-            alpha = tf.math.maximum(tf.math.minimum(tf.reshape(alpha, output_shape), 1.0), 0.3)
-            beta = tf.math.maximum(tf.math.minimum(tf.reshape(beta, output_shape), 1.0), 0.1)
+            # alpha > 2 and beta > 2 produce a concave downward Beta
+            alpha = tf.math.softplus(tf.reshape(alpha, output_shape))
+            beta = tf.math.softplus(tf.reshape(beta, output_shape))
             shift = tf.math.softplus(tf.reshape(shift, output_shape))
             scale = tf.math.softplus(tf.reshape(scale, output_shape))
             betad = tfd.Beta(alpha, beta, validate_args=validate_args)
@@ -216,12 +212,12 @@ class IndependentUShapedBeta(tfpl.DistributionLambda):
     @staticmethod
     def params_size(event_shape=(), name=None):
         """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "IndependentUShapedBeta_params_size"):
+        with tf.name_scope(name or "IndependentTransformedBeta_params_size"):
             event_shape = tf.convert_to_tensor(
                 event_shape, name="event_shape", dtype_hint=tf.int32
             )
             return np.int32(4) * _event_size(
-                event_shape, name=name or "IndependentUShapedBeta_params_size"
+                event_shape, name=name or "IndependentTransformedBeta_params_size"
             )
 
     def get_config(self):
@@ -240,14 +236,14 @@ class IndependentUShapedBeta(tfpl.DistributionLambda):
             "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
             "validate_args": self._validate_args,
         }
-        base_config = super(IndependentUShapedBeta, self).get_config()
+        base_config = super(IndependentTransformedBeta, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
     @property
     def output(self):
         """This allows the use of this layer with the shap package."""
-        return super(IndependentUShapedBeta, self).output[0]
-
+        return super(IndependentTransformedBeta, self).output[0]
+    
 
 @tf.keras.saving.register_keras_serializable()
 class IndependentGamma(tfpl.DistributionLambda):
@@ -764,8 +760,8 @@ class MixtureOf2Normal(tfpl.DistributionLambda):
             weight = tf.math.sigmoid(tf.reshape(weight, output_shape))
             
             # Create the component distributions
-            normal1 = tfd.Normal(loc=loc1, scale=scale1)
-            normal2 = tfd.Normal(loc=loc2, scale=scale2)
+            normal1 = tfd.Normal(loc=loc1, scale=scale1)#, low=0.0, high=1.0)
+            normal2 = tfd.Normal(loc=loc2, scale=scale2)#, low=0.0, high=1.0)
             
             # Create a categorical distribution for the weights
             cat = tfd.Categorical(probs=tf.concat([weight, 1 - weight], axis=-1))
