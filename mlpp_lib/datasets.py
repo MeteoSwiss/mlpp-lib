@@ -160,9 +160,9 @@ class DataModule:
             if stage == "test":
                 raise ValueError("Must provide normalizer for `test` stage.")
             else:
-                LOGGER.warning("No normalizer found, data are not transformed.")
+                LOGGER.warning("No normalizer found, data are standardized by default.")
                 self.normalizer = DataTransformer(
-                    {"Identity": list(self.train[0].data_vars)}
+                    {"Standardizer": list(self.train[0].data_vars)}
                 )
 
         if stage == "fit" or stage is None:
