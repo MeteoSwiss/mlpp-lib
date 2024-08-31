@@ -29,7 +29,7 @@ class DataTransformer:
 
     def __init__(
         self,
-        method_vars_dict: dict[str, list[str]],
+        method_vars_dict: Optional[dict[str, list[str]]] = None,
         default: Optional[str] = "Standardizer",
         fillvalue: float = -5,
     ):
@@ -47,6 +47,8 @@ class DataTransformer:
         self.transformers[self.default] = (default_transformer, [])
 
         # Initialize other transformations
+        if method_vars_dict is None:
+            method_vars_dict = {}
         for method, variables in method_vars_dict.items():
             variables = [var for var in variables if var not in self.all_vars]
             if not variables:
