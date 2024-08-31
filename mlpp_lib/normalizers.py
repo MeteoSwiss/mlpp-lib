@@ -30,8 +30,8 @@ class DataTransformer:
     def __init__(
         self,
         method_vars_dict: Optional[dict[str, list[str]]] = None,
-        default: Optional[str] = "Standardizer",
-        fillvalue: float = -5,
+        default: str = "Standardizer",
+        fillvalue: Optional[float] = -5,
     ):
 
         self.method_vars_dict = method_vars_dict
