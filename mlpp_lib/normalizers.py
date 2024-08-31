@@ -423,7 +423,7 @@ class MinMaxScaler(DataTransformation):
 @dataclass
 class MaxAbsScaler(DataTransformation):
     """
-    Tranforms data using a max absolute scaling in a xarray.Dataset object.
+    Transforms data to [-1, 1] by scaling with the maximum of the absolute values in a xarray.Dataset object.
     """
 
     maxabs: xr.Dataset = field(default=None)
