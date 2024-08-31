@@ -92,7 +92,7 @@ def data_transformer() -> xr.Dataset:
 
     transformations_list = [n.name for n in no.DataTransformation.__subclasses__()]
     method_var_dict = {
-        transformation: ([f"var{i}"], {})
+        transformation: [f"var{i}"]
         for i, transformation in enumerate(transformations_list)
     }
     data_transformer = no.DataTransformer(method_var_dict)

@@ -1,7 +1,6 @@
 import json
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 from abc import abstractmethod
 
@@ -13,18 +12,11 @@ LOGGER = logging.getLogger(__name__)
 
 
 def create_transformation_from_str(class_name: str, inputs: Optional[dict] = None):
-
-    cls = globals()[class_name]
-
-    if issubclass(cls, DataTransformation):
-        if inputs is None:
-            return cls(fillvalue=-5)
-        else:
-            if "fillvalue" not in inputs.keys():
-                inputs["fillvalue"] = -5
-            return cls(**inputs)
-    else:
-        raise ValueError(f"{class_name} is not a subclass of DataTransformation")
+    """"""
+    cls = globals().get(class_name)
+    if not cls or not issubclass(cls, DataTransformation):
+        raise ValueError(f"{class_name} is not a valid subclass of DataTransformation")
+    return cls(**(inputs or {}))
 
 
 @dataclass
@@ -33,140 +25,131 @@ class DataTransformer:
     Class to handle the transformation of data in a xarray.Dataset object with different techniques.
     """
 
-    name = "DataTransformer"
+    name: str = "DataTransformer"
 
     def __init__(
         self,
-        method_var_dict: dict[str, tuple[list[str], dict[str, float]]] = None,
-        default_norma: Optional[str] = None,
+        method_vars_dict: dict[str, list[str]],
+        default: Optional[str] = "Standardizer",
         fillvalue: float = -5,
     ):
 
-        self.all_vars = []
-        self.parameters = []
+        self.method_vars_dict = method_vars_dict
+        self.default = default
         self.fillvalue = fillvalue
-        self.default_norma = (
-            default_norma if default_norma is not None else "Standardizer"
+        self.all_vars = []
+        self.transformers = {}
+
+        # Initialize default transformation
+        default_transformer = create_transformation_from_str(
+            self.default, {"fillvalue": self.fillvalue}
         )
-        self.default_norma_index = None
+        self.transformers[self.default] = (default_transformer, [])
 
-        if method_var_dict is not None:
-            for i, (method, params) in enumerate(method_var_dict.items()):
-                variables, input_params = params
-                # handle the case of user passing the default norma with some features and forgetting to assign all features to a norma
-                if method == default_norma:
-                    self.default_norma_index = i
-
-                if input_params is None:
-                    input_params = {}
-                if "fillvalue" not in input_params.keys():
-                    input_params["fillvalue"] = self.fillvalue
-                vars_to_remove = [var for var in variables if var in self.all_vars]
-
-                method_cls = create_transformation_from_str(method, inputs=input_params)
-
-                if len(vars_to_remove) > 0:
-                    LOGGER.error(
-                        f"Variable(s) {[var for var in vars_to_remove]} are already assigned to another transformation method.\nRemoving them from this transformation."
-                    )
-                    variables = [var for var in variables if var not in vars_to_remove]
-
-                self.parameters.append((method_cls, variables, input_params))
-                self.all_vars.extend(variables)
+        # Initialize other transformations
+        for method, variables in method_vars_dict.items():
+            variables = [var for var in variables if var not in self.all_vars]
+            if not variables:
+                continue
+            method_cls = create_transformation_from_str(method)
+            self.transformers[method] = (method_cls, variables)
+            self.all_vars.extend(variables)
 
     def fit(self, dataset: xr.Dataset, dims: Optional[list] = None):
-
+        """Fit transformations to the dataset."""
         datavars = list(dataset.data_vars)
         remaining_var = list(set(datavars) - set(self.all_vars))
-        if len(remaining_var) > 0:
-            LOGGER.info(
-                f"Variables {[var for var in remaining_var]} are not assigned to any transformation method. They will be assigned to {self.default_norma}"
-            )
-            if self.default_norma_index is not None:
-                self.parameters[self.default_norma_index][1].extend(remaining_var)
-            else:
-                self.parameters.append(
-                    (
-                        create_transformation_from_str(self.default_norma),
-                        remaining_var,
-                        {"fillvalue": self.fillvalue},
-                    )
-                )
+
+        if remaining_var:
+            # assign remaining variables to default transformation
+            self.transformers[self.default][1].extend(remaining_var)
             self.all_vars.extend(remaining_var)
 
-        for i in range(len(self.parameters)):
-            transformation, variables, inputs = self.parameters[i]
-            transformation.fit(dataset=dataset, variables=variables, dims=dims)
-            self.parameters[i] = (transformation, variables, inputs)
+        for name, (transformer, variables) in self.transformers.items():
+            try:
+                transformer.fit(dataset=dataset, variables=variables, dims=dims)
+                LOGGER.info(f"Fitted {name} to variables: {variables}")
+            except Exception as e:
+                LOGGER.error(f"Failed to fit {name}: {e}")
 
     def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
-
-        for parameter in self.parameters:
-            method, variables, _ = parameter
-            variables = list(
-                set(variables) & set(datasets[0].data_vars)
-            )  # ensure that only variables that are in the dataset are transformed
-            datasets = method.transform(*datasets, variables=variables)
+        """Apply transformations to the dataset(s)."""
+        for transformation in self.transformers.values():
+            transformer, variables = transformation
+            # ensure that only variables that are in the dataset are transformed
+            variables_in_data = list(set(variables) & set(datasets[0].data_vars))
+            if not variables_in_data:
+                continue
+            datasets = transformer.transform(*datasets, variables=variables)
         return datasets
 
     def inverse_transform(self, *datasets: xr.Dataset) -> xr.Dataset:
-
-        for parameter in self.parameters:
-            method, variables, _ = parameter
-            variables = list(
-                set(variables) & set(datasets[0].data_vars)
-            )  # ensure that only variables that are in the dataset are inv-transformed
-            datasets = method.inverse_transform(*datasets, variables=variables)
-
+        """Apply inverse transformations to the dataset(s)."""
+        for transformer, variables in self.transformers.values():
+            variables_in_data = list(set(variables) & set(datasets[0].data_vars))
+            if not variables_in_data:
+                continue
+            datasets = transformer.inverse_transform(
+                *datasets, variables=variables_in_data
+            )
         return datasets
 
     @classmethod
     def from_dict(cls, in_dict: dict) -> Self:
-        method_var_dict = {}
+        """Create a DataTransformer instance from a dictionary representation."""
+        init_dict, method_dicts = cls._parse_init_dicts(in_dict)
+        datatransfomer = cls(**init_dict)
+        for method_name, method_dict in method_dicts.items():
+            subclass = create_transformation_from_str(method_name).from_dict(
+                method_dict
+            )
+            datatransfomer.transformers[method_name] = (
+                subclass,
+                datatransfomer.transformers[method_name][1],
+            )
+        return datatransfomer
 
-        # check whether dict corresponds to old Standardizer format
-        first_key = list(in_dict.keys())[0]
+    @staticmethod
+    def _parse_init_dicts(in_dict: dict) -> tuple[dict[str, list[str]], dict]:
+        """Parse the input dictionary to the expected format for initialization."""
+        first_key = next(iter(in_dict))
+
         if first_key not in [
             cls.__name__ for cls in DataTransformation.__subclasses__()
         ]:
-            subclass = Standardizer().from_dict(in_dict)
-            inputs = {
-                "mean": subclass.mean,
-                "std": subclass.std,
-                "fillvalue": subclass.fillvalue,
-            }
-            method_var_dict[subclass.name] = (list(subclass.mean.data_vars), inputs)
+            channels = list(in_dict["mean"]["data_vars"].keys())
+            init_dict = {"method_vars_dict": {"Standardizer": channels}}
+            method_dicts = {"Standardizer": in_dict}
         else:
+            method_vars_dict = {}
+            method_dicts = {}
             for method_name, inner_dict in in_dict.items():
-                tmp_class = create_transformation_from_str(method_name).from_dict(
-                    inner_dict
-                )
-                inputs = {
-                    key: getattr(tmp_class, key)
-                    for key in inner_dict
-                    if getattr(tmp_class, key, None) is not None
-                }
-                method_var_dict[tmp_class.name] = (inner_dict["channels"], inputs)
-        return cls(method_var_dict)
+                method_vars_dict[method_name] = inner_dict.pop("channels")
+                method_dicts[method_name] = inner_dict
+            init_dict = {"method_vars_dict": method_vars_dict}
+            method_dicts = in_dict
+        return init_dict, method_dicts
 
     def to_dict(self):
+        """Convert the DataTransformer instance to a dictionary."""
         out_dict = {}
-        for parameter in self.parameters:
-            method, variables, _ = parameter
-            out_dict_tmp = method.to_dict()
+        for name, (transformer, variables) in self.transformers.items():
+            out_dict_tmp = transformer.to_dict()
             out_dict_tmp["channels"] = variables
-            out_dict[method.name] = out_dict_tmp
+            out_dict[name] = out_dict_tmp
         return out_dict
 
     @classmethod
     def from_json(cls, in_fn: str) -> Self:
+        """Create a DataTransformer instance from a JSON file."""
         with open(in_fn, "r") as f:
             in_dict = json.load(f)
         return cls.from_dict(in_dict)
 
     def save_json(self, out_fn: str) -> None:
+        """Save the DataTransformer configuration to a JSON file."""
         out_dict = self.to_dict()
-        if len(out_dict) == 0 or out_dict[list(out_dict.keys())[0]] is None:
+        if not out_dict or not out_dict[list(out_dict.keys())[0]]:
             raise ValueError(f"{self.name} wasn't fit to data")
         with open(out_fn, "w") as outfile:
             json.dump(out_dict, outfile, indent=4)
@@ -443,7 +426,7 @@ class MaxAbsScaler(DataTransformation):
     Tranforms data using a max absolute scaling in a xarray.Dataset object.
     """
 
-    absmax: xr.Dataset = field(default=None)
+    maxabs: xr.Dataset = field(default=None)
     fillvalue: dict[str, float] = field(init=True, default=-5)
     name = "MaxAbsScaler"
 
@@ -460,13 +443,13 @@ class MaxAbsScaler(DataTransformation):
                 f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}"
             )
 
-        self.absmax = abs(dataset[variables]).max(dims).compute().copy()
+        self.maxabs = abs(dataset[variables]).max(dims).compute().copy()
         self.fillvalue = self.fillvalue
 
     def transform(
         self, *datasets: xr.Dataset, variables: Optional[list] = None
     ) -> tuple[xr.Dataset, ...]:
-        if self.absmax is None:
+        if self.maxabs is None:
             raise ValueError("MaxAbsScaler wasn't fit to data")
 
         def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
@@ -475,9 +458,9 @@ class MaxAbsScaler(DataTransformation):
             if variables is None:
                 variables = ds_copy.data_vars
             for var in variables:
-                assert var in self.absmax.data_vars, f"{var} not in MaxAbsScaler"
+                assert var in self.maxabs.data_vars, f"{var} not in MaxAbsScaler"
 
-                scaled_var = (ds_copy[var] / self.absmax[var]).astype("float32")
+                scaled_var = (ds_copy[var] / self.maxabs[var]).astype("float32")
 
                 if self.fillvalue is not None:
                     scaled_var = scaled_var.fillna(self.fillvalue)
@@ -490,7 +473,7 @@ class MaxAbsScaler(DataTransformation):
     def inverse_transform(
         self, *datasets: xr.Dataset, variables: Optional[list] = None
     ) -> tuple[xr.Dataset, ...]:
-        if self.absmax is None:
+        if self.maxabs is None:
             raise ValueError("MaxAbsScaler wasn't fit to data")
 
         def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
@@ -498,9 +481,9 @@ class MaxAbsScaler(DataTransformation):
                 variables = ds.data_vars
             ds = xr.where(ds > self.fillvalue, ds, np.nan)
             for var in variables:
-                assert var in self.absmax.data_vars, f"{var} not in MaxAbsScaler"
+                assert var in self.maxabs.data_vars, f"{var} not in MaxAbsScaler"
 
-                unscaled_var = (ds[var] * self.absmax[var]).astype("float32")
+                unscaled_var = (ds[var] * self.maxabs[var]).astype("float32")
                 ds[var] = unscaled_var
             return ds
 
@@ -508,12 +491,12 @@ class MaxAbsScaler(DataTransformation):
 
     @classmethod
     def from_dict(cls, in_dict: dict) -> Self:
-        absmax = xr.Dataset.from_dict(in_dict["absmax"])
-        return cls(absmax)
+        maxabs = xr.Dataset.from_dict(in_dict["maxabs"])
+        return cls(maxabs)
 
     def to_dict(self):
         out_dict = {
-            "absmax": self.absmax.to_dict(),
+            "maxabs": self.maxabs.to_dict(),
             "fillvalue": self.fillvalue,
         }
         return out_dict

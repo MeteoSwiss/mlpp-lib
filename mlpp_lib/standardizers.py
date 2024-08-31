@@ -1,4 +1,6 @@
 import warnings
+from pathlib import Path
+
 from .normalizers import *
 
 

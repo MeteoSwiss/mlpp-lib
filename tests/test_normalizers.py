@@ -111,14 +111,10 @@ def test_serialization(data_transformer, features_multi, tmp_path):
     data_transformer.save_json(fn_multi)
     new_datatransformer = DataTransformer.from_json(fn_multi)
 
-    assert all(
-        np.allclose(
-            getattr(data_transformer, attr),
-            getattr(new_datatransformer, attr),
-            equal_nan=True,
-        )
-        for attr in get_class_attributes(data_transformer)
-    )
+    assert data_transformer.method_vars_dict == new_datatransformer.method_vars_dict
+    assert data_transformer.default == new_datatransformer.default
+    assert data_transformer.fillvalue == new_datatransformer.fillvalue
+    assert data_transformer.transformers == new_datatransformer.transformers
 
 
 class TestLegacyStandardizer:
@@ -169,7 +165,9 @@ class TestLegacyStandardizer:
         assert all(
             [
                 np.allclose(
-                    getattr(data_transformer.parameters[0][0], attr)[var].values,
+                    getattr(data_transformer.transformers["Standardizer"][0], attr)[
+                        var
+                    ].values,
                     getattr(standardizer, attr)[var].values,
                     equal_nan=True,
                 )
@@ -177,7 +175,7 @@ class TestLegacyStandardizer:
             ]
             if isinstance(getattr(standardizer, attr), xr.Dataset)
             else np.allclose(
-                getattr(data_transformer.parameters[0][0], attr),
+                getattr(data_transformer.transformers["Standardizer"][0], attr),
                 getattr(standardizer, attr),
             )
             for attr in get_class_attributes(standardizer)
