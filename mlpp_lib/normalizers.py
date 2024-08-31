@@ -329,7 +329,7 @@ class Standardizer(DataTransformation):
 @dataclass
 class MinMaxScaler(DataTransformation):
     """
-    Tranforms data using a min/max scaling in a xarray.Dataset object.
+    Transforms data to [0, 1] using a min/max scaling in a xarray.Dataset object.
     """
 
     minimum: xr.Dataset = field(default=None)
