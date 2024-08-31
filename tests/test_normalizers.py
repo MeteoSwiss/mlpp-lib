@@ -59,6 +59,8 @@ def test_inverse_transform(datatransformations, data_transformer, features_multi
     original_data = features_multi.copy().astype("float32")
     features_individual = features_multi.copy()
     for i, datatransform in enumerate(datatransformations):
+        # set the same fillvalue as in the data_transformer
+        datatransform.fillvalue = data_transformer.fillvalue
         datatransform.fit(features_multi, variables=[f"var{i}"])
         features_individual = datatransform.transform(
             features_individual, variables=[f"var{i}"]
