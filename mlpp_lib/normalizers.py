@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 from abc import abstractmethod
 
-import numpy as np
 import xarray as xr
 from typing_extensions import Self
 
@@ -33,7 +32,6 @@ class DataTransformer:
         default: str = "Standardizer",
         fillvalue: Optional[float] = -5,
     ):
-
         self.method_vars_dict = method_vars_dict
         self.default = default
         self.fillvalue = fillvalue
@@ -69,7 +67,7 @@ class DataTransformer:
 
         for name, (transformer, variables) in self.transformers.items():
             try:
-                transformer.fit(dataset=dataset, variables=variables, dims=dims)
+                transformer.fit(dataset=dataset[variables], dims=dims)
                 LOGGER.info(f"Fitted {name} to variables: {variables}")
             except Exception as e:
                 LOGGER.error(f"Failed to fit {name}: {e}")
@@ -79,22 +77,26 @@ class DataTransformer:
         for transformation in self.transformers.values():
             transformer, variables = transformation
             # ensure that only variables that are in the dataset are transformed
-            variables_in_data = list(set(variables) & set(datasets[0].data_vars))
-            if not variables_in_data:
+            vars_in_data = list(set(variables) & set(datasets[0].data_vars))
+            if not vars_in_data:
                 continue
-            datasets = transformer.transform(*datasets, variables=variables)
-        return datasets
+            datasets_ = transformer.transform(*[ds[vars_in_data] for ds in datasets])
+            for i, dataset_ in enumerate(datasets_):
+                datasets[i].update(dataset_)
+        return tuple(datasets)
 
     def inverse_transform(self, *datasets: xr.Dataset) -> xr.Dataset:
         """Apply inverse transformations to the dataset(s)."""
         for transformer, variables in self.transformers.values():
-            variables_in_data = list(set(variables) & set(datasets[0].data_vars))
-            if not variables_in_data:
+            vars_in_data = list(set(variables) & set(datasets[0].data_vars))
+            if not vars_in_data:
                 continue
-            datasets = transformer.inverse_transform(
-                *datasets, variables=variables_in_data
+            datasets_ = transformer.inverse_transform(
+                *[ds[vars_in_data] for ds in datasets]
             )
-        return datasets
+            for i, dataset_ in enumerate(datasets_):
+                datasets[i].update(dataset_)
+        return tuple(datasets)
 
     @classmethod
     def from_dict(cls, in_dict: dict) -> Self:
@@ -163,23 +165,23 @@ class DataTransformation:
     """
 
     @abstractmethod
-    def fit():
+    def fit(self, dataset: xr.Dataset, dims: Optional[list] = None) -> None:
         pass
 
     @abstractmethod
-    def transform():
+    def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         pass
 
     @abstractmethod
-    def inverse_transform():
+    def inverse_transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         pass
 
     @abstractmethod
-    def from_dict():
+    def from_dict(self, in_dict) -> Self:
         pass
 
     @abstractmethod
-    def to_dict():
+    def to_dict(self) -> dict:
         pass
 
 
@@ -195,54 +197,34 @@ class Identity(DataTransformation):
     def fit(
         self,
         dataset: xr.Dataset,
-        variables: Optional[list] = None,
         dims: Optional[list] = None,
     ):
         self.fillvalue = self.fillvalue
 
-    def transform(
-        self, *datasets: xr.Dataset, variables: Optional[list] = None
-    ) -> tuple[xr.Dataset, ...]:
-        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+    def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
+        def f(ds: xr.Dataset) -> xr.Dataset:
             ds = ds.copy()
-            if variables is None:
-                variables = list(ds.data_vars)
-            for var in variables:
+            if self.fillvalue:
+                ds = ds.fillna(self.fillvalue)
+            return ds.astype("float32")
 
-                if self.fillvalue:
-                    ds[var] = ds[var].fillna(self.fillvalue)
+        return tuple(f(ds) for ds in datasets)
 
-                ds[var] = ds[var].astype("float32")
-
-            return ds
-
-        return tuple(f(ds, variables) for ds in datasets)
-
-    def inverse_transform(
-        self, *datasets: xr.Dataset, variables: Optional[list] = None
-    ) -> tuple[xr.Dataset, ...]:
-        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+    def inverse_transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
+        def f(ds: xr.Dataset) -> xr.Dataset:
             ds = ds.copy()
-            if variables is None:
-                variables = list(ds.data_vars)
+            if self.fillvalue:
+                ds = ds.where(ds != self.fillvalue)
+            return ds.astype("float32")
 
-            for var in variables:
-
-                if self.fillvalue:
-                    ds[var] = ds[var].where(ds[var] != self.fillvalue)
-
-                ds[var] = ds[var].astype("float32")
-
-            return ds
-
-        return tuple(f(ds, variables) for ds in datasets)
+        return tuple(f(ds) for ds in datasets)
 
     @classmethod
     def from_dict(cls, in_dict: dict) -> Self:
         fillvalue = in_dict["fillvalue"]
         return cls(fillvalue)
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         out_dict = {
             "fillvalue": self.fillvalue,
         }
@@ -252,7 +234,7 @@ class Identity(DataTransformation):
 @dataclass
 class Standardizer(DataTransformation):
     """
-    Tranforms data using a z-normalization in a xarray.Dataset object.
+    Transforms data using a z-normalization in a xarray.Dataset object.
     """
 
     mean: xr.Dataset = field(default=None)
@@ -263,70 +245,39 @@ class Standardizer(DataTransformation):
     def fit(
         self,
         dataset: xr.Dataset,
-        variables: Optional[list] = None,
         dims: Optional[list] = None,
     ):
-
-        if variables is None:
-            variables = list(dataset.data_vars)
-        if not all(var in dataset.data_vars for var in variables):
-            raise KeyError(
-                f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}"
-            )
-
-        self.mean = dataset[variables].mean(dims).compute().copy()
-        self.std = dataset[variables].std(dims).compute().copy()
+        self.mean = dataset.mean(dims).compute().copy()
+        self.std = dataset.std(dims).compute().copy()
         self.fillvalue = self.fillvalue
         # Check for near-zero standard deviations and set them equal to one
         self.std = xr.where(self.std < 1e-6, 1, self.std)
 
-    def transform(
-        self, *datasets: xr.Dataset, variables: Optional[list] = None
-    ) -> tuple[xr.Dataset, ...]:
+    def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         if self.mean is None:
             raise ValueError("Standardizer wasn't fit to data")
 
-        def f(ds: xr.Dataset, variables: Optional[list] = None):
+        def f(ds: xr.Dataset):
             ds = ds.copy()
-            if variables is None:
-                variables = list(ds.data_vars)
-            for var in variables:
-                assert var in self.mean.data_vars, f"{var} not in Standardizer"
+            ds = (ds - self.mean) / self.std
+            if self.fillvalue:
+                ds = ds.fillna(self.fillvalue)
+            return ds.astype("float32")
 
-                standardized_var = (ds[var] - self.mean[var]) / self.std[var]
+        return tuple(f(ds) for ds in datasets)
 
-                if self.fillvalue:
-                    standardized_var = standardized_var.fillna(self.fillvalue)
-
-                ds[var] = standardized_var.astype("float32")
-
-            return ds
-
-        return tuple(f(ds, variables) for ds in datasets)
-
-    def inverse_transform(
-        self, *datasets: xr.Dataset, variables: Optional[list] = None
-    ) -> tuple[xr.Dataset, ...]:
+    def inverse_transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         if self.mean is None:
             raise ValueError("Standardizer wasn't fit to data")
 
-        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+        def f(ds: xr.Dataset) -> xr.Dataset:
             ds = ds.copy()
-            if variables is None:
-                variables = list(ds.data_vars)
-            for var in variables:
-                assert var in self.mean.data_vars, f"{var} not in Standardizer"
+            if self.fillvalue:
+                ds = ds.where(ds > self.fillvalue)
+                ds = ds * self.std + self.mean
+            return ds.astype("float32")
 
-                if self.fillvalue:
-                    ds[var] = ds[var].where(ds[var] > self.fillvalue)
-
-                unstandardized_var = ds[var] * self.std[var] + self.mean[var]
-
-                ds[var] = unstandardized_var.astype("float32")
-
-            return ds
-
-        return tuple(f(ds, variables) for ds in datasets)
+        return tuple(f(ds) for ds in datasets)
 
     @classmethod
     def from_dict(cls, in_dict: dict) -> Self:
@@ -358,66 +309,37 @@ class MinMaxScaler(DataTransformation):
     def fit(
         self,
         dataset: xr.Dataset,
-        variables: Optional[list] = None,
         dims: Optional[list] = None,
     ):
-        if variables is None:
-            variables = list(dataset.data_vars)
-        if not all(var in dataset.data_vars for var in variables):
-            raise KeyError(
-                f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}"
-            )
-
-        self.min = dataset[variables].min(dims).compute().copy()
-        self.max = dataset[variables].max(dims).compute().copy()
+        self.min = dataset.min(dims).compute().copy()
+        self.max = dataset.max(dims).compute().copy()
         self.fillvalue = self.fillvalue
 
-    def transform(
-        self, *datasets: xr.Dataset, variables: Optional[list] = None
-    ) -> tuple[xr.Dataset, ...]:
+    def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         if self.min is None:
             raise ValueError("MinMaxScaler wasn't fit to data")
 
-        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+        def f(ds: xr.Dataset) -> xr.Dataset:
             ds = ds.copy()
-            if variables is None:
-                variables = list(ds.data_vars)
-            for var in variables:
-                assert var in self.min.data_vars, f"{var} not in MinMaxScaler"
+            ds = (ds - self.min) / (self.max - self.min)
+            if self.fillvalue is not None:
+                ds = ds.fillna(self.fillvalue)
+            return ds.astype("float32")
 
-                scaled_var = (ds[var] - self.min[var]) / (self.max[var] - self.min[var])
+        return tuple(f(ds) for ds in datasets)
 
-                if self.fillvalue is not None:
-                    scaled_var = scaled_var.fillna(self.fillvalue)
-
-                ds[var] = scaled_var.astype("float32")
-
-            return ds
-
-        return tuple(f(ds, variables) for ds in datasets)
-
-    def inverse_transform(
-        self, *datasets: xr.Dataset, variables: Optional[list] = None
-    ) -> tuple[xr.Dataset, ...]:
+    def inverse_transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         if self.min is None:
             raise ValueError("MinMaxScaler wasn't fit to data")
 
-        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+        def f(ds: xr.Dataset) -> xr.Dataset:
             ds = ds.copy()
-            if variables is None:
-                variables = list(ds.data_vars)
-            for var in variables:
-                assert var in self.min.data_vars, f"{var} not in MinMaxScaler"
+            if self.fillvalue:
+                ds = ds.where(ds > self.fillvalue)
+            ds = ds * (self.max - self.min) + self.min
+            return ds.astype("float32")
 
-                if self.fillvalue:
-                    ds[var] = ds[var].where(ds[var] > self.fillvalue)
-
-                unscaled_var = ds[var] * (self.max[var] - self.min[var]) + self.min[var]
-                ds[var] = unscaled_var.astype("float32")
-
-            return ds
-
-        return tuple(f(ds, variables) for ds in datasets)
+        return tuple(f(ds) for ds in datasets)
 
     @classmethod
     def from_dict(cls, in_dict: dict) -> Self:
@@ -447,64 +369,34 @@ class MaxAbsScaler(DataTransformation):
     def fit(
         self,
         dataset: xr.Dataset,
-        variables: Optional[list] = None,
         dims: Optional[list] = None,
     ):
-        if variables is None:
-            variables = list(dataset.data_vars)
-        if not all(var in dataset.data_vars for var in variables):
-            raise KeyError(
-                f"There are variables not in dataset: {[var for var in variables if var not in dataset.data_vars]}"
-            )
-
-        self.maxabs = abs(dataset[variables]).max(dims).compute().copy()
+        self.maxabs = abs(dataset).max(dims).compute().copy()
         self.fillvalue = self.fillvalue
 
-    def transform(
-        self, *datasets: xr.Dataset, variables: Optional[list] = None
-    ) -> tuple[xr.Dataset, ...]:
+    def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         if self.maxabs is None:
             raise ValueError("MaxAbsScaler wasn't fit to data")
 
-        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
-
+        def f(ds: xr.Dataset) -> xr.Dataset:
             ds = ds.copy()
-            if variables is None:
-                variables = ds.data_vars
-            for var in variables:
-                assert var in self.maxabs.data_vars, f"{var} not in MaxAbsScaler"
+            ds = ds / self.maxabs
+            if self.fillvalue:
+                ds = ds.fillna(self.fillvalue)
+            return ds.astype("float32")
 
-                scaled_var = ds[var] / self.maxabs[var]
+        return tuple(f(ds) for ds in datasets)
 
-                if self.fillvalue:
-                    scaled_var = scaled_var.fillna(self.fillvalue)
-
-                ds[var] = scaled_var.astype("float32")
-
-            return ds
-
-        return tuple(f(ds, variables) for ds in datasets)
-
-    def inverse_transform(
-        self, *datasets: xr.Dataset, variables: Optional[list] = None
-    ) -> tuple[xr.Dataset, ...]:
+    def inverse_transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         if self.maxabs is None:
             raise ValueError("MaxAbsScaler wasn't fit to data")
 
-        def f(ds: xr.Dataset, variables: Optional[list] = None) -> xr.Dataset:
+        def f(ds: xr.Dataset) -> xr.Dataset:
             ds = ds.copy()
-            if variables is None:
-                variables = ds.data_vars
-            for var in variables:
-                assert var in self.maxabs.data_vars, f"{var} not in MaxAbsScaler"
+            ds = ds * self.maxabs
+            return ds.astype("float32")
 
-                unscaled_var = ds[var] * self.maxabs[var]
-
-                ds[var] = unscaled_var.astype("float32")
-
-            return ds
-
-        return tuple(f(ds, variables) for ds in datasets)
+        return tuple(f(ds) for ds in datasets)
 
     @classmethod
     def from_dict(cls, in_dict: dict) -> Self:
