@@ -191,6 +191,7 @@ class Identity(DataTransformation):
     Identity transformation, returns the input data without any transformation.
     """
 
+    identity_vars: str = field(default=None)
     fillvalue: Optional[float] = field(default=None)
     name = "Identity"
 
@@ -200,10 +201,11 @@ class Identity(DataTransformation):
         dims: Optional[list] = None,
     ):
         self.fillvalue = self.fillvalue
+        self.identity_vars = list(dataset.data_vars)
 
     def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         def f(ds: xr.Dataset) -> xr.Dataset:
-            ds = ds.copy()
+            ds = ds[self.identity_vars].copy()
             if self.fillvalue:
                 ds = ds.fillna(self.fillvalue)
             return ds.astype("float32")
@@ -212,7 +214,7 @@ class Identity(DataTransformation):
 
     def inverse_transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         def f(ds: xr.Dataset) -> xr.Dataset:
-            ds = ds.copy()
+            ds = ds[self.identity_vars].copy()
             if self.fillvalue:
                 ds = ds.where(ds != self.fillvalue)
             return ds.astype("float32")
@@ -221,11 +223,13 @@ class Identity(DataTransformation):
 
     @classmethod
     def from_dict(cls, in_dict: dict) -> Self:
+        identity_vars = in_dict["identity_vars"]
         fillvalue = in_dict["fillvalue"]
-        return cls(fillvalue)
+        return cls(identity_vars, fillvalue=fillvalue)
 
     def to_dict(self) -> dict:
         out_dict = {
+            "identity_vars": self.identity_vars,
             "fillvalue": self.fillvalue,
         }
         return out_dict
