@@ -71,6 +71,7 @@ class DataTransformer:
                 LOGGER.info(f"Fitted {name} to variables: {variables}")
             except Exception as e:
                 LOGGER.error(f"Failed to fit {name}: {e}")
+                raise e
 
     def transform(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         """Apply transformations to the dataset(s)."""
