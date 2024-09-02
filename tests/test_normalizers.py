@@ -15,7 +15,8 @@ def get_class_attributes(cls):
 def test_fit(datatransformations, data_transformer, features_multi):
 
     for i, datatransform in enumerate(datatransformations):
-        datatransform.fit(features_multi, variables=[f"var{i}"])
+        sel_vars = [f"var{i}"]
+        datatransform.fit(features_multi[sel_vars])
 
     data_transformer.fit(features_multi)
 
@@ -36,10 +37,10 @@ def test_transform(datatransformations, data_transformer, features_multi):
 
     features_individual = features_multi.copy()
     for i, datatransform in enumerate(datatransformations):
-        datatransform.fit(features_multi, variables=[f"var{i}"])
-        features_individual = datatransform.transform(
-            features_individual, variables=[f"var{i}"]
-        )[0]
+        sel_vars = [f"var{i}"]
+        datatransform.fit(features_multi[sel_vars])
+        features_individual_ = datatransform.transform(features_individual)[0]
+        features_individual.update(features_individual_)
 
     data_transformer.fit(features_multi)
     features_multi = data_transformer.transform(features_multi)[0]
@@ -60,16 +61,15 @@ def test_inverse_transform(datatransformations, data_transformer, features_multi
     features_individual = features_multi.copy()
     for i, datatransform in enumerate(datatransformations):
         # set the same fillvalue as in the data_transformer
+        sel_vars = [f"var{i}"]
         datatransform.fillvalue = data_transformer.fillvalue
-        datatransform.fit(features_multi, variables=[f"var{i}"])
-        features_individual = datatransform.transform(
-            features_individual, variables=[f"var{i}"]
-        )[0]
+        datatransform.fit(features_multi[sel_vars])
+        features_individual_ = datatransform.transform(features_individual)[0]
+        features_individual.update(features_individual_)
     inv_ds_individual = features_individual.copy()
     for i, datatransform in enumerate(datatransformations):
-        inv_ds_individual = datatransform.inverse_transform(
-            inv_ds_individual, variables=[f"var{i}"]
-        )[0]
+        inv_ds_individual_ = datatransform.inverse_transform(inv_ds_individual)[0]
+        inv_ds_individual.update(inv_ds_individual_)
 
     data_transformer.fit(features_multi)
     ds_multi = data_transformer.transform(features_multi)[0]
