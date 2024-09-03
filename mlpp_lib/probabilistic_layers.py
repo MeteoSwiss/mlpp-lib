@@ -19,12 +19,7 @@ from tensorflow_probability.python.layers import (
     IndependentLogistic,
     IndependentBernoulli,
     IndependentPoisson,
-    MixtureNormal,
 )
-
-@tf.keras.saving.register_keras_serializable()
-class IndependentUShapedBeta(tfpl.DistributionLambda):
-    pass
 
 
 @tf.keras.saving.register_keras_serializable()
@@ -247,6 +242,116 @@ class Independent4ParamsBeta(tfpl.DistributionLambda):
     def output(self):
         """This allows the use of this layer with the shap package."""
         return super(Independent4ParamsBeta, self).output[0]
+    
+
+@tf.keras.saving.register_keras_serializable()
+class IndependentCensoredNormal(tfpl.DistributionLambda):
+    """An independent TruncatedNormal Keras layer."""
+
+    def __init__(
+        self,
+        event_shape=(),
+        convert_to_tensor_fn=tfd.Distribution.mean,
+        validate_args=False,
+        **kwargs
+    ):
+        """Initialize the `IndependentCensoredNormal` layer.
+        Args:
+        event_shape: integer vector `Tensor` representing the shape of single
+            draw from this distribution.
+        convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
+            instance and returns a `tf.Tensor`-like object.
+            Default value: `tfd.Distribution.mean`.
+        validate_args: Python `bool`, default `False`. When `True` distribution
+            parameters are checked for validity despite possibly degrading runtime
+            performance. When `False` invalid inputs may silently render incorrect
+            outputs.
+            Default value: `False`.
+        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
+        """
+        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
+
+        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
+        # are being called from a `from_config` method), remove it.  We pass the
+        # distribution function to `DistributionLambda.__init__` below as the first
+        # positional argument.
+        kwargs.pop("make_distribution_fn", None)
+
+        super(IndependentCensoredNormal, self).__init__(
+            lambda t: IndependentCensoredNormal.new(t, event_shape, validate_args),
+            convert_to_tensor_fn,
+            **kwargs
+        )
+
+        self._event_shape = event_shape
+        self._convert_to_tensor_fn = convert_to_tensor_fn
+        self._validate_args = validate_args
+
+    @staticmethod
+    def new(params, event_shape=(), validate_args=False, name=None):
+        """Create the distribution instance from a `params` vector."""
+        with tf.name_scope(name or "IndependentCensoredNormal"):
+            params = tf.convert_to_tensor(params, name="params")
+            event_shape = dist_util.expand_to_vector(
+                tf.convert_to_tensor(
+                    event_shape, name="event_shape", dtype_hint=tf.int32
+                ),
+                tensor_name="event_shape",
+            )
+            output_shape = tf.concat(
+                [
+                    tf.shape(params)[:-1],
+                    event_shape,
+                ],
+                axis=0,
+            )
+            loc, scale = tf.split(params, 2, axis=-1)
+            return independent_lib.Independent(
+                tfd.TruncatedNormal(
+                    loc=tf.reshape(loc, output_shape),
+                    scale=tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-3,
+                    low=0,
+                    high=1,
+                    validate_args=validate_args,
+                ),
+                reinterpreted_batch_ndims=tf.size(event_shape),
+                validate_args=validate_args,
+            )
+
+    @staticmethod
+    def params_size(event_shape=(), name=None):
+        """The number of `params` needed to create a single distribution."""
+        with tf.name_scope(name or "IndependentCensoredNormal_params_size"):
+            event_shape = tf.convert_to_tensor(
+                event_shape, name="event_shape", dtype_hint=tf.int32
+            )
+            return np.int32(2) * _event_size(
+                event_shape, name=name or "IndependentCensoredNormal_params_size"
+            )
+
+    def get_config(self):
+        """Returns the config of this layer.
+        NOTE: At the moment, this configuration can only be serialized if the
+        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
+        implements `get_config`) or one of the standard values:
+        - `Distribution.sample` (or `"sample"`)
+        - `Distribution.mean` (or `"mean"`)
+        - `Distribution.mode` (or `"mode"`)
+        - `Distribution.stddev` (or `"stddev"`)
+        - `Distribution.variance` (or `"variance"`)
+        """
+        config = {
+            "event_shape": self._event_shape,
+            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
+            "validate_args": self._validate_args,
+        }
+        base_config = super(IndependentCensoredNormal, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+    @property
+    def output(self):
+        """This allows the use of this layer with the shap package."""
+        return super(IndependentCensoredNormal, self).output[0]
     
 
 @tf.keras.saving.register_keras_serializable()
@@ -814,7 +919,7 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
         validate_args=False,
         **kwargs
     ):
-        """Initialize the `MixtureOf2Normal` layer.
+        """Initialize the `MixtureTruncatedNormal` layer.
         Args:
             event_shape: integer vector `Tensor` representing the shape of single
                 draw from this distribution.
@@ -837,8 +942,8 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
-        super(MixtureOf2Normal, self).__init__(
-            lambda t: MixtureOf2Normal.new(t, event_shape, validate_args),
+        super(MixtureTruncatedNormal, self).__init__(
+            lambda t: MixtureTruncatedNormal.new(t, event_shape, validate_args),
             convert_to_tensor_fn,
             **kwargs
         )
@@ -850,7 +955,7 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
     @staticmethod
     def new(params, event_shape=(), validate_args=False, name=None):
         """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "MixtureOf2Normal"):
+        with tf.name_scope(name or "MixtureTruncatedNormal"):
             params = tf.convert_to_tensor(params, name="params")
             
             event_shape = dist_util.expand_to_vector(
@@ -864,7 +969,7 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
             output_shape = tf.concat(
                 [
                     tf.shape(params)[:-1],
-                    [1],  # Ensure the event shape is correctly handled
+                    event_shape,
                 ],
                 axis=0,
             )
@@ -881,7 +986,7 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
             trunc_normal2 = tfd.TruncatedNormal(loc=loc2, scale=scale2, low=0.0, high=1.0)
             
             # Create a categorical distribution for the weights
-            cat = tfd.Categorical(probs=tf.concat([weight, 1 - weight], axis=-1))
+            cat = tfd.Categorical(probs=tf.concat([tf.expand_dims(weight, -1), tf.expand_dims(1-weight, -1)], axis=-1))
             
             class CustomMixture(tfd.Distribution):
                 def __init__(self, cat, trunc_normal1, trunc_normal2):
@@ -896,18 +1001,17 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
                     )
 
                 def _sample_n(self, n, seed=None):
-                    indices = tf.transpose(self.cat.sample(sample_shape=(n,), seed=seed))
+                    indices = self.cat.sample(sample_shape=(n,), seed=seed)
                     
                     # Sample from both truncated normal distributions
-                    samples1 = tf.transpose(tf.squeeze(self.trunc_normal1.sample(sample_shape=(n,), seed=seed), axis=-1))
-                    samples2 = tf.transpose(tf.squeeze(self.trunc_normal2.sample(sample_shape=(n,), seed=seed), axis=-1))
+                    samples1 = self.trunc_normal1.sample(sample_shape=(n,), seed=seed)
+                    samples2 = self.trunc_normal2.sample(sample_shape=(n,), seed=seed)
                     
                     # Stack the samples along a new axis
                     samples = tf.stack([samples1, samples2], axis=-1)
                     
                     # Gather samples according to indices from the categorical distribution
-                    chosen_samples = tf.transpose(tf.gather(samples, indices, batch_dims=2, axis=-1))
-                    chosen_samples = tf.reshape(chosen_samples, tf.concat([tf.shape(chosen_samples), event_shape], axis=0))
+                    chosen_samples = tf.gather(samples, indices, batch_dims=tf.rank(indices))
 
                     return chosen_samples
 
@@ -932,12 +1036,12 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
     @staticmethod
     def params_size(event_shape=(), name=None):
         """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "MixtureOf2Normal_params_size"):
+        with tf.name_scope(name or "MixtureTruncatedNormal_params_size"):
             event_shape = tf.convert_to_tensor(
                 event_shape, name="event_shape", dtype_hint=tf.int32
             )
             return np.int32(5) * _event_size(
-                event_shape, name=name or "MixtureOf2Normal_params_size"
+                event_shape, name=name or "MixtureTruncatedNormal_params_size"
             )
         
     def get_config(self):
@@ -956,13 +1060,13 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
             "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
             "validate_args": self._validate_args,
         }
-        base_config = super(MixtureOf2Normal, self).get_config()
+        base_config = super(MixtureTruncatedNormal, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
     
     @property
     def output(self):
         """This allows the use of this layer with the shap package."""
-        return super(MixtureOf2Normal, self).output[0]
+        return super(MixtureTruncatedNormal, self).output[0]
 
 
 @tf.keras.saving.register_keras_serializable()
