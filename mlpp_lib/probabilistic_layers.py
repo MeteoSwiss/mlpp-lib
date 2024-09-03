@@ -876,7 +876,7 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
             trunc_normal2 = tfd.TruncatedNormal(loc=loc2, scale=scale2, low=0.0, high=1.0)
             
             # Create a categorical distribution for the weights
-            cat = tfd.Categorical(probs=tf.concat([tf.reshape(weight, (*weight.shape, 1)), tf.reshape(1-weight, (*weight.shape, 1))], axis=-1))
+            cat = tfd.Categorical(probs=tf.concat([tf.reshape(weight, (*output_shape, 1)), tf.reshape(1-weight, (*output_shape, 1))], axis=-1))
             
             class CustomMixture(tfd.Distribution):
                 def __init__(self, cat, trunc_normal1, trunc_normal2):
