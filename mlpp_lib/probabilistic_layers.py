@@ -22,10 +22,6 @@ from tensorflow_probability.python.layers import (
     MixtureNormal,
 )
 
-@tf.keras.saving.register_keras_serializable()
-class IndependentUShapedBeta(tfpl.DistributionLambda):
-    pass
-
 
 @tf.keras.saving.register_keras_serializable()
 class IndependentBeta(tfpl.DistributionLambda):
