@@ -859,7 +859,7 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
             output_shape = tf.concat(
                 [
                     tf.shape(params)[:-1],
-                    [1],  # Ensure the event shape is correctly handled
+                    event_shape,
                 ],
                 axis=0,
             )
@@ -876,7 +876,7 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
             trunc_normal2 = tfd.TruncatedNormal(loc=loc2, scale=scale2, low=0.0, high=1.0)
             
             # Create a categorical distribution for the weights
-            cat = tfd.Categorical(probs=tf.concat([weight, 1 - weight], axis=-1))
+            cat = tfd.Categorical(probs=tf.concat([tf.reshape(weight, (*weight.shape, 1)), tf.reshape(1-weight, (*weight.shape, 1))], axis=-1))
             
             class CustomMixture(tfd.Distribution):
                 def __init__(self, cat, trunc_normal1, trunc_normal2):
@@ -891,18 +891,17 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
                     )
 
                 def _sample_n(self, n, seed=None):
-                    indices = tf.transpose(self.cat.sample(sample_shape=(n,), seed=seed))
+                    indices = self.cat.sample(sample_shape=(n,), seed=seed)
                     
                     # Sample from both truncated normal distributions
-                    samples1 = tf.transpose(tf.squeeze(self.trunc_normal1.sample(sample_shape=(n,), seed=seed), axis=-1))
-                    samples2 = tf.transpose(tf.squeeze(self.trunc_normal2.sample(sample_shape=(n,), seed=seed), axis=-1))
+                    samples1 = self.trunc_normal1.sample(sample_shape=(n,), seed=seed)
+                    samples2 = self.trunc_normal2.sample(sample_shape=(n,), seed=seed)
                     
                     # Stack the samples along a new axis
                     samples = tf.stack([samples1, samples2], axis=-1)
                     
                     # Gather samples according to indices from the categorical distribution
-                    chosen_samples = tf.transpose(tf.gather(samples, indices, batch_dims=2, axis=-1))
-                    chosen_samples = tf.reshape(chosen_samples, tf.concat([tf.shape(chosen_samples), event_shape], axis=0))
+                    chosen_samples = tf.gather(samples, indices, batch_dims=tf.rank(indices))
 
                     return chosen_samples
 
