@@ -839,7 +839,7 @@ class IndependentSoftClipCensored(tfpl.DistributionLambda):
     def __init__(
         self,
         event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.mean,
+        convert_to_tensor_fn=tfd.Distribution.sample,
         validate_args=False,
         **kwargs
     ):
@@ -849,7 +849,7 @@ class IndependentSoftClipCensored(tfpl.DistributionLambda):
             draw from this distribution.
         convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
             instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.mean`.
+            Default value: `tfd.Distribution.sample`.
         validate_args: Python `bool`, default `False`. When `True` distribution
             parameters are checked for validity despite possibly degrading runtime
             performance. When `False` invalid inputs may silently render incorrect
