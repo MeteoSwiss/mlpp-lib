@@ -133,7 +133,7 @@ class IndependentBeta(tfpl.DistributionLambda):
 
 @tf.keras.saving.register_keras_serializable()
 class Independent4ParamsBeta(tfpl.DistributionLambda):
-    """An independent 4-parameter Beta Keras layer"""
+    """An independent 4-parameter Beta Keras layer allowing control over scale as well as a 'shift' parameter."""**
     # INdependent
     def __init__(
         self,
