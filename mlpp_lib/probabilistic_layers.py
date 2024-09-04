@@ -246,7 +246,7 @@ class Independent4ParamsBeta(tfpl.DistributionLambda):
 
 @tf.keras.saving.register_keras_serializable()
 class IndependentCensoredNormal(tfpl.DistributionLambda):
-    """An independent TruncatedNormal Keras layer."""
+    """An independent censored normal Keras layer."""
 
     def __init__(
         self,
@@ -306,14 +306,52 @@ class IndependentCensoredNormal(tfpl.DistributionLambda):
                 axis=0,
             )
             loc, scale = tf.split(params, 2, axis=-1)
+            loc = tf.reshape(loc, output_shape)
+            scale = tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-6
+            normal_dist = tfd.Normal(
+                loc=loc, scale=scale, validate_args=validate_args
+            )
+
+            class CustomCensored(tfd.Distribution):
+                def __init__(self, normal):
+                    self.normal = normal
+                    super(CustomCensored, self).__init__(
+                        dtype=normal.dtype,
+                        reparameterization_type=tfd.FULLY_REPARAMETERIZED,
+                        validate_args=validate_args,
+                        allow_nan_stats=True,
+                    )
+
+                def _sample_n(self, n, seed=None):
+                    
+                    # Sample from normal distribution
+                    samples = self.normal.sample(sample_shape=(n,), seed=seed)
+                    
+                    # Clip values between 0 and 1
+                    chosen_samples = tf.clip_by_value(samples, 0, 1)
+
+                    return chosen_samples
+
+                def _mean(self):
+                    original_mean = self.normal.mean()
+                    low_bound_standard = (0 - original_mean) / self.normal.stddev()
+                    high_bound_standard = (1 - original_mean) / self.normal.stddev()
+
+                    self.low_bound_cdf = self.normal.cdf(low_bound_standard)
+                    self.high_bound_cdf = self.normal.cdf(high_bound_standard)
+
+                    self.low_bound_pdf = self.normal.prob(low_bound_standard)
+                    self.high_bound_pdf = self.normal.prob(high_bound_standard)
+
+                    return original_mean + self.normal.stddev() * (self.low_bound_pdf - self.high_bound_pdf) / (self.high_bound_cdf - self.low_bound_cdf + 1e-3)
+
+                def _log_prob(self, value):
+                    original_log_prob = self.normal.log_prob(value)
+                    
+                    return original_log_prob - tf.math.log(self.high_bound_cdf - self.low_bound_cdf + 1e-3)
+
             return independent_lib.Independent(
-                tfd.TruncatedNormal(
-                    loc=tf.reshape(loc, output_shape),
-                    scale=tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-3,
-                    low=0,
-                    high=1,
-                    validate_args=validate_args,
-                ),
+                CustomCensored(normal_dist),
                 reinterpreted_batch_ndims=tf.size(event_shape),
                 validate_args=validate_args,
             )
