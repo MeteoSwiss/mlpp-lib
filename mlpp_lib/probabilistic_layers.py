@@ -832,6 +832,8 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
         """This allows the use of this layer with the shap package."""
         return super(IndependentTruncatedNormal, self).output[0]
     
+    
+    
 @tf.keras.saving.register_keras_serializable()
 class IndependentSoftClipCensored(tfpl.DistributionLambda):
     """An independent censored normal Keras layer."""
