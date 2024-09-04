@@ -1011,7 +1011,7 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
                     samples = tf.stack([samples1, samples2], axis=-1)
                     
                     # Gather samples according to indices from the categorical distribution
-                    chosen_samples = tf.gather(samples, indices, batch_dims=tf.rank(indices))
+                    chosen_samples = tf.gather(samples, indices, batch_dims=tf.experimental.numpy.ndim(indices))
 
                     return chosen_samples
 
