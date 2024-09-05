@@ -155,7 +155,9 @@ def test_train_fromfile(tmp_path, cfg):
     cfg.update({"epochs": num_epochs})
 
     splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
-    datasplitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
+    datasplitter = DataSplitter(
+        splitter_options.time_split, splitter_options.station_split
+    )
     datanormalizer = DataTransformer(**["normalizer"])
     batch_dims = ["forecast_reference_time", "t", "station"]
     datamodule = DataModule(
@@ -190,7 +192,9 @@ def test_train_fromds(features_dataset, targets_dataset, cfg):
     cfg.update({"epochs": num_epochs})
 
     splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
-    datasplitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
+    datasplitter = DataSplitter(
+        splitter_options.time_split, splitter_options.station_split
+    )
     datanormalizer = DataTransformer(**cfg["normalizer"])
     batch_dims = ["forecast_reference_time", "t", "station"]
     datamodule = DataModule(
