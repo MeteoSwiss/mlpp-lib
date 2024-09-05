@@ -17,7 +17,7 @@ FCN_OPTIONS = dict(
     dropout=[None, 0.1, [0.1, 0.0]],
     mc_dropout=[True, False],
     out_bias_init=["zeros", np.array([0.2]), np.array([0.2, 2.1])],
-    probabilistic_layer=[None, "IndependentNormal", "MultivariateNormalTriL"],
+    probabilistic_layer=[None] + ["IndependentNormal", "IndependentGamma"],
     skip_connection=[False, True],
 )
 
@@ -32,6 +32,25 @@ DCN_SCENARIOS = [
     dict(zip(list(FCN_OPTIONS.keys()), x))
     for x in itertools.product(*FCN_OPTIONS.values())
 ]
+
+
+def _test_model(model):
+    moodel_is_keras = (
+        str(type(model)).endswith("keras.engine.sequential.Sequential'>")
+        or str(type(model)).endswith("keras.models.Sequential'>")
+        or str(type(model)).endswith("keras.engine.training.Model'>")
+        or isinstance(model, tf.keras.Model)
+    )
+    assert moodel_is_keras
+    assert isinstance(model, Functional)
+    assert len(model.layers[-1]._inbound_nodes) > 0
+    model_output = model.layers[-1].output
+    assert not isinstance(
+        model_output, list
+    ), "The model output must be a single tensor!"
+    assert (
+        len(model_output.shape) < 3
+    ), "The model output must be a vector or a single value!"
 
 
 def _test_prediction(model, scenario_kwargs, dummy_input, output_size):
@@ -76,8 +95,8 @@ def test_fully_connected_network(scenario_kwargs):
         model = models.fully_connected_network(
             input_shape, output_size, **scenario_kwargs
         )
-        assert isinstance(model, Functional)
 
+    _test_model(model)
     _test_prediction(model, scenario_kwargs, dummy_input, output_size)
 
 
@@ -108,8 +127,8 @@ def test_fully_connected_multibranch_network(scenario_kwargs):
         model = models.fully_connected_multibranch_network(
             input_shape, output_size, **scenario_kwargs
         )
-        assert isinstance(model, Functional)
 
+    _test_model(model)
     _test_prediction(model, scenario_kwargs, dummy_input, output_size)
 
 
@@ -133,6 +152,6 @@ def test_deep_cross_network(scenario_kwargs):
 
     else:
         model = models.deep_cross_network(input_shape, output_size, **scenario_kwargs)
-        assert isinstance(model, Functional)
 
+    _test_model(model)
     _test_prediction(model, scenario_kwargs, dummy_input, output_size)

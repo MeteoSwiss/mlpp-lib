@@ -127,11 +127,11 @@ def test_save_model_mlflow(tmp_path):
     custom_objects = tf.keras.layers.serialize(model)
 
     model_info = mlflow.tensorflow.log_model(
-            model,
-            "model_save",
-            custom_objects=custom_objects,
-            keras_model_kwargs={"save_format": "h5"},
-        )
+        model,
+        "model_save",
+        custom_objects=custom_objects,
+        keras_model_kwargs={"save_format": "h5"},
+    )
 
     tf.keras.backend.clear_session()
     model = mlflow.tensorflow.load_model(model_info.model_uri)
