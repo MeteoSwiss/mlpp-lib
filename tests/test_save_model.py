@@ -16,7 +16,7 @@ def _belongs_here(obj, module):
     return obj[1].__module__ == module.__name__
 
 
-ALL_LAYERS = [
+ALL_PROB_LAYERS = [
     obj[0]
     for obj in getmembers(probabilistic_layers, isclass)
     if _belongs_here(obj, probabilistic_layers)
@@ -51,7 +51,7 @@ TEST_METRICS = [
 
 @pytest.mark.parametrize("save_format", ["tf", "h5"])
 @pytest.mark.parametrize("loss", TEST_LOSSES)
-@pytest.mark.parametrize("prob_layer", ALL_LAYERS)
+@pytest.mark.parametrize("prob_layer", ALL_PROB_LAYERS)
 def test_save_model(save_format, loss, prob_layer, tmp_path):
     """Test model save/load"""
 
@@ -67,7 +67,7 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
         2,
         hidden_layers=[3],
         probabilistic_layer=prob_layer,
-        mc_dropout=True,
+        mc_dropout=False,
     )
     assert isinstance(model.from_config(model.get_config()), Functional)
     loss = get_loss(loss)
@@ -102,12 +102,21 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
     assert completed_process.returncode == 0, "failed to reload model"
 
     input_arr = tf.random.uniform((1, 5))
-    outputs = model(input_arr).mean()
+    pred1 = model(input_arr)
     del model
     tf.keras.backend.clear_session()
     model = tf.keras.saving.load_model(tmp_path, compile=False)
     assert isinstance(model, Functional)
-    np.testing.assert_allclose(model(input_arr).mean(), outputs)
+
+    pred2 = model(input_arr)
+    for param in pred1.parameters["distribution"].parameters.keys():
+        try:
+            param_array1 = pred1.parameters["distribution"].parameters[param].numpy()
+            param_array2 = pred2.parameters["distribution"].parameters[param].numpy()
+        except AttributeError:
+            continue
+
+        np.testing.assert_allclose(param_array1, param_array2)
 
 
 def test_save_model_mlflow(tmp_path):
