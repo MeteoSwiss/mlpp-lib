@@ -279,7 +279,7 @@ class Standardizer(DataTransformation):
             ds = ds.copy()
             if self.fillvalue:
                 ds = ds.where(ds > self.fillvalue)
-                ds = ds * self.std + self.mean
+            ds = ds * self.std + self.mean
             return ds.astype("float32")
 
         return tuple(f(ds) for ds in datasets)
