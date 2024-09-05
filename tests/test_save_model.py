@@ -109,10 +109,18 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
     assert isinstance(model, Functional)
 
     pred2 = model(input_arr)
-    for param in pred1.parameters["distribution"].parameters.keys():
+    try:
+        # Idependent layers have a "distribution" attribute
+        pred1_params = pred1.parameters["distribution"].parameters
+        pred2_params = pred2.parameters["distribution"].parameters
+    except KeyError:
+        pred1_params = pred1.parameters
+        pred2_params = pred2.parameters
+
+    for param in pred1_params.keys():
         try:
-            param_array1 = pred1.parameters["distribution"].parameters[param].numpy()
-            param_array2 = pred2.parameters["distribution"].parameters[param].numpy()
+            param_array1 = pred1_params[param].numpy()
+            param_array2 = pred2_params[param].numpy()
         except AttributeError:
             continue
 

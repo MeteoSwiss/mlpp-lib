@@ -17,7 +17,7 @@ FCN_OPTIONS = dict(
     dropout=[None, 0.1, [0.1, 0.0]],
     mc_dropout=[True, False],
     out_bias_init=["zeros", np.array([0.2]), np.array([0.2, 2.1])],
-    probabilistic_layer=[None] + ["IndependentNormal", "IndependentGamma"],
+    probabilistic_layer=[None] + ["IndependentGamma", "MultivariateNormalDiag"],
     skip_connection=[False, True],
 )
 
@@ -80,14 +80,21 @@ def _test_prediction_prob(model, scenario_kwargs, dummy_input, output_size):
     if not is_probabilistic:
         return
 
-    pred = model(dummy_input)
-    assert pred.shape == (32, output_size)
+    pred1 = model(dummy_input)
+    assert pred1.shape == (32, output_size)
     pred2 = model(dummy_input)
+    try:
+        # Idependent layers have a "distribution" attribute
+        pred1_params = pred1.parameters["distribution"].parameters
+        pred2_params = pred2.parameters["distribution"].parameters
+    except KeyError:
+        pred1_params = pred1.parameters
+        pred2_params = pred2.parameters
 
-    for param in pred.parameters["distribution"].parameters.keys():
+    for param in pred1_params.keys():
         try:
-            param_array1 = pred.parameters["distribution"].parameters[param].numpy()
-            param_array2 = pred2.parameters["distribution"].parameters[param].numpy()
+            param_array1 = pred1_params[param].numpy()
+            param_array2 = pred2_params[param].numpy()
         except AttributeError:
             continue
 
