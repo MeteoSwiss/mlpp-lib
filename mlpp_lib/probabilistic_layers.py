@@ -1180,7 +1180,7 @@ class IndependentMixtureNormal(tfpl.DistributionLambda):
                     self.normald1 = normald1
                     self.normald2 = normald2
                     super(CustomMixture, self).__init__(
-                        dtype=trunc_normal1.dtype,
+                        dtype=normald1.dtype,
                         reparameterization_type=tfd.FULLY_REPARAMETERIZED,
                         validate_args=validate_args,
                         allow_nan_stats=True,
@@ -1190,8 +1190,8 @@ class IndependentMixtureNormal(tfpl.DistributionLambda):
                     indices = self.cat.sample(sample_shape=(n,), seed=seed)
 
                     # Sample from both truncated normal distributions
-                    samples1 = self.trunc_normal1.sample(sample_shape=(n,), seed=seed)
-                    samples2 = self.trunc_normal2.sample(sample_shape=(n,), seed=seed)
+                    samples1 = self.normald1.sample(sample_shape=(n,), seed=seed)
+                    samples2 = self.normald2.sample(sample_shape=(n,), seed=seed)
 
                     # Stack the samples along a new axis
                     samples = tf.stack([samples1, samples2], axis=-1)
@@ -1206,8 +1206,8 @@ class IndependentMixtureNormal(tfpl.DistributionLambda):
                     return chosen_samples
 
                 def _log_prob(self, value):
-                    log_prob1 = self.trunc_normal1.log_prob(value)
-                    log_prob2 = self.trunc_normal2.log_prob(value)
+                    log_prob1 = self.normald1.log_prob(value)
+                    log_prob2 = self.normald2.log_prob(value)
                     log_probs = tf.stack([log_prob1, log_prob2], axis=-1)
                     weighted_log_probs = log_probs + tf.math.log(
                         tf.concat([weight, 1 - weight], axis=-1)
@@ -1216,14 +1216,14 @@ class IndependentMixtureNormal(tfpl.DistributionLambda):
 
                 def _mean(self):
                     return (
-                        weight * self.trunc_normal1.mean()
-                        + (1 - weight) * self.trunc_normal2.mean()
+                        weight * self.normald1.mean()
+                        + (1 - weight) * self.normald2.mean()
                     )
 
-            mixture_dist = CustomMixture(cat, trunc_normal1, trunc_normal2)
+            mixtured = CustomMixture(cat, normald1, normald2)
 
             return independent_lib.Independent(
-                mixture_dist,
+                mixtured,
                 reinterpreted_batch_ndims=tf.size(event_shape),
                 validate_args=validate_args,
             )
