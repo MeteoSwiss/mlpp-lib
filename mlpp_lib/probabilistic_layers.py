@@ -273,7 +273,7 @@ class Independent4ParamsBeta(tfpl.DistributionLambda):
 
 
 @tf.keras.saving.register_keras_serializable()
-class IndependentCensoredNormal(tfpl.DistributionLambda):
+class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
     """An independent censored normal Keras layer."""
 
     def __init__(
@@ -283,7 +283,7 @@ class IndependentCensoredNormal(tfpl.DistributionLambda):
         validate_args=False,
         **kwargs
     ):
-        """Initialize the `IndependentCensoredNormal` layer.
+        """Initialize the `IndependentDoublyCensoredNormal` layer.
         Args:
         event_shape: integer vector `Tensor` representing the shape of single
             draw from this distribution.
@@ -305,8 +305,8 @@ class IndependentCensoredNormal(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
-        super(IndependentCensoredNormal, self).__init__(
-            lambda t: IndependentCensoredNormal.new(t, event_shape, validate_args),
+        super(IndependentDoublyCensoredNormal, self).__init__(
+            lambda t: IndependentDoublyCensoredNormal.new(t, event_shape, validate_args),
             convert_to_tensor_fn,
             **kwargs
         )
@@ -318,7 +318,7 @@ class IndependentCensoredNormal(tfpl.DistributionLambda):
     @staticmethod
     def new(params, event_shape=(), validate_args=False, name=None):
         """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "IndependentCensoredNormal"):
+        with tf.name_scope(name or "IndependentDoublyCensoredNormal"):
             params = tf.convert_to_tensor(params, name="params")
             event_shape = dist_util.expand_to_vector(
                 tf.convert_to_tensor(
@@ -389,12 +389,12 @@ class IndependentCensoredNormal(tfpl.DistributionLambda):
     @staticmethod
     def params_size(event_shape=(), name=None):
         """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "IndependentCensoredNormal_params_size"):
+        with tf.name_scope(name or "IndependentDoublyCensoredNormal_params_size"):
             event_shape = tf.convert_to_tensor(
                 event_shape, name="event_shape", dtype_hint=tf.int32
             )
             return np.int32(2) * _event_size(
-                event_shape, name=name or "IndependentCensoredNormal_params_size"
+                event_shape, name=name or "IndependentDoublyCensoredNormal_params_size"
             )
 
     def get_config(self):
@@ -413,13 +413,13 @@ class IndependentCensoredNormal(tfpl.DistributionLambda):
             "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
             "validate_args": self._validate_args,
         }
-        base_config = super(IndependentCensoredNormal, self).get_config()
+        base_config = super(IndependentDoublyCensoredNormal, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
     @property
     def output(self):
         """This allows the use of this layer with the shap package."""
-        return super(IndependentCensoredNormal, self).output[0]
+        return super(IndependentDoublyCensoredNormal, self).output[0]
 
 
 @tf.keras.saving.register_keras_serializable()
