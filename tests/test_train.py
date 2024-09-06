@@ -158,7 +158,7 @@ def test_train_fromfile(tmp_path, cfg):
     datasplitter = DataSplitter(
         splitter_options.time_split, splitter_options.station_split
     )
-    datanormalizer = DataTransformer(**["normalizer"])
+    datanormalizer = DataTransformer(**cfg["normalizer"])
     batch_dims = ["forecast_reference_time", "t", "station"]
     datamodule = DataModule(
         features=cfg["features"],
