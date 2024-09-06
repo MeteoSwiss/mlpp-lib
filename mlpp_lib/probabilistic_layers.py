@@ -973,119 +973,6 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
 
 
 @tf.keras.saving.register_keras_serializable()
-class IndependentSoftClipCensored(tfpl.DistributionLambda):
-    """An independent censored normal Keras layer."""
-
-    def __init__(
-        self,
-        event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.sample,
-        validate_args=False,
-        **kwargs
-    ):
-        """Initialize the `IndependentSoftClipCensored` layer.
-        Args:
-        event_shape: integer vector `Tensor` representing the shape of single
-            draw from this distribution.
-        convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
-            instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.sample`.
-        validate_args: Python `bool`, default `False`. When `True` distribution
-            parameters are checked for validity despite possibly degrading runtime
-            performance. When `False` invalid inputs may silently render incorrect
-            outputs.
-            Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
-        """
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
-
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
-
-        super(IndependentSoftClipCensored, self).__init__(
-            lambda t: IndependentSoftClipCensored.new(t, event_shape, validate_args),
-            convert_to_tensor_fn,
-            **kwargs
-        )
-
-        self._event_shape = event_shape
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
-
-    @staticmethod
-    def new(params, event_shape=(), validate_args=False, name=None):
-        """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "IndependentSoftClipCensored"):
-            params = tf.convert_to_tensor(params, name="params")
-            event_shape = dist_util.expand_to_vector(
-                tf.convert_to_tensor(
-                    event_shape, name="event_shape", dtype_hint=tf.int32
-                ),
-                tensor_name="event_shape",
-            )
-            output_shape = tf.concat(
-                [
-                    tf.shape(params)[:-1],
-                    event_shape,
-                ],
-                axis=0,
-            )
-            loc, scale = tf.split(params, 2, axis=-1)
-            loc = tf.reshape(loc, output_shape)
-            scale = tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-3
-            normal_dist = tfd.Normal(loc=loc, scale=scale, validate_args=validate_args)
-
-            clipped_dist = tfd.TransformedDistribution(
-                distribution=normal_dist,
-                bijector=tfb.SoftClip(low=0.0, high=1.0, hinge_softness=0.5),
-            )
-
-            return independent_lib.Independent(
-                clipped_dist,
-                reinterpreted_batch_ndims=tf.size(event_shape),
-                validate_args=validate_args,
-            )
-
-    @staticmethod
-    def params_size(event_shape=(), name=None):
-        """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "IndependentSoftClipCensored_params_size"):
-            event_shape = tf.convert_to_tensor(
-                event_shape, name="event_shape", dtype_hint=tf.int32
-            )
-            return np.int32(2) * _event_size(
-                event_shape, name=name or "IndependentSoftClipCensored_params_size"
-            )
-
-    def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_shape": self._event_shape,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(IndependentSoftClipCensored, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(IndependentSoftClipCensored, self).output[0]
-
-
-@tf.keras.saving.register_keras_serializable()
 class IndependentWeibull(tfpl.DistributionLambda):
     """An independent Weibull Keras layer."""
 
@@ -1197,7 +1084,7 @@ class IndependentWeibull(tfpl.DistributionLambda):
 
 
 @tf.keras.saving.register_keras_serializable()
-class MixtureTruncatedNormal(tfpl.DistributionLambda):
+class IndependentMixtureNormal(tfpl.DistributionLambda):
     """A mixture of two truncated normal distributions Keras layer.
     5-parameters distribution: loc1, scale1, loc2, scale2, weight
     """
@@ -1209,7 +1096,7 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
         validate_args=False,
         **kwargs
     ):
-        """Initialize the `MixtureTruncatedNormal` layer.
+        """Initialize the `IndependentMixtureNormal` layer.
         Args:
             event_shape: integer vector `Tensor` representing the shape of single
                 draw from this distribution.
@@ -1232,8 +1119,8 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
-        super(MixtureTruncatedNormal, self).__init__(
-            lambda t: MixtureTruncatedNormal.new(t, event_shape, validate_args),
+        super(IndependentMixtureNormal, self).__init__(
+            lambda t: IndependentMixtureNormal.new(t, event_shape, validate_args),
             convert_to_tensor_fn,
             **kwargs
         )
@@ -1245,7 +1132,7 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
     @staticmethod
     def new(params, event_shape=(), validate_args=False, name=None):
         """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "MixtureTruncatedNormal"):
+        with tf.name_scope(name or "IndependentMixtureNormal"):
             params = tf.convert_to_tensor(params, name="params")
 
             event_shape = dist_util.expand_to_vector(
@@ -1272,11 +1159,11 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
             weight = tf.math.sigmoid(tf.reshape(weight, output_shape))
 
             # Create the component distributions
-            trunc_normal1 = tfd.TruncatedNormal(
-                loc=loc1, scale=scale1, low=0.0, high=1.0
+            normald1 = tfd.Normal(
+                loc=loc1, scale=scale1
             )
-            trunc_normal2 = tfd.TruncatedNormal(
-                loc=loc2, scale=scale2, low=0.0, high=1.0
+            normald2 = tfd.Normal(
+                loc=loc2, scale=scale2
             )
 
             # Create a categorical distribution for the weights
@@ -1288,10 +1175,10 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
             )
 
             class CustomMixture(tfd.Distribution):
-                def __init__(self, cat, trunc_normal1, trunc_normal2):
+                def __init__(self, cat, normald1, normald2):
                     self.cat = cat
-                    self.trunc_normal1 = trunc_normal1
-                    self.trunc_normal2 = trunc_normal2
+                    self.normald1 = normald1
+                    self.normald2 = normald2
                     super(CustomMixture, self).__init__(
                         dtype=trunc_normal1.dtype,
                         reparameterization_type=tfd.FULLY_REPARAMETERIZED,
@@ -1344,12 +1231,12 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
     @staticmethod
     def params_size(event_shape=(), name=None):
         """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "MixtureTruncatedNormal_params_size"):
+        with tf.name_scope(name or "IndependentMixtureNormal_params_size"):
             event_shape = tf.convert_to_tensor(
                 event_shape, name="event_shape", dtype_hint=tf.int32
             )
             return np.int32(5) * _event_size(
-                event_shape, name=name or "MixtureTruncatedNormal_params_size"
+                event_shape, name=name or "IndependentMixtureNormal_params_size"
             )
 
     def get_config(self):
@@ -1368,13 +1255,13 @@ class MixtureTruncatedNormal(tfpl.DistributionLambda):
             "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
             "validate_args": self._validate_args,
         }
-        base_config = super(MixtureTruncatedNormal, self).get_config()
+        base_config = super(IndependentMixtureNormal, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
     @property
     def output(self):
         """This allows the use of this layer with the shap package."""
-        return super(MixtureTruncatedNormal, self).output[0]
+        return super(IndependentMixtureNormal, self).output[0]
 
 
 @tf.keras.saving.register_keras_serializable()
