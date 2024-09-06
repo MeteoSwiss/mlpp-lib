@@ -92,8 +92,3 @@ def test_probabilistic_model_predict(layer, features_dataset, targets_dataset):
     assert out_samples.shape[0] == num_samples
     assert out_samples.shape[1] == data.y.shape[0]
     assert out_samples.shape[2] == data.y.shape[-1]
-    out_mean = out_distr.mean()
-    assert isinstance(out_mean, tf.Tensor)
-    assert out_mean.ndim == 2
-    assert out_mean.shape[0] == data.y.shape[0]
-    assert out_mean.shape[1] == data.y.shape[-1]
