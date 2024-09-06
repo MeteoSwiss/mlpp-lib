@@ -109,8 +109,8 @@ def train(
     )
 
     LOGGER.info("Start training.")
-    LOGGER.info(f"Len train data: {len(train_dataloader)}")
-    LOGGER.info(f"Len val data: {len(val_dataloader)}")
+    LOGGER.debug(f"Length train data: {len(train_dataloader)}")
+    LOGGER.debug(f"Length val data: {len(val_dataloader)}")
     res = model.fit(
         train_dataloader,
         epochs=cfg.get("epochs", 1),

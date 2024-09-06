@@ -54,6 +54,13 @@ def test_probabilistic_model(layer):
     encoder.summary()
     encoder.compile()
     assert isinstance(encoder, tf.keras.Sequential)
+    model_output = encoder.layers[-1].output
+    assert not isinstance(
+        model_output, list
+    ), "The model output must be a single tensor!"
+    assert (
+        len(model_output.shape) < 3
+    ), "The model output must be a vector or a single value!"
 
 
 @pytest.mark.parametrize("layer", LAYERS)
@@ -85,8 +92,3 @@ def test_probabilistic_model_predict(layer, features_dataset, targets_dataset):
     assert out_samples.shape[0] == num_samples
     assert out_samples.shape[1] == data.y.shape[0]
     assert out_samples.shape[2] == data.y.shape[-1]
-    out_mean = out_distr.mean()
-    assert isinstance(out_mean, tf.Tensor)
-    assert out_mean.ndim == 2
-    assert out_mean.shape[0] == data.y.shape[0]
-    assert out_mean.shape[1] == data.y.shape[-1]

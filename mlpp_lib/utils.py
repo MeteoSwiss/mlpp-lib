@@ -244,6 +244,9 @@ def as_weather(dataset: xr.Dataset) -> xr.Dataset:
         elif var == "eastward_wind":
             continue
 
+        elif var == "cloud_area_fraction":
+            new_set[source_var] = np.clip(dataset[source_var], 0, 1)
+
         else:
             new_set[source_var] = dataset[source_var]
 
