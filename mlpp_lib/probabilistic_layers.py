@@ -338,7 +338,7 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
             )
             loc, scale = tf.split(params, 2, axis=-1)
             loc = tf.reshape(loc, output_shape)
-            scale = tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-6
+            scale = tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-3
             normal_dist = tfd.Normal(loc=loc, scale=scale, validate_args=validate_args)
 
             class CustomCensored(tfd.Distribution):
@@ -365,25 +365,25 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                     """
                     Original: X ~ N(mu, sigma)
                     Censored: Y = X if 0 <= X <= 1 else 0 if X < 0 else 1
+                    Phi / phi: CDF / PDF of standard normal distribution
 
-                    Law of total expectations: E[Y] = E[Y | X > 1] * P(X > 1) + E[Y | X < 0] * P(X < 0) + E[Y | 0 <= X <= 1] * P(0 <= X <= 1)
-                                                    = P(X > 1) * 1 + P(X < 0) * 0 + E[X | 0 <= X <= 1] * P(0 <= X <= 1)
-                                                    = 1 - Phi((1 - mu) / sigma) + E[Z ~ TruncNormal(mu, sigma, 0, 1)] * (Phi((1 - mu) / sigma) - Phi(-mu / sigma))
+                    Law of total expectations: 
+                        E[Y] = E[Y | X > 1] * P(X > 1) + E[Y | X < 0] * P(X < 0) + E[Y | 0 <= X <= 1] * P(0 <= X <= 1)
+                             = 1 * P(X > 1) + P(X < 0) * 0 + E[X | 0 <= X <= 1] * P(0 <= X <= 1)
+                             = 1 * P(X > 1) + E[Z ~ TruncNormal(mu, sigma, 0, 1)] * (Phi((1 - mu) / sigma) - Phi(-mu / sigma))
+                             = 1 * (1 - Phi((1 - mu) / sigma)) + mu * (Phi((1 - mu) / sigma) - Phi(-mu / sigma)) + sigma * (phi(-mu / sigma) - phi((1 - mu) / sigma))
                     Ref for TruncatedNormal mean: https://en.wikipedia.org/wiki/Truncated_normal_distribution
                     """
-                    original_mean = self.normal.mean()
-                    low_bound_standard = (0 - original_mean) / self.normal.stddev()
-                    high_bound_standard = (1 - original_mean) / self.normal.stddev()
+                    mu, sigma = self.normal.mean(), self.normal.stddev()
+                    low_bound_standard = (0 - mu) / sigma
+                    high_bound_standard = (1 - mu) / sigma
 
-                    self.low_bound_cdf = self.normal.cdf(low_bound_standard)
-                    self.high_bound_cdf = self.normal.cdf(high_bound_standard)
+                    cdf = lambda x: tfd.Normal(0, 1).cdf(x)
+                    pdf = lambda x: tfd.Normal(0, 1).prob(x)
 
-                    self.low_bound_pdf = self.normal.prob(low_bound_standard)
-                    self.high_bound_pdf = self.normal.prob(high_bound_standard)
-
-                    return original_mean + self.normal.stddev() * (
-                        self.low_bound_pdf - self.high_bound_pdf
-                    ) / (self.high_bound_cdf - self.low_bound_cdf + 1e-3)
+                    return 1 * (1 - cdf(high_bound_standard)) + mu * (
+                        cdf(high_bound_standard) - cdf(low_bound_standard)) + sigma * (
+                            pdf(low_bound_standard) - pdf(high_bound_standard))
 
                 def _log_prob(self, value):
                     original_log_prob = self.normal.log_prob(value)
