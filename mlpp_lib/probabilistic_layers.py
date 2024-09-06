@@ -362,6 +362,15 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                     return chosen_samples
 
                 def _mean(self):
+                    """
+                    Original: X ~ N(mu, sigma)
+                    Censored: Y = X if 0 <= X <= 1 else 0 if X < 0 else 1
+
+                    Law of total expectations: E[Y] = E[Y | X > 1] * P(X > 1) + E[Y | X < 0] * P(X < 0) + E[Y | 0 <= X <= 1] * P(0 <= X <= 1)
+                                                    = P(X > 1) * 1 + P(X < 0) * 0 + E[X | 0 <= X <= 1] * P(0 <= X <= 1)
+                                                    = 1 - Phi((1 - mu) / sigma) + E[Z ~ TruncNormal(mu, sigma, 0, 1)] * (Phi((1 - mu) / sigma) - Phi(-mu / sigma))
+                    Ref for TruncatedNormal mean: https://en.wikipedia.org/wiki/Truncated_normal_distribution
+                    """
                     original_mean = self.normal.mean()
                     low_bound_standard = (0 - original_mean) / self.normal.stddev()
                     high_bound_standard = (1 - original_mean) / self.normal.stddev()
