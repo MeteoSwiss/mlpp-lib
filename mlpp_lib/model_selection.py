@@ -166,7 +166,8 @@ class DataSplitter:
             self = self.fit(*args)
 
         # avoid out-of-order indexing (leads to bad performance with xarray/dask)
-        station_idx = self.partitions[partition]["station"]
+        type_ = type(self.station_index[0])
+        station_idx = [type_(x) for x in self.partitions[partition]["station"]]
         idx_loc = [pd.Index(self.station_index).get_loc(label) for label in station_idx]
         self.partitions[partition]["station"] = list(
             np.array(station_idx)[np.argsort(idx_loc)]
