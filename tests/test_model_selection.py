@@ -77,9 +77,9 @@ class ValidDataSplitterOptions:
             self.station_split = {"train": 0.7, "val": 0.3, "test": self.stations[-5:]}
             self.station_split_method = "random"
         elif self.station == "cloud_mixed":
-            with open("./stations_cloud.json", "r") as f:
+            with open(".stations_cloud.json", "r") as f:
                 self.stations = json.load(f)
-            with open("./stations_cloud.yaml", "r") as f:
+            with open(".stations_cloud.yaml", "r") as f:
                 self.station_split = yaml.safe_load(f)
             self.station_split_method = "random"
 
