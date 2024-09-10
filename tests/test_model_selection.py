@@ -81,6 +81,8 @@ class ValidDataSplitterOptions:
                 self.stations = json.load(f)
             with open("tests/stations_cloud_splits.yaml", "r") as f:
                 self.station_split = yaml.safe_load(f)
+            print(self.station_split)
+            print(self.time_split)
             self.station_split_method = "random"
 
     def time_split_lists(self):
