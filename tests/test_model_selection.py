@@ -1,5 +1,7 @@
 from typing import Mapping, Optional, Any
 from dataclasses import dataclass
+import json
+import yaml
 
 import pandas as pd
 import numpy as np
@@ -74,6 +76,12 @@ class ValidDataSplitterOptions:
         elif self.station == "mixed":
             self.station_split = {"train": 0.7, "val": 0.3, "test": self.stations[-5:]}
             self.station_split_method = "random"
+        elif self.station == "cloud_mixed":
+            with open("./stations_cloud.json", "r") as f:
+                self.stations = json.load(f)
+            with open("./stations_cloud.yaml", "r") as f:
+                self.station_split = yaml.safe_load(f)
+            self.station_split_method = "random"
 
     def time_split_lists(self):
         frac = {"train": 0.6, "val": 0.2, "test": 0.2}
@@ -103,6 +111,8 @@ class TestDataSplitter:
         ValidDataSplitterOptions(time="lists", station="fractions"),
         ValidDataSplitterOptions(time="lists", station="mixed"),
         ValidDataSplitterOptions(time="mixed", station="fractions"),
+        ValidDataSplitterOptions(time="mixed", station="mixed"),
+        ValidDataSplitterOptions(time="mixed", station="cloud_mixed"),
     ]
 
     @pytest.mark.parametrize(
