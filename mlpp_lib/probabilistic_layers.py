@@ -391,9 +391,9 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                     cdf = lambda x: tfd.Normal(0, 1).cdf(x)
                     pdf = lambda x: tfd.Normal(0, 1).prob(x)
                     
-                    logprob_left = lambda x: tf.log(cdf(-mu / sigma) + 1e-3)
+                    logprob_left = lambda x: tf.math.log(cdf(-mu / sigma) + 1e-3)
                     logprob_middle = lambda x: self.normal.log_prob(x)
-                    logprob_right = lambda x: tf.log(1 - cdf((1 - mu) / sigma) + 1e-3)
+                    logprob_right = lambda x: tf.math.log(1 - cdf((1 - mu) / sigma) + 1e-3)
 
                     return logprob_left(value) + logprob_middle(value) + logprob_right(value)
 
