@@ -76,7 +76,7 @@ def datatransformations() -> list:
     import mlpp_lib.normalizers as no
 
     datatransformations = [
-        no.create_transformation_from_str(n.name)
+        no.create_transformation_from_str(n.name, {"fillvalue": -5})
         for n in no.DataTransformation.__subclasses__()
     ]
 
