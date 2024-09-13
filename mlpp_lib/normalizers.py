@@ -209,6 +209,9 @@ class Identity(DataTransformation):
             ds = ds[self.identity_vars].copy()
             if self.fillvalue:
                 ds = ds.fillna(self.fillvalue)
+            else:
+                if ds.isnull().any():
+                    raise ValueError("Missing values found in the data. Please proivde a fill value.")
             return ds.astype("float32")
 
         return tuple(f(ds) for ds in datasets)
