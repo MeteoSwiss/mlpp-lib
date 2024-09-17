@@ -7,7 +7,7 @@ import numpy as np
 
 from mlpp_lib.datasets import Dataset, DataModule
 from mlpp_lib.model_selection import DataSplitter
-from mlpp_lib.standardizers import Standardizer
+from mlpp_lib.normalizers import DataTransformer
 from .test_model_selection import ValidDataSplitterOptions
 
 ZARR_MISSING = "zarr" not in xr.backends.list_engines()
@@ -23,10 +23,10 @@ class TestDataModule:
     splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
 
     @pytest.fixture
-    def standardizer(self, features_dataset):
-        standardizer = Standardizer()
-        standardizer.fit(features_dataset)
-        return standardizer
+    def data_transformer(self, features_dataset):
+        data_transformer = DataTransformer()
+        data_transformer.fit(features_dataset)
+        return data_transformer
 
     @pytest.fixture  # https://docs.pytest.org/en/6.2.x/tmpdir.html
     def write_datasets_zarr(self, tmp_path, features_dataset, targets_dataset):
@@ -56,14 +56,14 @@ class TestDataModule:
 
     @pytest.mark.skipif(ZARR_MISSING, reason="missing zarr")
     @pytest.mark.usefixtures("write_datasets_zarr")
-    def test_setup_test_default_fromfile(self, tmp_path: Path, standardizer):
+    def test_setup_test_default_fromfile(self, tmp_path: Path, data_transformer):
         dm = DataModule(
             self.features,
             self.targets,
             self.batch_dims,
             self.splitter,
             data_dir=tmp_path.as_posix() + "/",
-            standardizer=standardizer,
+            normalizer=data_transformer,
         )
         dm.setup("test")
 

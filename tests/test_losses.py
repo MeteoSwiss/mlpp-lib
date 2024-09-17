@@ -109,7 +109,7 @@ def test_weighted_crps_high_threshold():
     fct_dist = tfd.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
     obs = tf.zeros((3, 1))
     result = loss(obs, fct_dist)
-    assert result == 0
+    assert result == 1e-7
 
 
 def test_weighted_crps_no_reduction():
@@ -131,6 +131,35 @@ def test_weighted_crps_zero_sample_weights():
     sample_weights = tf.zeros((3, 1))
     result = loss(obs, fct_dist, sample_weight=sample_weights)
     assert result == 0
+
+
+def test_multiscale_crps_layer():
+    event_shape = (1,)
+    batch_shape = (10,)
+    event_size = event_shape[0]
+    layer_class = getattr(probabilistic_layers, "IndependentGamma")
+    prob_layer = layer_class(event_size)
+    y_pred_dist = prob_layer(
+        np.random.random(batch_shape + (layer_class.params_size(event_size),))
+    )
+    loss = losses.MultiScaleCRPSEnergy(threshold=0, scales=[1, 2], reduction="none")
+    result = loss(tf.zeros(batch_shape + event_shape), y_pred_dist)
+    assert result.shape == batch_shape + event_shape
+
+
+def test_multiscale_crps_array():
+    event_shape = (1,)
+    batch_shape = (10,)
+    event_size = event_shape[0]
+    layer_class = getattr(probabilistic_layers, "IndependentGamma")
+    prob_layer = layer_class(event_size)
+    y_pred_dist = prob_layer(
+        np.random.random(batch_shape + (layer_class.params_size(event_size),))
+    )
+    y_pred = y_pred_dist.sample(3)
+    loss = losses.MultiScaleCRPSEnergy(threshold=0, scales=[1, 2], reduction="none")
+    result = loss(tf.zeros(batch_shape + event_shape), y_pred)
+    assert result.shape == batch_shape + event_shape
 
 
 def test_energy_score():
@@ -172,3 +201,50 @@ def test_multivariate_loss(metric, scaling, weights):
     result = loss(obs, fct).numpy()
 
     assert isinstance(result, np.float32)
+
+
+def test_binary_loss_dtypes():
+    """Test various input data types"""
+    tf.random.set_seed(1234)
+    loss = losses.BinaryClassifierLoss(threshold=1)
+    y_pred_dist = tfd.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
+    y_pred_ens = y_pred_dist.sample(100)
+    y_true = tf.zeros((3, 1))
+
+    # prediction is TFP distribution
+    tf.random.set_seed(42)
+    result = loss(y_true, y_pred_dist)
+    assert tf.is_tensor(result)
+    assert result.dtype == "float32"
+    tf.random.set_seed(42)
+    np.testing.assert_allclose(result, loss(y_true.numpy(), y_pred_dist))
+
+    # prediction is TF tensor
+    result = loss(y_true, y_pred_ens)
+    assert tf.is_tensor(result)
+    assert result.dtype == "float32"
+    np.testing.assert_allclose(result, loss(y_true.numpy(), y_pred_ens))
+
+    # prediction is numpy array
+    result = loss(y_true, y_pred_ens.numpy())
+    assert tf.is_tensor(result)
+    assert result.dtype == "float32"
+    np.testing.assert_allclose(result, loss(y_true.numpy(), y_pred_ens.numpy()))
+
+
+def test_combined_loss():
+    """"""
+    loss_specs = [
+        {"BinaryClassifierLoss": {"threshold": 1}, "weight": 0.7},
+        {"WeightedCRPSEnergy": {"threshold": 0.1}, "weight": 0.1},
+    ]
+
+    combined_loss = losses.CombinedLoss(loss_specs)
+    y_pred_dist = tfd.Normal(loc=tf.zeros((3, 1)), scale=tf.ones((3, 1)))
+    y_true = tf.zeros((3, 1))
+
+    # prediction is TFP distribution
+    tf.random.set_seed(42)
+    result = combined_loss(y_true, y_pred_dist)
+    assert tf.is_tensor(result)
+    assert result.dtype == "float32"

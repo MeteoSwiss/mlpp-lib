@@ -1,8 +1,9 @@
 import json
 import logging
 import random
+from copy import deepcopy
 from itertools import combinations
-from typing import Any, Hashable, Mapping, Optional, Sequence, Type
+from typing import Any, Mapping, Optional, Sequence, Type
 
 import numpy as np
 import pandas as pd
@@ -101,7 +102,6 @@ class DataSplitter:
         seed: Optional[int] = 10,
         time_dim_name: str = "forecast_reference_time",
     ):
-
         if not time_split.keys() == station_split.keys():
             raise ValueError(
                 "Time split and station split must be defined "
@@ -113,28 +113,27 @@ class DataSplitter:
         self.seed = seed
         self.time_dim_name = time_dim_name
 
-    @classmethod
-    def from_json(cls, file: str) -> Self:
-        """Instantiate the DataSplitter from a json file with previously computed splits."""
+    def fit(self, *args: xr.Dataset) -> Self:
+        """Compute splits based on the input datasets.
 
-        with open(file, "r") as f:
-            splits = json.load(f)
+        Parameters
+        ----------
+        *args: `xr.Dataset`
+            The datasets defining the time and station indices.
 
-        time_split = {k: v["forecast_reference_time"] for k, v in splits.items()}
-        station_split = {k: v["station"] for k, v in splits.items()}
-        splitter = cls(time_split, station_split)
-        splitter._time_defined = True
-        splitter._station_defined = True
-        splitter._time_partitioning()
-        splitter._station_partitioning()
-        return splitter
+        Returns
+        -------
+        self: `DataSplitter`
+            The fitted DataSplitter instance.
+        """
 
-    def to_json(self, file: str):
-        if not hasattr(self, "partitions"):
-            self._time_partitioning()
-            self._station_partitioning()
-        with open(file, "w") as f:
-            json.dump(self.partitions, f, indent=4)
+        self.time_index = args[0][self.time_dim_name].values.copy()
+        self.station_index = args[0].station.values.copy()
+
+        self._time_partitioning()
+        self._station_partitioning()
+
+        return self
 
     def get_partition(
         self, *args: xr.Dataset, partition=None, thinning: Optional[Mapping] = None
@@ -163,11 +162,8 @@ class DataSplitter:
         if partition is None:
             raise ValueError("Keyword argument `partition` must be provided.")
 
-        self.time_index = args[0][self.time_dim_name].values.copy()
-        self.station_index = args[0].station.values.copy()
-
-        self._time_partitioning()
-        self._station_partitioning()
+        if not hasattr(self, "time_index") or not hasattr(self, "station_index"):
+            self = self.fit(*args)
 
         # avoid out-of-order indexing (leads to bad performance with xarray/dask)
         station_idx = self.partitions[partition]["station"]
@@ -201,29 +197,36 @@ class DataSplitter:
             self._time_indexers = self.time_split
         else:
             self._time_indexers = {}
-            if all(
-                [isinstance(v, float) for v in self.time_split.values()]
-            ):  # only fractions
+            if all([isinstance(v, float) for v in self.time_split.values()]):
                 res = self._time_partition_method(self.time_split)
                 self._time_indexers.update(res)
-            else:  # mixed
+            else:  # mixed fractions and labels
                 _time_split = self.time_split.copy()
-                self._time_indexers.update({"test": _time_split.pop("test")})
+                test_indexers = _time_split.pop("test")
+                test_indexers = [t for t in test_indexers if t in self.time_index]
+                self._time_indexers.update({"test": test_indexers})
                 res = self._time_partition_method(_time_split)
                 self._time_indexers.update(res)
 
         # assign indexers
         for partition in self.partition_names:
             idx = self._time_indexers[partition]
-            idx = slice(*idx) if len(idx) == 2 else idx
+            idx = pd.to_datetime(idx)  # always convert to pandas datetime indices
+            if len(idx) == 2:
+                # convert slice to list of labels
+                time_index = pd.to_datetime(self.time_index)
+                idx = time_index[time_index.slice_indexer(start=idx[0], end=idx[1])]
             indexer = {self.time_dim_name: idx}
             if not hasattr(self, "partitions"):
                 self.partitions = {p: {} for p in self.partition_names}
             self.partitions[partition].update(indexer)
 
     def _time_partition_method(self, fractions: Mapping[str, float]):
+        time_index = [
+            t for t in self.time_index if t not in self._time_indexers.get("test", [])
+        ]
         if self.time_split_method == "sequential":
-            return sequential_split(self.time_index, fractions)
+            return sequential_split(time_index, fractions)
 
     def _station_partitioning(self):
         """
@@ -235,9 +238,11 @@ class DataSplitter:
             if all([isinstance(v, float) for v in self.station_split.values()]):
                 res = self._station_partition_method(self.station_split)
                 self._station_indexers.update(res)
-            else:
+            else:  # mixed fractions and labels
                 _station_split = self.station_split.copy()
-                self._station_indexers.update({"test": _station_split.pop("test")})
+                test_indexers = _station_split.pop("test")
+                test_indexers = [s for s in test_indexers if s in self.station_index]
+                self._station_indexers.update({"test": test_indexers})
                 res = self._station_partition_method(_station_split)
                 self._station_indexers.update(res)
         else:
@@ -253,10 +258,15 @@ class DataSplitter:
         self, fractions: Mapping[str, float]
     ) -> Mapping[str, np.ndarray]:
 
+        station_index = [
+            sta
+            for sta in self.station_index
+            if sta not in self._station_indexers.get("test", [])
+        ]
         if self.station_split_method == "random":
-            out = random_split(self.station_index, fractions, seed=self.seed)
+            out = random_split(station_index, fractions, seed=self.seed)
         elif self.station_split_method == "sequential":
-            out = sequential_split(self.station_index, fractions)
+            out = sequential_split(station_index, fractions)
         return out
 
     def _check_time(self, time_split: dict, time_split_method: str):
@@ -299,6 +309,47 @@ class DataSplitter:
         self.station_split = station_split
         self.station_split_method = station_split_method
 
+    @classmethod
+    def from_dict(cls, splits: dict) -> Self:
+        time_split = {k: v["forecast_reference_time"] for k, v in splits.items()}
+        station_split = {k: v["station"] for k, v in splits.items()}
+        splitter = cls(time_split, station_split)
+        splitter._time_defined = True
+        splitter._station_defined = True
+        splitter._time_partitioning()
+        splitter._station_partitioning()
+        return splitter
+
+    def to_dict(self, sort_values=False):
+        if not hasattr(self, "time_index") or not hasattr(self, "station_index"):
+            raise ValueError(
+                "DataSplitter wasn't applied on any data yet, run `fit` first."
+            )
+        if not hasattr(self, "partitions"):
+            self._time_partitioning()
+            self._station_partitioning()
+        partitions = deepcopy(self.partitions)
+        for split_key, split_dict in partitions.items():
+            for dim, value in split_dict.items():
+                if isinstance(value, slice):
+                    partitions[split_key][dim] = [str(value.start), str(value.stop)]
+                elif hasattr(value, "tolist"):
+                    partitions[split_key][dim] = value.astype(str).tolist()
+                    if sort_values:
+                        partitions[split_key][dim] = sorted(partitions[split_key][dim])
+        return partitions
+
+    @classmethod
+    def from_json(cls, in_fn: str) -> Self:
+        with open(in_fn, "r") as f:
+            in_dict = json.load(f)
+        return cls.from_dict(in_dict)
+
+    def save_json(self, out_fn: str) -> None:
+        out_dict = self.to_dict()
+        with open(out_fn, "w") as outfile:
+            json.dump(out_dict, outfile, indent=4)
+
 
 def sequential_split(
     index: xindex,
@@ -322,7 +373,7 @@ def random_split(
     seed: int = 10,
 ) -> dict[str, np.ndarray]:
     """Split an input index array randomly"""
-    np.random.seed(seed)
+    rng = np.random.default_rng(np.random.PCG64(seed))
 
     assert np.isclose(sum(split_fractions.values()), 1.0)
 
@@ -330,7 +381,7 @@ def random_split(
     partitions = list(split_fractions.keys())
     fractions = np.array(list(split_fractions.values()))
 
-    shuffled_index = np.random.permutation(index)
+    shuffled_index = rng.permutation(index)
     indices = np.floor(np.cumsum(fractions)[:-1] * n_samples).astype(int)
     sub_arrays = np.split(shuffled_index, indices)
     return dict(zip(partitions, sub_arrays))

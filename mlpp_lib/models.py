@@ -1,6 +1,8 @@
-import tensorflow as tf
+import logging
 from typing import Optional, Union, Any
 
+import numpy as np
+import tensorflow as tf
 from tensorflow.keras.layers import (
     Add,
     Dense,
@@ -8,13 +10,10 @@ from tensorflow.keras.layers import (
     BatchNormalization,
     Activation,
 )
-
 from tensorflow.keras import Model, initializers
 
 from mlpp_lib.physical_layers import *
 from mlpp_lib.probabilistic_layers import *
-
-import numpy as np
 
 try:
     import tcn  # type: ignore
@@ -24,12 +23,79 @@ else:
     TCN_IMPORTED = True
 
 
+_LOGGER = logging.getLogger(__name__)
+
+
+@tf.keras.saving.register_keras_serializable()
+class MonteCarloDropout(Dropout):
+    def call(self, inputs):
+        return super().call(inputs, training=True)
+
+
+def _build_fcn_block(
+    inputs,
+    hidden_layers,
+    batchnorm,
+    activations,
+    dropout,
+    mc_dropout,
+    skip_connection,
+    idx=0,
+):
+    if mc_dropout and dropout is None:
+        _LOGGER.warning("dropout=None, hence I will ignore mc_dropout=True")
+
+    x = inputs
+    for i, units in enumerate(hidden_layers):
+        x = Dense(units, name=f"dense_{idx}_{i}")(x)
+        if batchnorm:
+            x = BatchNormalization()(x)
+        x = Activation(activations[i])(x)
+        if i < len(dropout) and 0.0 < dropout[i] < 1.0:
+            if mc_dropout:
+                x = MonteCarloDropout(dropout[i], name=f"mc_dropout_{idx}_{i}")(x)
+            else:
+                x = Dropout(dropout[i], name=f"dropout_{idx}_{i}")(x)
+
+    if skip_connection:
+        x = Dense(inputs.shape[1], name=f"skip_dense_{idx}")(x)
+        x = Add(name=f"skip_add_{idx}")([x, inputs])
+        x = Activation(activation=activations[-1], name=f"skip_activation_{idx}")(x)
+    return x
+
+
+def _build_fcn_output(x, output_size, probabilistic_layer, out_bias_init):
+    # probabilistic prediction
+    if probabilistic_layer:
+        probabilistic_layer = globals()[probabilistic_layer]
+        n_params = probabilistic_layer.params_size(output_size)
+        if isinstance(out_bias_init, np.ndarray):
+            out_bias_init = np.hstack(
+                [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
+            )
+            out_bias_init = initializers.Constant(out_bias_init)
+
+        x = Dense(n_params, bias_initializer=out_bias_init, name="dist_params")(x)
+        outputs = probabilistic_layer(output_size, name="output")(x)
+
+    # deterministic prediction
+    else:
+        if isinstance(out_bias_init, np.ndarray):
+            out_bias_init = initializers.Constant(out_bias_init)
+
+        outputs = Dense(output_size, bias_initializer=out_bias_init, name="output")(x)
+
+    return outputs
+
+
 def fully_connected_network(
     input_shape: tuple[int],
     output_size: int,
     hidden_layers: list,
+    batchnorm: bool = False,
     activations: Optional[Union[str, list[str]]] = "relu",
     dropout: Optional[Union[float, list[float]]] = None,
+    mc_dropout: bool = False,
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
     skip_connection: bool = False,
@@ -42,10 +108,12 @@ def fully_connected_network(
     input_shape: tuple[int]
         Shape of the input samples (not including batch size)
     output_size: int
-        Number of target predictands.
+        Number of target predictants.
     hidden_layers: list[int]
         List that is used to define the fully connected block. Each element creates
         a Dense layer with the corresponding units.
+    batchnorm: bool
+        Use batch normalization. Default is False.
     activations: str or list[str]
         (Optional) Activation function(s) for the Dense layer(s). See https://keras.io/api/layers/activations/#relu-function.
         If a string is passed, the same activation is used for all layers. Default is `relu`.
@@ -53,6 +121,9 @@ def fully_connected_network(
         (Optional) Dropout rate for the optional dropout layers. If a `float` is passed,
         dropout layers with the given rate are created after each Dense layer, except before the output layer.
         Default is None.
+    mc_dropout: bool
+        Enable Monte Carlo dropout during inference. It has no effect during training.
+        It has no effect if `dropout=None`. Default is false.
     out_bias_init: str or np.ndarray
         (Optional) Specifies the initialization of the output layer bias. If a string is passed,
         it must be a valid Keras built-in initializer (see https://keras.io/api/layers/initializers/).
@@ -88,39 +159,119 @@ def fully_connected_network(
             f"but output size is {output_size}"
         )
 
-    # build core blocks
     inputs = tf.keras.Input(shape=input_shape)
-    x = inputs
-    for i, units in enumerate(hidden_layers):
-        x = Dense(units, activation=activations[i], name=f"dense_{i}")(x)
-        if i < len(dropout) and 0.0 < dropout[i] < 1.0:
-            x = Dropout(dropout[i], name=f"dropout_{i}")(x)
+    x = _build_fcn_block(
+        inputs,
+        hidden_layers,
+        batchnorm,
+        activations,
+        dropout,
+        mc_dropout,
+        skip_connection,
+    )
+    outputs = _build_fcn_output(x, output_size, probabilistic_layer, out_bias_init)
+    model = Model(inputs=inputs, outputs=outputs)
 
-    if skip_connection:
-        x = Dense(input_shape[0])(x)
-        x = Add()([x, inputs])
-        x = Activation(activation=activations[-1])(x)
+    return model
 
-    # probabilistic prediction
-    if probabilistic_layer:
-        probabilistic_layer = globals()[probabilistic_layer]
-        n_params = probabilistic_layer.params_size(output_size)
-        if isinstance(out_bias_init, np.ndarray):
-            out_bias_init = np.hstack(
-                [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
-            )
-            out_bias_init = initializers.Constant(out_bias_init)
 
-        x = Dense(n_params, bias_initializer=out_bias_init, name="dist_params")(x)
-        outputs = probabilistic_layer(output_size, name="output")(x)
+def fully_connected_multibranch_network(
+    input_shape: tuple[int],
+    output_size: int,
+    hidden_layers: list,
+    batchnorm: bool = False,
+    activations: Optional[Union[str, list[str]]] = "relu",
+    dropout: Optional[Union[float, list[float]]] = None,
+    mc_dropout: bool = False,
+    out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
+    probabilistic_layer: Optional[str] = None,
+    skip_connection: bool = False,
+) -> Model:
+    """
+    Build a multi-branch Fully Connected Neural Network.
 
-    # deterministic prediction
+    Parameters
+    ----------
+    input_shape: tuple[int]
+        Shape of the input samples (not including batch size)
+    output_size: int
+        Number of target predictants.
+    hidden_layers: list[int]
+        List that is used to define the fully connected block. Each element creates
+        a Dense layer with the corresponding units.
+    batchnorm: bool
+        Use batch normalization. Default is False.
+    activations: str or list[str]
+        (Optional) Activation function(s) for the Dense layer(s). See https://keras.io/api/layers/activations/#relu-function.
+        If a string is passed, the same activation is used for all layers. Default is `relu`.
+    dropout: float or list[float]
+        (Optional) Dropout rate for the optional dropout layers. If a `float` is passed,
+        dropout layers with the given rate are created after each Dense layer, except before the output layer.
+        Default is None.
+        mc_dropout: bool
+        Enable Monte Carlo dropout during inference. It has no effect during training.
+        It has no effect if `dropout=None`. Default is false.
+    out_bias_init: str or np.ndarray
+        (Optional) Specifies the initialization of the output layer bias. If a string is passed,
+        it must be a valid Keras built-in initializer (see https://keras.io/api/layers/initializers/).
+        If an array is passed, it must match the `output_size` argument.
+    probabilistic_layer: str
+        (Optional) Name of a probabilistic layer defined in `mlpp_lib.probabilistic_layers`, which is
+        used as output layer of the keras `Model`. Default is None.
+    skip_connection: bool
+        Include a skip connection to the MLP architecture. Default is False.
+
+    Return
+    ------
+    model: keras Functional model
+        The built (but not yet compiled) model.
+    """
+
+    if isinstance(dropout, list):
+        assert len(dropout) == len(hidden_layers)
+    elif isinstance(dropout, float):
+        dropout = [dropout] * (len(hidden_layers) - 1)
     else:
-        if isinstance(out_bias_init, np.ndarray):
-            out_bias_init = initializers.Constant(out_bias_init)
+        dropout = []
 
-        outputs = Dense(output_size, bias_initializer=out_bias_init, name="output")(x)
+    if isinstance(activations, list):
+        assert len(activations) == len(hidden_layers)
+    elif isinstance(activations, str):
+        activations = [activations] * len(hidden_layers)
 
+    if isinstance(out_bias_init, np.ndarray):
+        out_bias_init_shape = out_bias_init.shape[-1]
+        assert out_bias_init.shape[-1] == output_size, (
+            f"Bias initialization array is shape {out_bias_init_shape}"
+            f"but output size is {output_size}"
+        )
+
+    if probabilistic_layer:
+        n_params = globals()[probabilistic_layer].params_size(output_size)
+        n_branches = n_params
+    else:
+        n_branches = output_size
+
+    inputs = tf.keras.Input(shape=input_shape)
+    all_branch_outputs = []
+
+    for idx in range(n_branches):
+        x = _build_fcn_block(
+            inputs,
+            hidden_layers,
+            batchnorm,
+            activations,
+            dropout,
+            mc_dropout,
+            skip_connection,
+            idx,
+        )
+        all_branch_outputs.append(x)
+
+    concatenated_x = tf.keras.layers.Concatenate()(all_branch_outputs)
+    outputs = _build_fcn_output(
+        concatenated_x, output_size, probabilistic_layer, out_bias_init
+    )
     model = Model(inputs=inputs, outputs=outputs)
 
     return model
@@ -130,8 +281,10 @@ def deep_cross_network(
     input_shape: tuple[int],
     output_size: int,
     hidden_layers: list,
+    batchnorm: bool = True,
     activations: Optional[Union[str, list[str]]] = "relu",
     dropout: Optional[Union[float, list[float]]] = None,
+    mc_dropout: bool = False,
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
     skip_connection: bool = False,
@@ -144,10 +297,12 @@ def deep_cross_network(
     input_shape: tuple[int]
         Shape of the input samples (not including batch size)
     output_size: int
-        Number of target predictands.
+        Number of target predictants.
     hidden_layers: list[int]
         List that is used to define the fully connected block. Each element creates
         a Dense layer with the corresponding units.
+    batchnorm: bool
+        Use batch normalization. Default is True.
     activations: str or list[str]
         (Optional) Activation function(s) for the Dense layer(s). See https://keras.io/api/layers/activations/#relu-function.
         If a string is passed, the same activation is used for all layers. Default is `relu`.
@@ -155,6 +310,9 @@ def deep_cross_network(
         (Optional) Dropout rate for the optional dropout layers. If a `float` is passed,
         dropout layers with the given rate are created after each Dense layer, except before the output layer.
         Default is None.
+    mc_dropout: bool
+        Enable Monte Carlo dropout during inference. It has no effect during training.
+        It has no effect if `dropout=None`. Default is false.
     out_bias_init: str or np.ndarray
         (Optional) Specifies the initialization of the output layer bias. If a string is passed,
         it must be a valid Keras built-in initializer (see https://keras.io/api/layers/initializers/).
@@ -201,13 +359,15 @@ def deep_cross_network(
 
     # deep part
     deep = inputs
-    for i, u in enumerate(hidden_layers):
-        deep = Dense(u)(deep)
-        deep = BatchNormalization()(deep)
-        deep = Activation(activations[i])(deep)
-        if i < len(dropout) and 0.0 < dropout[i] < 1.0:
-            deep = Dropout(dropout[i])(deep)
-    # deep = tf.keras.Model(inputs=inputs, outputs=deep, name="deepblock")
+    deep = _build_fcn_block(
+        deep,
+        hidden_layers,
+        batchnorm,
+        activations,
+        dropout,
+        mc_dropout,
+        skip_connection=False,
+    )
 
     # merge
     merge = tf.keras.layers.Concatenate()([cross, deep])

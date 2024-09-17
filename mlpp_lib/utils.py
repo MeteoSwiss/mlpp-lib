@@ -115,12 +115,50 @@ def get_metric(metric: Union[str, dict]) -> Callable:
     return metric
 
 
+def get_scheduler(
+    scheduler_config: Union[dict, None]
+) -> Optional[tf.keras.optimizers.schedules.LearningRateSchedule]:
+    """Create a learning rate scheduler from a config dictionary."""
+
+    if not isinstance(scheduler_config, dict):
+        LOGGER.info("Not using a scheduler.")
+        return None
+
+    if len(scheduler_config) != 1:
+        raise ValueError(
+            "Scheduler configuration should contain exactly one scheduler name with its options."
+        )
+
+    scheduler_name = next(
+        iter(scheduler_config)
+    )  # first key is the name of the scheduler
+    scheduler_options = scheduler_config[scheduler_name]
+
+    if not isinstance(scheduler_options, dict):
+        raise ValueError(
+            f"Scheduler options for '{scheduler_name}' should be a dictionary."
+        )
+
+    if hasattr(tf.keras.optimizers.schedules, scheduler_name):
+        LOGGER.info(f"Using keras built-in learning rate scheduler: {scheduler_name}")
+        scheduler_cls = getattr(tf.keras.optimizers.schedules, scheduler_name)
+        scheduler = scheduler_cls(**scheduler_options)
+    else:
+        raise KeyError(
+            f"The scheduler '{scheduler_name}' is not available in tf.keras.optimizers.schedules."
+        )
+
+    return scheduler
+
+
 def get_optimizer(optimizer: Union[str, dict]) -> Callable:
     """Get the optimizer, keras built-in only."""
 
     if isinstance(optimizer, dict):
         optimizer_name = list(optimizer.keys())[0]
         optimizer_options = optimizer[optimizer_name]
+        if scheduler := get_scheduler(optimizer_options.pop("learning_rate", None)):
+            optimizer_options["learning_rate"] = scheduler
     else:
         optimizer_name = optimizer
         optimizer_options = {}
@@ -205,6 +243,9 @@ def as_weather(dataset: xr.Dataset) -> xr.Dataset:
 
         elif var == "eastward_wind":
             continue
+
+        elif var == "cloud_area_fraction":
+            new_set[source_var] = np.clip(dataset[source_var], 0, 1)
 
         else:
             new_set[source_var] = dataset[source_var]

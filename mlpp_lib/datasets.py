@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import logging
 from typing import Hashable, Mapping, Optional, Sequence, Callable
+
 import dask.array as da
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 import xarray as xr
 from typing_extensions import Self
-import tensorflow as tf
 
 from .model_selection import DataSplitter
-from .standardizers import Standardizer
+from .normalizers import DataTransformer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ class DataModule:
     """A class to encapsulate everything involved in mlpp data processing.
 
     1. Take xarray objects or load and select variables from `.zarr` archives.
-    2. Filter, split, standardize.
+    2. Filter, split, normalize.
     3. Load into mlpp `Dataset`
     4. Reshape/mask as needed.
     5. Serve the `Dataset` or wrap it inside a `DataLoader`
@@ -34,16 +35,22 @@ class DataModule:
         Names of the dimensions that will be stacked into batches.
     splitter: `DataSplitter`
         The object that handles the data partitioning.
+    group_samples: dict, optional
+        Mapping of the form `{dim_name: group_size}` to indicate that the original order
+        of the samples should be conserved for the `dim_name` dimension when stacking.
+        The dimension `dim_name` must be one of the batch dimensions in `batch_dims`.
+        If `group_samples` is not None, NaNs are removed in blocks of size `group_size`.
     data_dir: string
         Path to the directory containing the raw data. Must be provided if features
         and targets are lists of names.
     filter: `DataFilter`, optional
-        The object that hanfles the data filtering.
-    standardizer: `Standardizer`, optional
-        The object to standardize data, already fitted on the training data.
+        The object that handles the data filtering.
+    normalizer: `DataTransformer`, optional
+        The object to normalize data.
         Must be provided if `.setup("test")` is called.
-    sample_weighting: list of str or str, optional
-        Name(s) of the variable(s) used for weighting dataset samples.
+    sample_weighting: list of str or str or xr.Dataset, optional
+        Name(s) of the variable(s) used for weighting dataset samples or an xr.Dataset
+        containing the sample weights.
     thinning: mapping, optional
         Thinning factor as integer for a dimension.
     """
@@ -54,9 +61,10 @@ class DataModule:
         targets: Sequence[Hashable] or xr.Dataset,
         batch_dims: Sequence[Hashable],
         splitter: DataSplitter,
+        group_samples: Optional[dict[str:int]] = None,
         data_dir: Optional[str] = None,
         filter: Optional[DataFilter] = None,
-        standardizer: Optional[Standardizer] = None,
+        normalizer: Optional[DataTransformer] = None,
         sample_weighting: Optional[Sequence[Hashable] or Hashable or xr.Dataset] = None,
         thinning: Optional[Mapping[str, int]] = None,
     ):
@@ -66,8 +74,9 @@ class DataModule:
         self.targets = targets
         self.batch_dims = batch_dims
         self.splitter = splitter
+        self.group_samples = group_samples
         self.filter = filter
-        self.standardizer = standardizer
+        self.normalizer = normalizer
         self.sample_weighting = (
             list(sample_weighting)
             if isinstance(sample_weighting, str)
@@ -89,10 +98,10 @@ class DataModule:
         maybe_load = self._check_args()
         if maybe_load:
             self.load_raw()
-        self.select_splits(stage=stage)
         if self.filter is not None:
-            self.apply_filter(stage=stage)
-        self.standardize(stage=stage)
+            self.apply_filter()
+        self.select_splits(stage=stage)
+        self.normalize(stage=stage)
         self.as_datasets(stage=stage)
 
     def load_raw(self):
@@ -140,52 +149,65 @@ class DataModule:
                 *args, partition="test", thinning=self.thinning
             )
 
-    def apply_filter(self, stage=None):
+    def apply_filter(self):
         LOGGER.info("Applying filter to features and targets.")
-        if stage == "fit" or stage is None:
-            self.train = self.filter.apply(*self.train)
-            self.val = self.filter.apply(*self.val)
-        if stage == "test" or stage is None:
-            self.test = self.filter.apply(*self.test)
+        self.x, self.y = self.filter.apply(self.x, self.y)
 
-    def standardize(self, stage=None):
-        LOGGER.info("Standardizing data.")
-        if self.standardizer is None:
+    def normalize(self, stage=None):
+        LOGGER.info("Normalizing data.")
+
+        if self.normalizer is None:
             if stage == "test":
-                raise ValueError("Must provide standardizer for `test` stage.")
-
-            self.standardizer = Standardizer()
-            self.standardizer.fit(self.train[0])
+                raise ValueError("Must provide normalizer for `test` stage.")
+            else:
+                LOGGER.warning("No normalizer found, data are standardized by default.")
+                self.normalizer = DataTransformer(
+                    {"Standardizer": list(self.train[0].data_vars)}
+                )
 
         if stage == "fit" or stage is None:
+            self.normalizer.fit(self.train[0])
             self.train = (
-                tuple(self.standardizer.transform(self.train[0])) + self.train[1:]
+                tuple(self.normalizer.transform(self.train[0])) + self.train[1:]
             )
-            self.val = tuple(self.standardizer.transform(self.val[0])) + self.val[1:]
+            self.val = tuple(self.normalizer.transform(self.val[0])) + self.val[1:]
         if stage == "test" or stage is None:
-            self.test = tuple(self.standardizer.transform(self.test[0])) + self.test[1:]
+            self.test = tuple(self.normalizer.transform(self.test[0])) + self.test[1:]
 
     def as_datasets(self, stage=None):
+        batch_dims = self.batch_dims
+        if self.group_samples:
+            group_dim, group_size = list(self.group_samples.items())[0]
+            if group_dim not in batch_dims:
+                raise ValueError(
+                    f"The dimension {group_dim} used for grouping samples "
+                    f"must be one of the batch dimensions: {batch_dims}"
+                )
+            batch_dims.remove(group_dim)
+            batch_dims.insert(0, group_dim)
+        else:
+            group_size = 1
+
         LOGGER.info("Dask is computing...")
         if stage == "fit" or stage is None:
             self.train = (
                 Dataset.from_xarray_datasets(*self.train)
-                .stack(self.batch_dims)
-                .drop_nans()
+                .stack(batch_dims)
+                .drop_nans(group_size)
             )
 
             self.val = (
                 Dataset.from_xarray_datasets(*self.val)
-                .stack(self.batch_dims)
-                .drop_nans()
+                .stack(batch_dims)
+                .drop_nans(group_size)
             )
             LOGGER.info(f"Training dataset: {self.train}")
             LOGGER.info(f"Validation dataset: {self.val}")
         if stage == "test" or stage is None:
             self.test = (
                 Dataset.from_xarray_datasets(*self.test)
-                .stack(self.batch_dims)
-                .drop_nans()
+                .stack(batch_dims)
+                .drop_nans(group_size)
             )
             LOGGER.info(f"Test dataset: {self.test}")
 
@@ -325,11 +347,12 @@ class Dataset:
         else:
             targets = None
         if w is not None:
+            w = w.fillna(1)
             w = w.to_array("v").transpose(..., "v").values
             w = np.prod(w, axis=-1)
         return cls(x, dims, coords, features, targets, y=y, w=w)
 
-    def stack(self, batch_dims: Optional[Sequence[Hashable]] = None) -> Self:
+    def stack(self, batch_dims: Sequence[Hashable]) -> Self:
         """Stack batch dimensions along the first axis"""
         x, y, w = self._as_variables()
         dims = ["s"] + [dim for dim in x.dims if dim not in batch_dims]
@@ -418,7 +441,7 @@ class Dataset:
         w = xr.Variable(self.dims[:-1], self.w) if self.w is not None else None
         return x, y, w
 
-    def drop_nans(self):
+    def drop_nans(self, group_size: int = 1):
         """Drop incomplete samples and return a new `Dataset` with a mask."""
         if not self._is_stacked:
             raise ValueError("Dataset should be stacked before dropping samples.")
@@ -430,6 +453,18 @@ class Dataset:
         if y is not None:
             mask = mask | da.any(da.isnan(da.from_array(y, name="y")), axis=event_axes)
         mask = (~mask).compute()
+
+        # with grouped samples, nans have to be removed in blocks:
+        # if one or more nans are found in a given block, the entire block is dropped
+        if group_size > 1:
+            mask_length = len(mask)
+            remainder = mask_length % group_size
+            pad_length = 0 if remainder == 0 else group_size - remainder
+            padded_mask = np.pad(
+                mask, (0, pad_length), mode="constant", constant_values=True
+            )
+            grouped_mask = np.amin(padded_mask.reshape(-1, group_size), axis=1)
+            mask = grouped_mask.repeat(group_size)[:mask_length]
 
         x = x[mask]
         y = y[mask] if y is not None else None
@@ -519,8 +554,8 @@ class Dataset:
         return out
 
 
-class DataLoader:
-    """A dataloader for mlpp
+class DataLoader(tf.keras.utils.Sequence):
+    """A dataloader for mlpp.
 
     Parameters
     ----------
@@ -530,13 +565,18 @@ class DataLoader:
         Size of each batch.
     shuffle: bool
         Enable or disable shuffling before each iteration.
+    block_size: int
+        Use to define the size of sample blocks, so that during shuffling indices within
+        each block stay in their original order, but the blocks themselves are shuffled.
+        Default value is 1, which is equivalent to a normal shuffling. This parameter
+        is ignored if `shuffle=False`.
 
 
     Example:
     >>> train_dataloader = DataLoader(
     ...    train_dataset,
-    ...    batch_size = 2056,
-    ...    shuffle = True,
+    ...    batch_size=2056,
+    ...    shuffle=True,
     ... )
     ... for x, y in train_dataloader:
     ...     pred = model(x)
@@ -548,13 +588,17 @@ class DataLoader:
         dataset: Dataset,
         batch_size: int,
         shuffle: bool = True,
+        block_size: int = 1,
     ):
 
         self.dataset = dataset
         self.batch_size = batch_size
         self.shuffle = shuffle
+        self.block_size = block_size
         self.num_samples = len(self.dataset.x)
-        self.num_batches = self.num_samples // batch_size
+        self.num_batches = (
+            self.num_samples // batch_size if batch_size <= self.num_samples else 1
+        )
         self._indices = tf.range(self.num_samples)
         self._seed = 0
         self._reset()
@@ -568,22 +612,52 @@ class DataLoader:
             raise IndexError
         start = index * self.batch_size
         end = index * self.batch_size + self.batch_size
-        return self.dataset.x[start:end], self.dataset.y[start:end]
+        output = [self.dataset.x[start:end], self.dataset.y[start:end]]
+        if self.dataset.w is not None:
+            output.append(self.dataset.w[start:end])
+        return tuple(output)
 
-    def _reset(self):
+    def on_epoch_end(self) -> None:
+        self._reset()
+
+    def _shuffle_indices(self) -> None:
+        """
+        Shuffle the batch indices, with the option to define blocks, so that indices within
+        each block stay in their original order, but the blocks themselves are shuffled.
+        """
+        if self.block_size == 1:
+            self._indices = tf.random.shuffle(self._indices, seed=self._seed)
+            return
+        num_blocks = self._indices.shape[0] // self.block_size
+        reshaped_indices = tf.reshape(
+            self._indices[: num_blocks * self.block_size], (num_blocks, self.block_size)
+        )
+        shuffled_blocks = tf.random.shuffle(reshaped_indices, seed=self._seed)
+        shuffled_indices = tf.reshape(shuffled_blocks, [-1])
+        # Append any remaining elements if the number of indices isn't a multiple of the block size
+        if shuffled_indices.shape[0] % self.block_size:
+            remainder = self._indices[num_blocks * self.block_size :]
+            shuffled_indices = tf.concat([shuffled_indices, remainder], axis=0)
+        self._indices = shuffled_indices
+
+    def _reset(self) -> None:
         """Reset iterator and shuffles data if needed"""
         self.index = 0
         if self.shuffle:
-            self._indices = tf.random.shuffle(self._indices, seed=self._seed)
+            self._shuffle_indices()
             self.dataset.x = tf.gather(self.dataset.x, self._indices)
             self.dataset.y = tf.gather(self.dataset.y, self._indices)
+            if self.dataset.w is not None:
+                self.dataset.w = tf.gather(self.dataset.w, self._indices)
             self._seed += 1
 
-    def _to_device(self, device):
+    def _to_device(self, device) -> None:
         """Transfer data to a device"""
         with tf.device(device):
             self.dataset.x = tf.constant(self.dataset.x)
             self.dataset.y = tf.constant(self.dataset.y)
+            if self.dataset.w is not None:
+                self.dataset.w = tf.constant(self.dataset.w)
 
 
 class DataFilter:
@@ -609,7 +683,9 @@ class DataFilter:
         self.qa_mask = xr.load_dataarray(qa_filter) if qa_filter is not None else None
         self.x_filter = x_filter
 
-    def apply(self, x: xr.Dataset, y: xr.Dataset, w: Optional[xr.Dataset] = None):
+    def apply(
+        self, x: xr.Dataset, y: xr.Dataset, w: Optional[xr.Dataset] = None
+    ) -> tuple[xr.Dataset, ...]:
         """Apply the provided filters to the input datasets."""
 
         if self.qa_mask is not None:

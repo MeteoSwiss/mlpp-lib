@@ -8,6 +8,39 @@ import pytest
 import mlpp_lib.model_selection as ms
 
 
+def check_splits(splits: dict):
+    """
+    Check if the data splits are valid.
+
+    Args:
+        splits (dict): A dictionary containing train, val, and test splits.
+                       Each split should contain 'station' and 'forecast_reference_time' keys.
+
+    Raises:
+        AssertionError: If there are overlapping stations or forecast reference times between splits.
+    """
+    train_stations = set(splits["train"]["station"])
+    val_stations = set(splits["val"]["station"])
+    test_stations = set(splits["test"]["station"])
+
+    train_reftimes = set(splits["train"]["forecast_reference_time"])
+    val_reftimes = set(splits["val"]["forecast_reference_time"])
+    test_reftimes = set(splits["test"]["forecast_reference_time"])
+
+    assert len(train_stations & test_stations) == 0, "Train and test stations overlap."
+    assert len(train_stations & val_stations) == 0, "Train and val stations overlap."
+    assert len(val_stations & test_stations) == 0, "Val and test stations overlap."
+    assert (
+        len(train_reftimes & test_reftimes) == 0
+    ), "Train and test forecast reference times overlap."
+    assert (
+        len(train_reftimes & val_reftimes) == 0
+    ), "Train and val forecast reference times overlap."
+    assert (
+        len(val_reftimes & test_reftimes) == 0
+    ), "Val and test forecast reference times overlap."
+
+
 @dataclass
 class ValidDataSplitterOptions:
 
@@ -49,8 +82,8 @@ class ValidDataSplitterOptions:
     def time_split_slices(self):
         out = {
             "train": [self.reftimes[0], self.reftimes[30]],
-            "val": [self.reftimes[30], self.reftimes[40]],
-            "test": [self.reftimes[40], self.reftimes[50]],
+            "val": [self.reftimes[31], self.reftimes[40]],
+            "test": [self.reftimes[41], self.reftimes[50]],
         }
         return out
 
@@ -67,9 +100,24 @@ class TestDataSplitter:
     scenarios = [
         ValidDataSplitterOptions(time="fractions", station="lists"),
         ValidDataSplitterOptions(time="slices", station="fractions"),
+        ValidDataSplitterOptions(time="lists", station="fractions"),
         ValidDataSplitterOptions(time="lists", station="mixed"),
         ValidDataSplitterOptions(time="mixed", station="fractions"),
     ]
+
+    @pytest.mark.parametrize(
+        "options", scenarios, ids=ValidDataSplitterOptions.pytest_id
+    )
+    def test_valid_split(self, options, features_dataset, targets_dataset):
+        splitter = ms.DataSplitter(
+            options.time_split,
+            options.station_split,
+            options.time_split_method,
+            options.station_split_method,
+        )
+        splits = splitter.fit(features_dataset).to_dict()
+
+        check_splits(splits)
 
     @pytest.mark.parametrize(
         "options", scenarios, ids=ValidDataSplitterOptions.pytest_id
@@ -90,6 +138,25 @@ class TestDataSplitter:
         test_features, test_targets = splitter.get_partition(
             features_dataset, targets_dataset, partition="test"
         )
+
+    @pytest.mark.parametrize(
+        "options", scenarios, ids=ValidDataSplitterOptions.pytest_id
+    )
+    def test_serialization(self, options, features_dataset, targets_dataset, tmp_path):
+        fn = f"{tmp_path}/splitter.json"
+        splitter = ms.DataSplitter(
+            options.time_split,
+            options.station_split,
+            options.time_split_method,
+            options.station_split_method,
+        )
+        splitter.get_partition(features_dataset, targets_dataset, partition="train")
+        splitter.save_json(fn)
+        new_splitter = ms.DataSplitter.from_json(fn)
+        for split_key, split_dict in splitter.partitions.items():
+            for dim, value in split_dict.items():
+                new_value = new_splitter.partitions[split_key][dim]
+                np.testing.assert_array_equal(value, new_value)
 
     # test invalid arguments
     def test_time_split_method_required(self):

@@ -31,3 +31,15 @@ def test_equidistant_resampling_circular():
     out = ens.equidistant_resampling(test_ds, 5)
     assert isinstance(out, xr.Dataset)
     assert out.sizes["realization"] == 5
+
+
+def test_compute_ecc():
+    test_ds = xr.DataArray(
+        np.random.random((3, 10)), dims=("a", "realization")
+    ).to_dataset(name="var")
+    test_template = xr.DataArray(
+        np.random.randint(1, 5, (3, 5)), dims=("a", "realization")
+    )
+    out = ens.compute_ecc(test_ds, test_template)
+    assert isinstance(out, xr.Dataset)
+    assert out.sizes["realization"] == 5

@@ -1,5 +1,8 @@
 # mlpp-lib
 
+[![.github/workflows/run-tests.yml](https://github.com/MeteoSwiss/mlpp-lib/actions/workflows/run-tests.yml/badge.svg)](https://github.com/MeteoSwiss/mlpp-lib/actions/workflows/run-tests.yml)
+[![pypi](https://img.shields.io/pypi/v/mlpp-lib.svg?colorB=<brightgreen>)](https://pypi.python.org/pypi/mlpp-lib/)
+
 Collection of methods for ML-based postprocessing of weather forecasts.
 
 :warning: **The code in this repository is currently work-in-progress and not recommended for production use.** :warning:
@@ -17,15 +20,22 @@ import pandas as pd
 from mlpp_lib.datasets import DataModule, DataSplitter
 ```
 
-<details>
-<summary> click here to visualize </summary>
+    2024-03-12 11:01:48.532698: I tensorflow/tsl/cuda/cudart_stub.cc:28] Could not find cuda drivers on your machine, GPU will not be used.
+    2024-03-12 11:01:48.594233: I tensorflow/tsl/cuda/cudart_stub.cc:28] Could not find cuda drivers on your machine, GPU will not be used.
+    2024-03-12 11:01:48.595154: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+    To enable the following instructions: AVX2 AVX512F FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+
+
+    2024-03-12 11:01:49.442240: W tensorflow/compiler/tf2tensorrt/utils/py_utils.cc:38] TF-TRT Warning: Could not find TensorRT
+
+
 
 ```python
 LEADTIMES = np.arange(24)
 REFTIMES = pd.date_range("2018-01-01", "2018-03-31", freq="24H")
 STATIONS = [chr(i) * 3 for i in range(ord("A"), ord("Z"))]
 SHAPE = (len(REFTIMES), len(LEADTIMES), len(STATIONS))
-DIMS = ["forecast_reference_time", "t", "station"]
+DIMS = ["forecast_reference_time", "lead_time", "station"]
 
 def features_dataset() -> xr.Dataset:
     rng = np.random.default_rng(1)
@@ -41,7 +51,7 @@ def features_dataset() -> xr.Dataset:
         },
         coords={
             "forecast_reference_time": REFTIMES,
-            "t": LEADTIMES,
+            "lead_time": LEADTIMES,
             "station": STATIONS,
         },
     )
@@ -60,7 +70,7 @@ def targets_dataset() -> xr.Dataset:
         {"obs:y1": (DIMS, Y[..., 0]), "obs:y2": (DIMS, Y[..., 1])},
         coords={
             "forecast_reference_time": REFTIMES,
-            "t": LEADTIMES,
+            "lead_time": LEADTIMES,
             "station": STATIONS,
         },
     )
@@ -69,9 +79,7 @@ def targets_dataset() -> xr.Dataset:
 
 
 ```
-</details>
 
-## Raw datasets
 MLPP expects xarray objects that look like this:
 
 
@@ -82,16 +90,17 @@ print(features)
 ```
 
     <xarray.Dataset>
-    Dimensions:                  (forecast_reference_time: 90, t: 24, station: 25)
+    Dimensions:                  (forecast_reference_time: 90, lead_time: 24,
+                                  station: 25)
     Coordinates:
       * forecast_reference_time  (forecast_reference_time) datetime64[ns] 2018-01...
-      * t                        (t) int64 0 1 2 3 4 5 6 7 ... 17 18 19 20 21 22 23
+      * lead_time                (lead_time) int64 0 1 2 3 4 5 ... 18 19 20 21 22 23
       * station                  (station) <U3 'AAA' 'BBB' 'CCC' ... 'XXX' 'YYY'
     Data variables:
-        coe:x1                   (forecast_reference_time, t, station) float64 0....
-        coe:x2                   (forecast_reference_time, t, station) float64 0....
-        obs:x3                   (forecast_reference_time, t, station) float64 0....
-        dem:x4                   (forecast_reference_time, t, station) float64 -1...
+        coe:x1                   (forecast_reference_time, lead_time, station) float64 ...
+        coe:x2                   (forecast_reference_time, lead_time, station) float64 ...
+        obs:x3                   (forecast_reference_time, lead_time, station) float64 ...
+        dem:x4                   (forecast_reference_time, lead_time, station) float64 ...
 
 
 
@@ -101,14 +110,15 @@ print(targets)
 ```
 
     <xarray.Dataset>
-    Dimensions:                  (forecast_reference_time: 90, t: 24, station: 25)
+    Dimensions:                  (forecast_reference_time: 90, lead_time: 24,
+                                  station: 25)
     Coordinates:
       * forecast_reference_time  (forecast_reference_time) datetime64[ns] 2018-01...
-      * t                        (t) int64 0 1 2 3 4 5 6 7 ... 17 18 19 20 21 22 23
+      * lead_time                (lead_time) int64 0 1 2 3 4 5 ... 18 19 20 21 22 23
       * station                  (station) <U3 'AAA' 'BBB' 'CCC' ... 'XXX' 'YYY'
     Data variables:
-        obs:y1                   (forecast_reference_time, t, station) float64 0....
-        obs:y2                   (forecast_reference_time, t, station) float64 0....
+        obs:y1                   (forecast_reference_time, lead_time, station) float64 ...
+        obs:y2                   (forecast_reference_time, lead_time, station) float64 ...
 
 
 ## Preparing data
@@ -130,7 +140,7 @@ splitter = DataSplitter(
 
 datamodule = DataModule(
     features, targets[["obs:y1"]],
-    batch_dims=["forecast_reference_time","t","station"],
+    batch_dims=["forecast_reference_time", "lead_time", "station"],
     splitter=splitter
 )
 
@@ -165,9 +175,10 @@ history = model.fit(
 ```
 
     Epoch 1/2
-    689/689 [==============================] - 2s 2ms/step - loss: 0.5629 - val_loss: 0.5716
+    689/689 [==============================] - 2s 2ms/step - loss: 0.5633 - val_loss: 0.5721
+
     Epoch 2/2
-    689/689 [==============================] - 1s 2ms/step - loss: 0.5601 - val_loss: 0.5709
+    689/689 [==============================] - 1s 2ms/step - loss: 0.5607 - val_loss: 0.5695
 
 
 ## Predictions
@@ -182,12 +193,11 @@ print(test_pred_ensemble)
 
     <xarray.Dataset>
     Dimensions:                  (realization: 21, forecast_reference_time: 18,
-                                  t: 24, station: 5)
+                                  lead_time: 24, station: 5)
     Coordinates:
       * forecast_reference_time  (forecast_reference_time) datetime64[ns] 2018-03...
-      * t                        (t) int64 0 1 2 3 4 5 6 7 ... 17 18 19 20 21 22 23
+      * lead_time                (lead_time) int64 0 1 2 3 4 5 ... 18 19 20 21 22 23
       * station                  (station) <U3 'AAA' 'EEE' 'JJJ' 'PPP' 'RRR'
       * realization              (realization) int64 0 1 2 3 4 5 ... 16 17 18 19 20
     Data variables:
-        obs:y1                   (realization, forecast_reference_time, t, station) float64 ...
-
+        obs:y1                   (realization, forecast_reference_time, lead_time, station) float64 ...
