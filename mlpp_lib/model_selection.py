@@ -203,6 +203,15 @@ class DataSplitter:
             else:  # mixed fractions and labels
                 _time_split = self.time_split.copy()
                 test_indexers = _time_split.pop("test")
+                if isinstance(test_indexers, tuple) and len(test_indexers) == 2:
+                    # convert time slice to list of time indices
+                    start_date = np.datetime64(test_indexers[0])
+                    end_date = np.datetime64(test_indexers[1])
+                    test_indexers = self.time_index[
+                        np.logical_and(
+                            self.time_index >= start_date, self.time_index <= end_date
+                        )
+                    ]
                 test_indexers = [t for t in test_indexers if t in self.time_index]
                 self._time_indexers.update({"test": test_indexers})
                 res = self._time_partition_method(_time_split)
