@@ -40,6 +40,13 @@ def check_splits(splits: dict):
         len(val_reftimes & test_reftimes) == 0
     ), "Val and test forecast reference times overlap."
 
+    assert len(train_stations) > 0, "Train split is empty."
+    assert len(val_stations) > 0, "Val split is empty."
+    assert len(test_stations) > 0, "Test split is empty."
+    assert len(train_reftimes) > 0, "Train split is empty."
+    assert len(val_reftimes) > 0, "Val split is empty."
+    assert len(test_reftimes) > 0, "Test split is empty."
+
 
 @dataclass
 class ValidDataSplitterOptions:
@@ -61,8 +68,17 @@ class ValidDataSplitterOptions:
         elif self.time == "slices":
             self.time_split = self.time_split_slices()
             self.time_split_method = None
-        elif self.time == "mixed":
+        elif self.time == "mixed-with-list":
             self.time_split = {"train": 0.7, "val": 0.3, "test": self.reftimes[-10:]}
+            self.time_split_method = "sequential"
+        elif self.time == "mixed-with-slice":
+            slice_start = self.reftimes[-10].strftime("%Y-%m-%d")
+            slice_end = self.reftimes[-1].strftime("%Y-%m-%d")
+            self.time_split = {
+                "train": 0.7,
+                "val": 0.3,
+                "test": (slice_start, slice_end),
+            }
             self.time_split_method = "sequential"
 
         if self.station == "fractions":
@@ -102,7 +118,8 @@ class TestDataSplitter:
         ValidDataSplitterOptions(time="slices", station="fractions"),
         ValidDataSplitterOptions(time="lists", station="fractions"),
         ValidDataSplitterOptions(time="lists", station="mixed"),
-        ValidDataSplitterOptions(time="mixed", station="fractions"),
+        ValidDataSplitterOptions(time="mixed-with-list", station="fractions"),
+        ValidDataSplitterOptions(time="mixed-with-slice", station="fractions"),
     ]
 
     @pytest.mark.parametrize(
