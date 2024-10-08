@@ -596,7 +596,6 @@ class DataLoader(tf.keras.utils.Sequence):
         self.shuffle = shuffle
         self.block_size = block_size
         self.num_samples = len(self.dataset.x)
-        # self.num_batches = int(np.ceil(self.num_samples / batch_size))
         self.num_batches = (
             self.num_samples // batch_size if batch_size <= self.num_samples else 1
         )
