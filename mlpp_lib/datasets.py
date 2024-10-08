@@ -610,39 +610,12 @@ class DataLoader(tf.keras.utils.Sequence):
     def __getitem__(self, index) -> tuple[tf.Tensor, ...]:
         if index >= self.num_batches:
             self._reset()
-            LOGGER.info("End of epoch (will raise IndexError).")
             raise IndexError
         start = index * self.batch_size
         end = index * self.batch_size + self.batch_size
         output = [self.dataset.x[start:end], self.dataset.y[start:end]]
-        if not self.shuffle:
-            count = np.count_nonzero(~np.isfinite(output[0]))
-            if count>0:
-                LOGGER.info(f"Input x (val): {count=}, {output[0].shape=}")
-                invalid_rows, invalid_cols = np.where(~np.isfinite(output[0]))
-                for col in np.unique(invalid_cols):
-                    rows_for_col = invalid_rows[invalid_cols == col]
-    
-                    # Extract the invalid values in this column
-                    invalid_values_for_col = output[0][rows_for_col, col]
-                    
-                    # Count NaNs, +Inf, and -Inf in this column
-                    nan_count = np.sum(np.isnan(invalid_values_for_col))
-                    posinf_count = np.sum(np.isposinf(invalid_values_for_col))
-                    neginf_count = np.sum(np.isneginf(invalid_values_for_col))
-
-                    if len(nan_count) > 0:
-                        LOGGER.info(f"NaNs in column {col}: {nan_count} ({len(nan_count)})")
-                    if len(posinf_count) > 0:
-                        LOGGER.info(f"+Inf in column {col}: {posinf_count} ({len(posinf_count)})")
-                    if len(neginf_count) > 0:
-                        LOGGER.info(f"-Inf in column {col}: {neginf_count} ({len(neginf_count)})")
         if self.dataset.w is not None:
             output.append(self.dataset.w[start:end])
-            if not self.shuffle:
-                count = np.count_nonzero(~np.isfinite(output[2]))
-                if count>0:
-                    LOGGER.info(f"Input w (val): {count=}")
         return tuple(output)
 
     def on_epoch_end(self) -> None:
