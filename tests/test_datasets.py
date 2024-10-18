@@ -7,7 +7,7 @@ import numpy as np
 
 from mlpp_lib.datasets import Dataset, DataModule
 from mlpp_lib.model_selection import DataSplitter
-from mlpp_lib.standardizers import DataTransformer
+from mlpp_lib.normalizers import DataTransformer
 from .test_model_selection import ValidDataSplitterOptions
 
 ZARR_MISSING = "zarr" not in xr.backends.list_engines()

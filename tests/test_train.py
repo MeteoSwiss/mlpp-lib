@@ -7,7 +7,7 @@ from keras.engine.functional import Functional
 import xarray as xr
 
 from mlpp_lib import train
-from mlpp_lib.standardizers import DataTransformer
+from mlpp_lib.normalizers import DataTransformer
 from mlpp_lib.datasets import DataModule, DataSplitter
 
 from .test_model_selection import ValidDataSplitterOptions
@@ -18,6 +18,7 @@ RUNS = [
     {
         "features": ["coe:x1"],
         "targets": ["obs:y1"],
+        "normalizer": {"default": "MinMaxScaler"},
         "model": {
             "fully_connected_network": {
                 "hidden_layers": [10],
@@ -34,6 +35,7 @@ RUNS = [
     {
         "features": ["coe:x1"],
         "targets": ["obs:y1"],
+        "normalizer": {"default": "MinMaxScaler"},
         "model": {
             "fully_connected_network": {
                 "hidden_layers": [10],
@@ -44,10 +46,40 @@ RUNS = [
         "optimizer": {"Adam": {"learning_rate": 0.1, "beta_1": 0.95}},
         "metrics": ["bias", "mean_absolute_error", {"MAEBusts": {"threshold": 0.5}}],
     },
+    # use a learning rate scheduler
+    {
+        "features": ["coe:x1"],
+        "targets": ["obs:y1"],
+        "normalizer": {"default": "MinMaxScaler"},
+        "model": {
+            "fully_connected_network": {
+                "hidden_layers": [10],
+                "probabilistic_layer": "IndependentNormal",
+            }
+        },
+        "loss": "crps_energy",
+        "optimizer": {
+            "Adam": {
+                "learning_rate": {
+                    "CosineDecayRestarts": {
+                        "initial_learning_rate": 0.001,
+                        "first_decay_steps": 20,
+                        "t_mul": 1.5,
+                        "m_mul": 1.1,
+                        "alpha": 0,
+                    }
+                }
+            }
+        },
+        "callbacks": [
+            {"EarlyStopping": {"patience": 10, "restore_best_weights": True}}
+        ],
+    },
     #
     {
         "features": ["coe:x1"],
         "targets": ["obs:y1"],
+        "normalizer": {"default": "MinMaxScaler"},
         "model": {
             "fully_connected_network": {
                 "hidden_layers": [10],
@@ -73,6 +105,7 @@ RUNS = [
     {
         "features": ["coe:x1"],
         "targets": ["obs:y1"],
+        "normalizer": {"default": "MinMaxScaler"},
         "model": {
             "fully_connected_network": {
                 "hidden_layers": [10],
@@ -89,6 +122,7 @@ RUNS = [
     {
         "features": ["coe:x1"],
         "targets": ["obs:y1"],
+        "normalizer": {"default": "MinMaxScaler"},
         "model": {
             "fully_connected_network": {
                 "hidden_layers": [10],
@@ -121,21 +155,25 @@ def test_train_fromfile(tmp_path, cfg):
     cfg.update({"epochs": num_epochs})
 
     splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
-    splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
+    datasplitter = DataSplitter(
+        splitter_options.time_split, splitter_options.station_split
+    )
+    datanormalizer = DataTransformer(**cfg["normalizer"])
     batch_dims = ["forecast_reference_time", "t", "station"]
     datamodule = DataModule(
-        features=cfg["features"], 
-        targets=cfg["targets"], 
-        batch_dims=batch_dims, 
-        splitter=splitter, 
-        data_dir=tmp_path.as_posix() + "/"
+        features=cfg["features"],
+        targets=cfg["targets"],
+        batch_dims=batch_dims,
+        splitter=datasplitter,
+        normalizer=datanormalizer,
+        data_dir=tmp_path.as_posix() + "/",
     )
     results = train.train(cfg, datamodule)
 
     assert len(results) == 4
     assert isinstance(results[0], Functional)  # model
     assert isinstance(results[1], dict)  # custom_objects
-    assert isinstance(results[2], DataTransformer)  # standardizer
+    assert isinstance(results[2], DataTransformer)  # normalizer
     assert isinstance(results[3], dict)  # history
 
     assert all([np.isfinite(v).all() for v in results[3].values()])
@@ -154,13 +192,17 @@ def test_train_fromds(features_dataset, targets_dataset, cfg):
     cfg.update({"epochs": num_epochs})
 
     splitter_options = ValidDataSplitterOptions(time="lists", station="lists")
-    splitter = DataSplitter(splitter_options.time_split, splitter_options.station_split)
+    datasplitter = DataSplitter(
+        splitter_options.time_split, splitter_options.station_split
+    )
+    datanormalizer = DataTransformer(**cfg["normalizer"])
     batch_dims = ["forecast_reference_time", "t", "station"]
     datamodule = DataModule(
         features_dataset[cfg["features"]],
         targets_dataset[cfg["targets"]],
         batch_dims,
-        splitter,
+        splitter=datasplitter,
+        normalizer=datanormalizer,
         group_samples=cfg.get("group_samples"),
     )
     results = train.train(cfg, datamodule)
@@ -168,7 +210,7 @@ def test_train_fromds(features_dataset, targets_dataset, cfg):
     assert len(results) == 4
     assert isinstance(results[0], Functional)  # model
     assert isinstance(results[1], dict)  # custom_objects
-    assert isinstance(results[2], DataTransformer)  # standardizer
+    assert isinstance(results[2], DataTransformer)  # normalizer
     assert isinstance(results[3], dict)  # history
 
     assert all([np.isfinite(v).all() for v in results[3].values()])

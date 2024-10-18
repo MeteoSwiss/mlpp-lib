@@ -37,6 +37,13 @@ def get_log_params(param_run: dict) -> dict:
     return log_params
 
 
+def get_lr(optimizer: tf.keras.optimizers.Optimizer) -> float:
+    """Get the learning rate of the optimizer"""
+    def lr(y_true, y_pred):
+        return optimizer.lr
+    return lr
+
+
 def train(
     cfg: dict,
     datamodule: DataModule,
@@ -61,6 +68,7 @@ def train(
     loss = get_loss(loss_config)
     metrics = [get_metric(metric) for metric in cfg.get("metrics", [])]
     optimizer = get_optimizer(cfg.get("optimizer", "Adam"))
+    metrics.append(get_lr(optimizer))
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
     model.summary(print_fn=LOGGER.info)
 
@@ -101,8 +109,8 @@ def train(
     )
 
     LOGGER.info("Start training.")
-    LOGGER.info(f"Len train data: {len(train_dataloader)}")
-    LOGGER.info(f"Len val data: {len(val_dataloader)}")
+    LOGGER.debug(f"Length train data: {len(train_dataloader)}")
+    LOGGER.debug(f"Length val data: {len(val_dataloader)}")
     res = model.fit(
         train_dataloader,
         epochs=cfg.get("epochs", 1),

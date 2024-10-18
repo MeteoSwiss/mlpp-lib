@@ -45,18 +45,18 @@ def features_dataset() -> xr.Dataset:
 def features_multi() -> xr.Dataset:
     """
     Create a dataset as if it was loaded from `features.zarr`.
-    Coherent with the number of data transformations defined in the standardizers file.
+    Coherent with the number of data transformations defined in the normalizers module.
     """
-    import mlpp_lib.standardizers as st
+    import mlpp_lib.normalizers as no
 
     rng = np.random.default_rng(1)
-    X = rng.standard_normal(size=(*SHAPE, len([n.name for n in st.DataTransformation.__subclasses__()])))
+    X = rng.standard_normal(
+        size=(*SHAPE, len([n.name for n in no.DataTransformation.__subclasses__()]))
+    )
     X = np.float64(X)
     X[(X > 4.5) | (X < -4.5)] = np.nan
     features = xr.Dataset(
-        {
-            f"var{i}": (DIMS, X[..., i]) for i in range(X.shape[-1])
-        },
+        {f"var{i}": (DIMS, X[..., i]) for i in range(X.shape[-1])},
         coords={
             "forecast_reference_time": REFTIMES,
             "t": LEADTIMES,
@@ -73,9 +73,12 @@ def datatransformations() -> list:
     Create a list of data transformations.
     The list consists of all available data transformations.
     """
-    import mlpp_lib.standardizers as st
+    import mlpp_lib.normalizers as no
 
-    datatransformations = [st.create_transformation_from_str(n.name) for n in st.DataTransformation.__subclasses__()]
+    datatransformations = [
+        no.create_transformation_from_str(n.name, inputs={"fillvalue": -5} if n.name == "Identity" else {}) # temporary fix, do we want to let the user define different fillvalue for each transformation ?
+        for n in no.DataTransformation.__subclasses__()
+    ]
 
     return datatransformations
 
@@ -85,11 +88,15 @@ def data_transformer() -> xr.Dataset:
     """
     Create a datatransformer.
     """
-    import mlpp_lib.standardizers as st
+    import mlpp_lib.normalizers as no
 
-    transformations_list = [n.name for n in st.DataTransformation.__subclasses__()]
-    method_var_dict = {transformation: ([f"var{i}"],{}) for i, transformation in enumerate(transformations_list)}
-    data_transformer = st.DataTransformer(method_var_dict)
+    transformations_list = [n.name for n in no.DataTransformation.__subclasses__()]
+    method_var_dict = {
+        transformation: [f"var{i}"]
+        for i, transformation in enumerate(transformations_list)
+    }
+    data_transformer = no.DataTransformer(method_var_dict)
+    data_transformer.transformers['Identity'][0].fillvalue = -5 # temporary fix, do we want to let the user define different fillvalue for each transformation ?
 
     return data_transformer
 

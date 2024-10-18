@@ -11,7 +11,7 @@ import xarray as xr
 from typing_extensions import Self
 
 from .model_selection import DataSplitter
-from .standardizers import DataTransformer
+from .normalizers import DataTransformer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -153,16 +153,18 @@ class DataModule:
         self.x, self.y = self.filter.apply(self.x, self.y)
 
     def normalize(self, stage=None):
-        LOGGER.info("Standardizing data.")
-        
+        LOGGER.info("Normalizing data.")
+
         if self.normalizer is None:
             if stage == "test":
-                raise ValueError("Must provide standardizer for `test` stage.")
+                raise ValueError("Must provide normalizer for `test` stage.")
             else:
-                self.normalizer = DataTransformer({"Identity": (list(self.train[0].data_vars), {})})
-        
+                LOGGER.warning("No normalizer found, data are standardized by default.")
+                self.normalizer = DataTransformer(
+                    {"Standardizer": list(self.train[0].data_vars)}
+                )
 
-        if stage == "fit" or stage is None:        
+        if stage == "fit" or stage is None:
             self.normalizer.fit(self.train[0])
             self.train = (
                 tuple(self.normalizer.transform(self.train[0])) + self.train[1:]
@@ -446,9 +448,9 @@ class Dataset:
         x, y, w = self._get_copies()
 
         event_axes = [self.dims.index(dim) for dim in self.dims if dim != "s"]
-        mask = da.any(da.isnan(da.from_array(x, name="x")), axis=event_axes)
+        mask = da.any(~da.isfinite(da.from_array(x, name="x")), axis=event_axes)
         if y is not None:
-            mask = mask | da.any(da.isnan(da.from_array(y, name="y")), axis=event_axes)
+            mask = mask | da.any(~da.isfinite(da.from_array(y, name="y")), axis=event_axes)
         mask = (~mask).compute()
 
         # with grouped samples, nans have to be removed in blocks:
@@ -593,7 +595,7 @@ class DataLoader(tf.keras.utils.Sequence):
         self.shuffle = shuffle
         self.block_size = block_size
         self.num_samples = len(self.dataset.x)
-        self.num_batches = self.num_samples // batch_size
+        self.num_batches = int(np.ceil(self.num_samples / batch_size))
         self._indices = tf.range(self.num_samples)
         self._seed = 0
         self._reset()
