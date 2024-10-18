@@ -359,7 +359,9 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                     samples = self.normal.sample(sample_shape=(n,), seed=seed)
 
                     # Clip values between 0 and 1
-                    chosen_samples = tf.clip_by_value(samples, self.clip_low, self.clip_high)
+                    chosen_samples = tf.clip_by_value(
+                        samples, self.clip_low, self.clip_high
+                    )
 
                     return chosen_samples
 
@@ -369,11 +371,15 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                     Censored: Y = X if clip_low <= X <= clip_high else clip_low if X < clip_low else clip_high
                     Phi / phi: CDF / PDF of standard normal distribution
 
-                    Law of total expectations: 
+                    Law of total expectations:
                         E[Y] = E[Y | X > c_h] * P(X > c_h) + E[Y | X < c_l] * P(X < c_l) + E[Y | c_l <= X <= c_h] * P(c_l <= X <= c_h)
-                             = c_h * P(X > c_h) + P(X < c_l) * c_h + E[Y | c_l <= X <= c_h] * P(c_l <= X <= c_h)
-                             = c_h * P(X > c_h) + E[Z ~ TruncNormal(mu, sigma, c_l, c_h)] * (Phi((c_h - mu) / sigma) - Phi(c_l - mu / sigma))
-                             = c_h * (1 - Phi((c_h - mu) / sigma)) + mu * (Phi((c_h - mu) / sigma) - Phi(c_l - mu / sigma)) + sigma * (phi(c_l - mu / sigma) - phi((c_h - mu) / sigma))
+                             = c_h * P(X > c_h) + P(X < c_l) * c_l + E[Y | c_l <= X <= c_h] * P(c_l <= X <= c_h)
+                             = c_h * P(X > c_h) + P(X < c_l) * c_l + E[Z ~ TruncNormal(mu, sigma, c_l, c_h)] * (Phi((c_h - mu) / sigma) - Phi(c_l - mu / sigma))
+                             = c_h * (1 - Phi((c_h - mu) / sigma)) 
+                                + c_l * Phi((c_l - mu) / sigma) 
+                                + mu * (Phi((c_h - mu) / sigma) - Phi(c_l - mu / sigma)) 
+                                + sigma * (phi(c_l - mu / sigma) - phi((c_h - mu) / sigma))
+                                
                     Ref for TruncatedNormal mean: https://en.wikipedia.org/wiki/Truncated_normal_distribution
                     """
                     mu, sigma = self.normal.mean(), self.normal.stddev()
@@ -383,21 +389,32 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                     cdf = lambda x: tfd.Normal(0, 1).cdf(x)
                     pdf = lambda x: tfd.Normal(0, 1).prob(x)
 
-                    return self.clip_high * (1 - cdf(high_bound_standard)) + mu * (
-                        cdf(high_bound_standard) - cdf(low_bound_standard)) + sigma * (
-                        pdf(low_bound_standard) - pdf(high_bound_standard))
+                    return (
+                        self.clip_high * (1 - cdf(high_bound_standard))
+                        + self.clip_low * cdf(low_bound_standard)
+                        + mu * (cdf(high_bound_standard) - cdf(low_bound_standard))
+                        + sigma * (pdf(low_bound_standard) - pdf(high_bound_standard))
+                    )
 
                 def _log_prob(self, value):
-                    
+
                     mu, sigma = self.normal.mean(), self.normal.stddev()
                     cdf = lambda x: tfd.Normal(0, 1).cdf(x)
                     pdf = lambda x: tfd.Normal(0, 1).prob(x)
-                    
-                    logprob_left = lambda x: tf.math.log(cdf(self.clip_low-mu / sigma) + 1e-3)
-                    logprob_middle = lambda x: self.normal.log_prob(x)
-                    logprob_right = lambda x: tf.math.log(1 - cdf((self.clip_high - mu) / sigma) + 1e-3)
 
-                    return logprob_left(value) + logprob_middle(value) + logprob_right(value)
+                    logprob_left = lambda x: tf.math.log(
+                        cdf(self.clip_low - mu / sigma) + 1e-3
+                    )
+                    logprob_middle = lambda x: self.normal.log_prob(x)
+                    logprob_right = lambda x: tf.math.log(
+                        1 - cdf((self.clip_high - mu) / sigma) + 1e-3
+                    )
+
+                    return (
+                        logprob_left(value)
+                        + logprob_middle(value)
+                        + logprob_right(value)
+                    )
 
             return independent_lib.Independent(
                 CustomCensored(normal_dist),
