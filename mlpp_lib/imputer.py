@@ -7,10 +7,16 @@ import xarray as xr
 from typing_extensions import Self
 
 
-class ValueFiller:
+class Imputer:
     """
     Abstract class for filling missing values in a dataset.
     """
+    #TODO: 
+    #    - create subclasses to handle different types of imputing:
+    #        - constant
+    #        - location-based (stations) / elevation
+    #        - based on lead time ? E.g., replace by the mean of the distribution for observed values at such lead time
+    #        - based on valid time -> may be more appropriate than lead time
 
     @abstractmethod
     def fill(self, data: xr.Dataset) -> xr.Dataset:
