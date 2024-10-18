@@ -350,6 +350,8 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                         validate_args=validate_args,
                         allow_nan_stats=True,
                     )
+                    self.clip_low = -0.03
+                    self.clip_high = 1.03
 
                 def _sample_n(self, n, seed=None):
 
@@ -357,33 +359,33 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                     samples = self.normal.sample(sample_shape=(n,), seed=seed)
 
                     # Clip values between 0 and 1
-                    chosen_samples = tf.clip_by_value(samples, 0, 1)
+                    chosen_samples = tf.clip_by_value(samples, self.clip_low, self.clip_high)
 
                     return chosen_samples
 
                 def _mean(self):
                     """
                     Original: X ~ N(mu, sigma)
-                    Censored: Y = X if 0 <= X <= 1 else 0 if X < 0 else 1
+                    Censored: Y = X if clip_low <= X <= clip_high else clip_low if X < clip_low else clip_high
                     Phi / phi: CDF / PDF of standard normal distribution
 
                     Law of total expectations: 
-                        E[Y] = E[Y | X > 1] * P(X > 1) + E[Y | X < 0] * P(X < 0) + E[Y | 0 <= X <= 1] * P(0 <= X <= 1)
-                             = 1 * P(X > 1) + P(X < 0) * 0 + E[X | 0 <= X <= 1] * P(0 <= X <= 1)
-                             = 1 * P(X > 1) + E[Z ~ TruncNormal(mu, sigma, 0, 1)] * (Phi((1 - mu) / sigma) - Phi(-mu / sigma))
-                             = 1 * (1 - Phi((1 - mu) / sigma)) + mu * (Phi((1 - mu) / sigma) - Phi(-mu / sigma)) + sigma * (phi(-mu / sigma) - phi((1 - mu) / sigma))
+                        E[Y] = E[Y | X > c_h] * P(X > c_h) + E[Y | X < c_l] * P(X < c_l) + E[Y | c_l <= X <= c_h] * P(c_l <= X <= c_h)
+                             = c_h * P(X > c_h) + P(X < c_l) * c_h + E[Y | c_l <= X <= c_h] * P(c_l <= X <= c_h)
+                             = c_h * P(X > c_h) + E[Z ~ TruncNormal(mu, sigma, c_l, c_h)] * (Phi((c_h - mu) / sigma) - Phi(c_l - mu / sigma))
+                             = c_h * (1 - Phi((c_h - mu) / sigma)) + mu * (Phi((c_h - mu) / sigma) - Phi(c_l - mu / sigma)) + sigma * (phi(c_l - mu / sigma) - phi((c_h - mu) / sigma))
                     Ref for TruncatedNormal mean: https://en.wikipedia.org/wiki/Truncated_normal_distribution
                     """
                     mu, sigma = self.normal.mean(), self.normal.stddev()
-                    low_bound_standard = (0 - mu) / sigma
-                    high_bound_standard = (1 - mu) / sigma
+                    low_bound_standard = (self.clip_low - mu) / sigma
+                    high_bound_standard = (self.clip_high - mu) / sigma
 
                     cdf = lambda x: tfd.Normal(0, 1).cdf(x)
                     pdf = lambda x: tfd.Normal(0, 1).prob(x)
 
-                    return 1 * (1 - cdf(high_bound_standard)) + mu * (
+                    return self.clip_high * (1 - cdf(high_bound_standard)) + mu * (
                         cdf(high_bound_standard) - cdf(low_bound_standard)) + sigma * (
-                            pdf(low_bound_standard) - pdf(high_bound_standard))
+                        pdf(low_bound_standard) - pdf(high_bound_standard))
 
                 def _log_prob(self, value):
                     
@@ -391,9 +393,9 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                     cdf = lambda x: tfd.Normal(0, 1).cdf(x)
                     pdf = lambda x: tfd.Normal(0, 1).prob(x)
                     
-                    logprob_left = lambda x: tf.math.log(cdf(-mu / sigma) + 1e-3)
+                    logprob_left = lambda x: tf.math.log(cdf(self.clip_low-mu / sigma) + 1e-3)
                     logprob_middle = lambda x: self.normal.log_prob(x)
-                    logprob_right = lambda x: tf.math.log(1 - cdf((1 - mu) / sigma) + 1e-3)
+                    logprob_right = lambda x: tf.math.log(1 - cdf((self.clip_high - mu) / sigma) + 1e-3)
 
                     return logprob_left(value) + logprob_middle(value) + logprob_right(value)
 
