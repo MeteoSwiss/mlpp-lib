@@ -350,8 +350,8 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                         validate_args=validate_args,
                         allow_nan_stats=True,
                     )
-                    self.clip_low = -0.03
-                    self.clip_high = 1.03
+                    self.clip_low = -0.05
+                    self.clip_high = 1.05
 
                 def _sample_n(self, n, seed=None):
 
