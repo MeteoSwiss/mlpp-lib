@@ -76,3 +76,41 @@ class ConstantImputation(DataImputation):
             "fillvalue": self.fillvalue,
         }
         return out_dict
+
+@dataclass
+class PersitentImputation(DataImputation):
+    """
+    Fill missing value by using the latest lead time available (persistence)
+    """
+
+    name = "PersistentImputation"
+
+    def fill(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
+        
+        def f(ds: xr.Dataset):
+            ds = ds.copy()
+            for var in ds.data_vars:
+                if "lead_time" in ds[var].data_vars:
+                    ds[var] = ds[var].ffill("lead_time")
+            return ds.astype("float32")
+
+        return tuple(f(ds) for ds in datasets)
+
+    def inverse_fill(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
+        def f(ds: xr.Dataset) -> xr.Dataset:
+            ds = ds.copy()
+            ds = ds.where(ds > self.fillvalue)
+            return ds.astype("float32")
+
+        return tuple(f(ds) for ds in datasets)
+
+    @classmethod
+    def from_dict(cls, in_dict: dict) -> Self:
+        fillvalue = in_dict["fillvalue"]
+        return cls(fillvalue=fillvalue)
+
+    def to_dict(self):
+        out_dict = {
+            "fillvalue": self.fillvalue,
+        }
+        return out_dict
