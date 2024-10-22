@@ -82,35 +82,43 @@ class PersitentImputation(DataImputation):
     """
     Fill missing value by using the latest lead time available (persistence)
     """
-
+    persisted_vars: str = field(default=None)
     name = "PersistentImputation"
 
     def fill(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
-        
+        persisted_vars = []
         def f(ds: xr.Dataset):
             ds = ds.copy()
             for var in ds.data_vars:
                 if "lead_time" in ds[var].data_vars:
                     ds[var] = ds[var].ffill("lead_time")
+                    persisted_vars.append(var)
+            self.persisted_vars = persisted_vars
             return ds.astype("float32")
 
         return tuple(f(ds) for ds in datasets)
 
     def inverse_fill(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
+        # WIP, needs to be tested
         def f(ds: xr.Dataset) -> xr.Dataset:
             ds = ds.copy()
-            ds = ds.where(ds > self.fillvalue)
+            for var in self.persisted_vars:
+                shifted = ds[var].shift({"lead_time": -1})
+                mask = (ds[var] == shifted)
+                mask = mask.cumsum(dim="lead_time") > 0
+                ds[var] = ds[var].where(~mask, np.nan)
+                    
             return ds.astype("float32")
 
         return tuple(f(ds) for ds in datasets)
 
     @classmethod
     def from_dict(cls, in_dict: dict) -> Self:
-        fillvalue = in_dict["fillvalue"]
-        return cls(fillvalue=fillvalue)
+        persisted_vars = in_dict["persisted_vars"]
+        return cls(persisted_vars=persisted_vars)
 
     def to_dict(self):
         out_dict = {
-            "fillvalue": self.fillvalue,
+            "persisted_vars": self.persisted_vars,
         }
         return out_dict
