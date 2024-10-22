@@ -24,9 +24,7 @@ class Imputer:
     """
     #TODO: 
     #    - create subclasses to handle different types of imputing:
-    #        - constant
     #        - location-based (stations) / elevation
-    #        - based on lead time ? E.g., replace by the mean of the distribution for observed values at such lead time
     #        - based on valid time -> may be more appropriate than lead time
 
     @abstractmethod
@@ -37,7 +35,29 @@ class Imputer:
         pass
 
 class DataImputation:
-    pass
+    """
+    Abstract class for nromalization techniques in a xarray.Dataset object.
+    """
+    
+    @abstractmethod
+    def fit(self, dataset: xr.Dataset, dims: Optional[list] = None) -> None:
+        pass
+
+    @abstractmethod
+    def fill(self, dataset: xr.Dataset, dims: Optional[list] = None) -> tuple[xr.Dataset, ...]:
+        pass
+
+    @abstractmethod
+    def inverse_fill(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
+        pass
+
+    @abstractmethod
+    def from_dict(self, in_dict) -> Self:
+        pass
+
+    @abstractmethod
+    def to_dict(self) -> dict:
+        pass
 
 
 @dataclass
@@ -48,6 +68,12 @@ class ConstantImputation(DataImputation):
 
     fillvalue: dict[str, float] = field(init=True, default=-5)
     name = "ConstantImputation"
+
+    def fit(self,
+        dataset: xr.Dataset,
+        dims: Optional[list] = None,
+    ):
+        self.fillvalue = self.fillvalue
 
     def fill(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         
@@ -85,15 +111,19 @@ class PersitentImputation(DataImputation):
     persisted_vars: str = field(default=None)
     name = "PersistentImputation"
 
+    def fit(self,
+        dataset: xr.Dataset,
+        dims: Optional[list] = None,
+    ):
+        self.persisted_vars = [var for var in dataset.data_vars if "lead_time" in dataset[var].dims]
+
     def fill(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
-        persisted_vars = []
+        
         def f(ds: xr.Dataset):
             ds = ds.copy()
-            for var in ds.data_vars:
-                if "lead_time" in ds[var].data_vars:
-                    ds[var] = ds[var].ffill("lead_time")
-                    persisted_vars.append(var)
-            self.persisted_vars = persisted_vars
+            for var in self.persisted_vars:
+               ds[var] = ds[var].ffill("lead_time")
+
             return ds.astype("float32")
 
         return tuple(f(ds) for ds in datasets)
