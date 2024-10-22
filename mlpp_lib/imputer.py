@@ -42,7 +42,7 @@ class DataImputer:
         self.all_vars = []
         self.imputers = {}
 
-        # Initialize default transformation
+        # Initialize default imputation
         default_imputer = create_imputation_from_str(
             self.default, {"fillvalue": self.fillvalue} #TODO: need to think about this, a priori most imputers won't have a fillvalue field
         )
@@ -81,7 +81,7 @@ class DataImputer:
         """Apply filling to the dataset(s)."""
         for imputation in self.imputers.values():
             imputer, variables = imputation
-            # ensure that only variables that are in the dataset are transformed
+            # ensure that only variables that are in the dataset are imputed
             vars_in_data = list(set(variables) & set(datasets[0].data_vars))
             if not vars_in_data:
                 continue
@@ -92,7 +92,7 @@ class DataImputer:
 
     def inverse_fill(self, *datasets: xr.Dataset) -> xr.Dataset:
         """Apply inverse filling to the dataset(s)."""
-        for imputer, variables in self.transformers.values():
+        for imputer, variables in self.imputers.values():
             vars_in_data = list(set(variables) & set(datasets[0].data_vars))
             if not vars_in_data:
                 continue
