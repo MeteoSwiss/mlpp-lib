@@ -22,11 +22,6 @@ class DataImputer:
     """
     Class for filling missing values in a dataset with different techniques.
     """
-    #TODO: 
-    #    - create subclasses to handle different types of imputing:
-    #        - location-based (stations) / elevation
-    #        - based on valid time -> may be more appropriate than lead time
-
 
     name: str = "DataImputer"
 
@@ -218,7 +213,14 @@ class ConstantImputer(DataImputation):
     def inverse_fill(self, *datasets: xr.Dataset) -> tuple[xr.Dataset, ...]:
         def f(ds: xr.Dataset) -> xr.Dataset:
             ds = ds.copy()
-            ds = ds.where(ds > self.fillvalue)
+            if isinstance(self.fillvalue, float):
+                ds = ds.where(ds > self.fillvalue)
+            else: # fillvalue is a dict
+                for var in ds.data_vars:
+                    if var in self.fillvalue.keys():
+                        fillv = self.fillvalue[var]
+                        ds[var] = ds[var].where(ds[var] != fillv, np.nan)
+                        
             return ds.astype("float32")
 
         return tuple(f(ds) for ds in datasets)
