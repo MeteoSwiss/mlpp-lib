@@ -18,11 +18,12 @@ dask = "^2022.6.0"
 properscoring = "^0.1"
 numba = {version = "^0.56.4", optional = true}
 zarr = {version = "^2.14.1", optional = true}
+scikit-learn = {version = "^1.2.2", optional = true}
 
 [tool.poetry.extras]
 tensorflow = ["tensorflow"]
 tensorflow-cpu = ["tensorflow-cpu"]
-extended = ["zarr", "numba", "tensorflow"]
+train = ["zarr", "numba", "tensorflow", "scikit-learn"]
 
 [tool.poetry.group.dev.dependencies]
 tensorflow = "~2.12.1"
@@ -30,6 +31,9 @@ pytest = "^7"
 black = "^22.1.0"
 mlflow = "^2.8.1"
 jupyter = "^1.0.0"
+
+[tool.poetry.group.dev.dependencies]
+matplotlib = "^3.7.1"
 
 [build-system]
 requires = ["poetry-core>=1.0.8"]
