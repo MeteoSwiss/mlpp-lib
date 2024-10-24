@@ -3,7 +3,7 @@ import json
 import cloudpickle
 import numpy as np
 import pytest
-from keras.engine.functional import Functional
+from tensorflow.keras import Model
 import xarray as xr
 
 from mlpp_lib import train
@@ -171,7 +171,7 @@ def test_train_fromfile(tmp_path, cfg):
     results = train.train(cfg, datamodule)
 
     assert len(results) == 4
-    assert isinstance(results[0], Functional)  # model
+    assert isinstance(results[0], Model)  # model
     assert isinstance(results[1], dict)  # custom_objects
     assert isinstance(results[2], DataTransformer)  # normalizer
     assert isinstance(results[3], dict)  # history
@@ -208,7 +208,7 @@ def test_train_fromds(features_dataset, targets_dataset, cfg):
     results = train.train(cfg, datamodule)
 
     assert len(results) == 4
-    assert isinstance(results[0], Functional)  # model
+    assert isinstance(results[0], Model)  # model
     assert isinstance(results[1], dict)  # custom_objects
     assert isinstance(results[2], DataTransformer)  # normalizer
     assert isinstance(results[3], dict)  # history
