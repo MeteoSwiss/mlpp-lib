@@ -84,8 +84,11 @@ class IndependentBeta(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
+        def new_from_t(t):
+            return IndependentBeta.new(t, event_shape, validate_args)
+
         super(IndependentBeta, self).__init__(
-            lambda t: IndependentBeta.new(t, event_shape, validate_args),
+            new_from_t,
             convert_to_tensor_fn,
             **kwargs
         )
@@ -193,8 +196,11 @@ class Independent4ParamsBeta(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
+        def new_from_t(t):
+            return Independent4ParamsBeta.new(t, event_shape, validate_args)
+
         super(Independent4ParamsBeta, self).__init__(
-            lambda t: Independent4ParamsBeta.new(t, event_shape, validate_args),
+            new_from_t,
             convert_to_tensor_fn,
             **kwargs
         )
@@ -306,10 +312,13 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
+        def new_from_t(t):
+            return  IndependentDoublyCensoredNormal.new(
+                        t, event_shape, validate_args
+                    )
+
         super(IndependentDoublyCensoredNormal, self).__init__(
-            lambda t: IndependentDoublyCensoredNormal.new(
-                t, event_shape, validate_args
-            ),
+            new_from_t,
             convert_to_tensor_fn,
             **kwargs
         )
@@ -367,7 +376,7 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                     Censored: Y = X if 0 <= X <= 1 else 0 if X < 0 else 1
                     Phi / phi: CDF / PDF of standard normal distribution
 
-                    Law of total expectations: 
+                    Law of total expectations:
                         E[Y] = E[Y | X > 1] * P(X > 1) + E[Y | X < 0] * P(X < 0) + E[Y | 0 <= X <= 1] * P(0 <= X <= 1)
                              = 1 * P(X > 1) + P(X < 0) * 0 + E[X | 0 <= X <= 1] * P(0 <= X <= 1)
                              = 1 * P(X > 1) + E[Z ~ TruncNormal(mu, sigma, 0, 1)] * (Phi((1 - mu) / sigma) - Phi(-mu / sigma))
@@ -386,11 +395,11 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                             pdf(low_bound_standard) - pdf(high_bound_standard))
 
                 def _log_prob(self, value):
-                    
+
                     mu, sigma = self.normal.mean(), self.normal.stddev()
                     cdf = lambda x: tfd.Normal(0, 1).cdf(x)
                     pdf = lambda x: tfd.Normal(0, 1).prob(x)
-                    
+
                     logprob_left = lambda x: tf.math.log(cdf(-mu / sigma) + 1e-3)
                     logprob_middle = lambda x: self.normal.log_prob(x)
                     logprob_right = lambda x: tf.math.log(1 - cdf((1 - mu) / sigma) + 1e-3)
@@ -473,8 +482,11 @@ class IndependentConcaveBeta(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
+        def new_from_t(t):
+            return IndependentConcaveBeta.new(t, event_shape, validate_args)
+
         super(IndependentConcaveBeta, self).__init__(
-            lambda t: IndependentConcaveBeta.new(t, event_shape, validate_args),
+            new_from_t,
             convert_to_tensor_fn,
             **kwargs
         )
@@ -586,8 +598,11 @@ class IndependentGamma(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
+        def new_from_t(t):
+            return IndependentGamma.new(t, event_shape, validate_args)
+
         super(IndependentGamma, self).__init__(
-            lambda t: IndependentGamma.new(t, event_shape, validate_args),
+            new_from_t,
             convert_to_tensor_fn,
             **kwargs
         )
@@ -696,8 +711,11 @@ class IndependentLogNormal(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
+        def new_from_t(t):
+            return IndependentLogNormal.new(t, event_shape, validate_args)
+
         super(IndependentLogNormal, self).__init__(
-            lambda t: IndependentLogNormal.new(t, event_shape, validate_args),
+            new_from_t,
             convert_to_tensor_fn,
             **kwargs
         )
@@ -804,8 +822,11 @@ class IndependentLogitNormal(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
+        def new_from_t(t):
+            return IndependentLogitNormal.new(t, event_shape, validate_args)
+
         super(IndependentLogitNormal, self).__init__(
-            lambda t: IndependentLogitNormal.new(t, event_shape, validate_args),
+            new_from_t,
             convert_to_tensor_fn,
             **kwargs
         )
@@ -915,8 +936,11 @@ class IndependentMixtureNormal(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
+        def new_from_t(t):
+            return IndependentMixtureNormal.new(t, event_shape, validate_args)
+
         super(IndependentMixtureNormal, self).__init__(
-            lambda t: IndependentMixtureNormal.new(t, event_shape, validate_args),
+            new_from_t,
             convert_to_tensor_fn,
             **kwargs
         )
@@ -1088,8 +1112,11 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
+        def new_from_t(t):
+            return IndependentTruncatedNormal.new(t, event_shape, validate_args)
+
         super(IndependentTruncatedNormal, self).__init__(
-            lambda t: IndependentTruncatedNormal.new(t, event_shape, validate_args),
+            new_from_t,
             convert_to_tensor_fn,
             **kwargs
         )
@@ -1198,8 +1225,11 @@ class IndependentWeibull(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
+        def new_from_t(t):
+            return IndependentWeibull.new(t, event_shape, validate_args)
+
         super(IndependentWeibull, self).__init__(
-            lambda t: IndependentWeibull.new(t, event_shape, validate_args),
+            new_from_t,
             convert_to_tensor_fn,
             **kwargs
         )
@@ -1312,8 +1342,11 @@ class MultivariateNormalDiag(tfpl.DistributionLambda):
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
 
+        def new_from_t(t):
+            return MultivariateNormalDiag.new(t, event_size, validate_args)
+
         super(MultivariateNormalDiag, self).__init__(
-            lambda t: MultivariateNormalDiag.new(t, event_size, validate_args),
+            new_from_t,
             convert_to_tensor_fn,
             **kwargs
         )
