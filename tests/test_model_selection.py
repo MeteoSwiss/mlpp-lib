@@ -54,7 +54,7 @@ class ValidDataSplitterOptions:
     time: str
     station: str
 
-    reftimes = pd.date_range("2018-01-01", "2018-03-31", freq="24H")
+    reftimes = pd.date_range("2018-01-01", "2018-03-31", freq="24h")
     stations = [chr(i) * 3 for i in range(ord("A"), ord("Z"))]
 
     def __post_init__(self):

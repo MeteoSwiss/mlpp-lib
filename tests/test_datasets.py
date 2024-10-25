@@ -276,8 +276,8 @@ class TestDataset:
         predictions = np.random.randn(n_samples, *ds.y.shape)
         ds_pred = ds.dataset_from_predictions(predictions, ensemble_axis=0)
         assert isinstance(ds_pred, xr.Dataset)
-        assert ds_pred.dims["realization"] == n_samples
-        assert all([ds_pred.dims[c] == ds.coords[c].size for c in ds.coords])
+        assert ds_pred.sizes["realization"] == n_samples
+        assert all([ds_pred.sizes[c] == ds.coords[c].size for c in ds.coords])
         assert list(ds_pred.data_vars) == ds.targets
 
     @pytest.mark.parametrize(
@@ -298,6 +298,6 @@ class TestDataset:
             predictions, ensemble_axis=0, targets=targets
         )
         assert isinstance(ds_pred, xr.Dataset)
-        assert ds_pred.dims["realization"] == n_samples
-        assert all([ds_pred.dims[c] == ds.coords[c].size for c in ds.coords])
+        assert ds_pred.sizes["realization"] == n_samples
+        assert all([ds_pred.sizes[c] == ds.coords[c].size for c in ds.coords])
         assert list(ds_pred.data_vars) == targets

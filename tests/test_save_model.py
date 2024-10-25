@@ -49,14 +49,14 @@ TEST_METRICS = [
 ]
 
 
-@pytest.mark.parametrize("save_format", ["tf", "h5"])
+@pytest.mark.parametrize("save_format", ["tf", "keras"])
 @pytest.mark.parametrize("loss", TEST_LOSSES)
 @pytest.mark.parametrize("prob_layer", ALL_PROB_LAYERS)
 def test_save_model(save_format, loss, prob_layer, tmp_path):
     """Test model save/load"""
 
-    if save_format == "h5":
-        tmp_path = f"{tmp_path}.h5"
+    if save_format == "keras":
+        tmp_path = f"{tmp_path}.keras"
         save_traces = True  # default value
     else:
         tmp_path = f"{tmp_path}"
@@ -75,7 +75,10 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
     loss = get_loss(loss)
     metrics = [get_metric(metric) for metric in TEST_METRICS]
     model.compile(loss=loss, metrics=metrics)
-    model.save(tmp_path, save_traces=save_traces)
+    if save_format != 'keras':
+        model.save(tmp_path, save_traces=save_traces)
+    else:
+        model.save(tmp_path)
 
     # test trying to load the model from a new process
     # this is a bit slow, since each process needs to reload all the dependencies ...
@@ -149,7 +152,7 @@ def test_save_model_mlflow(tmp_path):
         model,
         "model_save",
         custom_objects=custom_objects,
-        keras_model_kwargs={"save_format": "h5"},
+        keras_model_kwargs={"save_format": "keras"},
     )
 
     tf.keras.backend.clear_session()
