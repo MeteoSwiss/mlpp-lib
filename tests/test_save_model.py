@@ -75,7 +75,7 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
     loss = get_loss(loss)
     metrics = [get_metric(metric) for metric in TEST_METRICS]
     model.compile(loss=loss, metrics=metrics)
-    if save_format != 'keras':
+    if save_format != "keras":
         model.save(tmp_path, save_traces=save_traces)
     else:
         model.save(tmp_path)
@@ -142,7 +142,12 @@ def test_save_model_mlflow(tmp_path):
     mlflow.set_tracking_uri(mlflow_uri)
 
     model = models.fully_connected_network(
-        (5,), 2, hidden_layers=[3, 3], dropout=0.5, mc_dropout=True
+        (5,),
+        2,
+        hidden_layers=[3, 3],
+        dropout=0.5,
+        mc_dropout=True,
+        probabilistic_layer="IndependentNormal",
     )
     optimizer = get_optimizer("Adam")
     model.compile(optimizer=optimizer, loss=None, metrics=None)
@@ -156,5 +161,14 @@ def test_save_model_mlflow(tmp_path):
     )
 
     tf.keras.backend.clear_session()
-    model = mlflow.tensorflow.load_model(model_info.model_uri)
+
+    # this raises a ValueError because of the risk of deserializing Lambda layers
+    with pytest.raises(ValueError):
+        model = mlflow.tensorflow.load_model(model_info.model_uri)
+
+    # this should work
+    model: tf.tensorflow.Model = mlflow.tensorflow.load_model(
+        model_info.model_uri, keras_model_kwargs={"safe_mode": False}
+    )
+
     assert isinstance(model, Model)
