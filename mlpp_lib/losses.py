@@ -431,11 +431,17 @@ class MultivariateLoss(tf.keras.losses.Loss):
 
     """
 
-    avail_metrics = {
-        "mse": lambda y_true, y_pred: tf.reduce_mean(
+    def mse_metric(y_true, y_pred):
+        return tf.reduce_mean(
             tf.square(y_true - y_pred), axis=0
-        ),
-        "mae": lambda y_true, y_pred: tf.reduce_mean(tf.abs(y_true - y_pred), axis=0),
+        )
+
+    def mae_metric(y_true, y_pred):
+        return tf.reduce_mean(tf.abs(y_true - y_pred), axis=0)
+
+    avail_metrics = {
+        "mse": mse_metric,
+        "mae": mae_metric,
         "crps_energy": crps_energy,
     }
 

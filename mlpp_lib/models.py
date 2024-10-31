@@ -136,7 +136,7 @@ def fully_connected_network(
 
     Return
     ------
-    model: keras Functional model
+    model: keras model
         The built (but not yet compiled) model.
     """
 
@@ -223,7 +223,7 @@ def fully_connected_multibranch_network(
 
     Return
     ------
-    model: keras Functional model
+    model: keras model
         The built (but not yet compiled) model.
     """
 
@@ -325,7 +325,7 @@ def deep_cross_network(
 
     Return
     ------
-    model: keras Functional model
+    model: keras model
         The built (but not yet compiled) model.
     """
     if isinstance(dropout, list):

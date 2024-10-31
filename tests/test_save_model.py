@@ -4,7 +4,7 @@ from inspect import getmembers, isfunction, isclass
 import numpy as np
 import pytest
 import tensorflow as tf
-from keras.engine.functional import Functional
+from tensorflow.keras import Model
 
 from mlpp_lib import models
 from mlpp_lib import losses, metrics
@@ -49,14 +49,14 @@ TEST_METRICS = [
 ]
 
 
-@pytest.mark.parametrize("save_format", ["tf", "h5"])
+@pytest.mark.parametrize("save_format", ["tf", "keras"])
 @pytest.mark.parametrize("loss", TEST_LOSSES)
 @pytest.mark.parametrize("prob_layer", ALL_PROB_LAYERS)
 def test_save_model(save_format, loss, prob_layer, tmp_path):
     """Test model save/load"""
 
-    if save_format == "h5":
-        tmp_path = f"{tmp_path}.h5"
+    if save_format == "keras":
+        tmp_path = f"{tmp_path}.keras"
         save_traces = True  # default value
     else:
         tmp_path = f"{tmp_path}"
@@ -69,11 +69,16 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
         probabilistic_layer=prob_layer,
         mc_dropout=False,
     )
-    assert isinstance(model.from_config(model.get_config()), Functional)
+    # The assertion below fails because of safety mechanism in keras against
+    # the deserialization of Lambda layers that we cannot switch off
+    # assert isinstance(model.from_config(model.get_config()), Model)
     loss = get_loss(loss)
     metrics = [get_metric(metric) for metric in TEST_METRICS]
     model.compile(loss=loss, metrics=metrics)
-    model.save(tmp_path, save_traces=save_traces)
+    if save_format != "keras":
+        model.save(tmp_path, save_traces=save_traces)
+    else:
+        model.save(tmp_path)
 
     # test trying to load the model from a new process
     # this is a bit slow, since each process needs to reload all the dependencies ...
@@ -84,7 +89,7 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
         "-c",
         "import tensorflow as tf;"
         f"from mlpp_lib.probabilistic_layers import {prob_layer};"
-        f"tf.keras.saving.load_model('{tmp_path}', compile=False)",
+        f"tf.keras.saving.load_model('{tmp_path}', compile=False, safe_mode=False)",
     ]
     completed_process = subprocess.run(args, shell=True)
     assert completed_process.returncode == 0, "failed to reload model"
@@ -96,7 +101,7 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
         "import tensorflow as tf;"
         f"from mlpp_lib.losses import {loss};"
         f"from mlpp_lib.probabilistic_layers import {prob_layer};"
-        f"tf.keras.saving.load_model('{tmp_path}', custom_objects={{'{loss}':{loss}}})",
+        f"tf.keras.saving.load_model('{tmp_path}', custom_objects={{'{loss}':{loss}}}, safe_mode=False)",
     ]
     completed_process = subprocess.run(args, shell=True)
     assert completed_process.returncode == 0, "failed to reload model"
@@ -105,8 +110,8 @@ def test_save_model(save_format, loss, prob_layer, tmp_path):
     pred1 = model(input_arr)
     del model
     tf.keras.backend.clear_session()
-    model = tf.keras.saving.load_model(tmp_path, compile=False)
-    assert isinstance(model, Functional)
+    model = tf.keras.saving.load_model(tmp_path, compile=False, safe_mode=False)
+    assert isinstance(model, Model)
 
     pred2 = model(input_arr)
     try:
@@ -137,7 +142,12 @@ def test_save_model_mlflow(tmp_path):
     mlflow.set_tracking_uri(mlflow_uri)
 
     model = models.fully_connected_network(
-        (5,), 2, hidden_layers=[3, 3], dropout=0.5, mc_dropout=True
+        (5,),
+        2,
+        hidden_layers=[3, 3],
+        dropout=0.5,
+        mc_dropout=True,
+        probabilistic_layer="IndependentNormal",
     )
     optimizer = get_optimizer("Adam")
     model.compile(optimizer=optimizer, loss=None, metrics=None)
@@ -147,9 +157,18 @@ def test_save_model_mlflow(tmp_path):
         model,
         "model_save",
         custom_objects=custom_objects,
-        keras_model_kwargs={"save_format": "h5"},
+        keras_model_kwargs={"save_format": "keras"},
     )
 
     tf.keras.backend.clear_session()
-    model = mlflow.tensorflow.load_model(model_info.model_uri)
-    assert isinstance(model, Functional)
+
+    # this raises a ValueError because of the risk of deserializing Lambda layers
+    with pytest.raises(ValueError):
+        model = mlflow.tensorflow.load_model(model_info.model_uri)
+
+    # this should work
+    model: tf.tensorflow.Model = mlflow.tensorflow.load_model(
+        model_info.model_uri, keras_model_kwargs={"safe_mode": False}
+    )
+
+    assert isinstance(model, Model)

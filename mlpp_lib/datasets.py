@@ -402,7 +402,7 @@ class Dataset:
             coords = {dim: x[dim].values for dim in dims if dim != "v"}
             return dims, coords
 
-        if x.dims != y.dims:
+        if x.sizes != y.sizes:
             raise ValueError(
                 "x and y do not have the same dimensions! "
                 f"x has dimensions {x.dims} and y has {y.dims}"
