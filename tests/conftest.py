@@ -9,7 +9,7 @@ from mlpp_lib.utils import get_loss, get_model
 
 
 LEADTIMES = np.arange(24)
-REFTIMES = pd.date_range("2018-01-01", "2018-03-31", freq="24H")
+REFTIMES = pd.date_range("2018-01-01", "2018-03-31", freq="24h")
 STATIONS = [chr(i) * 3 for i in range(ord("A"), ord("Z"))]
 SHAPE = (len(REFTIMES), len(LEADTIMES), len(STATIONS))
 DIMS = ["forecast_reference_time", "t", "station"]

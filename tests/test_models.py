@@ -3,7 +3,7 @@ import itertools
 import numpy as np
 import pytest
 import tensorflow as tf
-from keras.engine.functional import Functional
+from tensorflow.keras import Model
 from numpy.testing import assert_array_equal
 
 from mlpp_lib import models
@@ -35,14 +35,9 @@ DCN_SCENARIOS = [
 
 
 def _test_model(model):
-    moodel_is_keras = (
-        str(type(model)).endswith("keras.engine.sequential.Sequential'>")
-        or str(type(model)).endswith("keras.models.Sequential'>")
-        or str(type(model)).endswith("keras.engine.training.Model'>")
-        or isinstance(model, tf.keras.Model)
-    )
+    moodel_is_keras = isinstance(model, tf.keras.Model)
     assert moodel_is_keras
-    assert isinstance(model, Functional)
+    assert isinstance(model, Model)
     assert len(model.layers[-1]._inbound_nodes) > 0
     model_output = model.layers[-1].output
     assert not isinstance(
