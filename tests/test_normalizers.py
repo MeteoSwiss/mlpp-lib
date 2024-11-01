@@ -165,20 +165,22 @@ class TestLegacyStandardizer:
         data_transformer = DataTransformer.from_dict(dict_stand)
 
         assert all(
-            [
-                np.allclose(
-                    getattr(data_transformer.transformers["Standardizer"][0], attr)[
-                        var
-                    ].values,
-                    getattr(standardizer, attr)[var].values,
-                    equal_nan=True,
+            (
+                [
+                    np.allclose(
+                        getattr(data_transformer.transformers["Standardizer"][0], attr)[
+                            var
+                        ].values,
+                        getattr(standardizer, attr)[var].values,
+                        equal_nan=True,
+                    )
+                    for var in getattr(standardizer, attr).data_vars
+                ]
+                if isinstance(getattr(standardizer, attr), xr.Dataset)
+                else np.allclose(
+                    getattr(data_transformer.transformers["Standardizer"][0], attr),
+                    getattr(standardizer, attr),
                 )
-                for var in getattr(standardizer, attr).data_vars
-            ]
-            if isinstance(getattr(standardizer, attr), xr.Dataset)
-            else np.allclose(
-                getattr(data_transformer.transformers["Standardizer"][0], attr),
-                getattr(standardizer, attr),
             )
             for attr in get_class_attributes(standardizer)
         )

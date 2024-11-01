@@ -451,7 +451,9 @@ class Dataset:
         event_axes = [self.dims.index(dim) for dim in self.dims if dim != "s"]
         mask = da.any(~da.isfinite(da.from_array(x, name="x")), axis=event_axes)
         if y is not None:
-            mask = mask | da.any(~da.isfinite(da.from_array(y, name="y")), axis=event_axes)
+            mask = mask | da.any(
+                ~da.isfinite(da.from_array(y, name="y")), axis=event_axes
+            )
         mask = (~mask).compute()
 
         # with grouped samples, nans have to be removed in blocks:

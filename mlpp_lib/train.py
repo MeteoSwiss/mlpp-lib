@@ -39,8 +39,10 @@ def get_log_params(param_run: dict) -> dict:
 
 def get_lr(optimizer: tf.keras.optimizers.Optimizer) -> float:
     """Get the learning rate of the optimizer"""
+
     def lr(y_true, y_pred):
         return optimizer.lr
+
     return lr
 
 
