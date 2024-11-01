@@ -27,10 +27,10 @@ extended = ["zarr", "numba", "tensorflow"]
 
 [tool.poetry.group.dev.dependencies]
 tensorflow = "~2.16.1"
-pytest = "^7"
-black = "^22.1.0"
-mlflow = "^2.8.1"
-jupyter = "^1.0.0"
+pytest = "*"
+black = "*"
+mlflow = "*"
+jupyter = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.8"]
