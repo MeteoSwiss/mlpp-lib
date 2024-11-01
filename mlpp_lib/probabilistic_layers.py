@@ -88,9 +88,7 @@ class IndependentBeta(tfpl.DistributionLambda):
             return IndependentBeta.new(t, event_shape, validate_args)
 
         super(IndependentBeta, self).__init__(
-            new_from_t,
-            convert_to_tensor_fn,
-            **kwargs
+            new_from_t, convert_to_tensor_fn, **kwargs
         )
 
         self._event_shape = event_shape
@@ -200,9 +198,7 @@ class Independent4ParamsBeta(tfpl.DistributionLambda):
             return Independent4ParamsBeta.new(t, event_shape, validate_args)
 
         super(Independent4ParamsBeta, self).__init__(
-            new_from_t,
-            convert_to_tensor_fn,
-            **kwargs
+            new_from_t, convert_to_tensor_fn, **kwargs
         )
 
         self._event_shape = event_shape
@@ -313,14 +309,10 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
         kwargs.pop("make_distribution_fn", None)
 
         def new_from_t(t):
-            return  IndependentDoublyCensoredNormal.new(
-                        t, event_shape, validate_args
-                    )
+            return IndependentDoublyCensoredNormal.new(t, event_shape, validate_args)
 
         super(IndependentDoublyCensoredNormal, self).__init__(
-            new_from_t,
-            convert_to_tensor_fn,
-            **kwargs
+            new_from_t, convert_to_tensor_fn, **kwargs
         )
 
         self._event_shape = event_shape
@@ -505,9 +497,7 @@ class IndependentConcaveBeta(tfpl.DistributionLambda):
             return IndependentConcaveBeta.new(t, event_shape, validate_args)
 
         super(IndependentConcaveBeta, self).__init__(
-            new_from_t,
-            convert_to_tensor_fn,
-            **kwargs
+            new_from_t, convert_to_tensor_fn, **kwargs
         )
 
         self._event_shape = event_shape
@@ -621,9 +611,7 @@ class IndependentGamma(tfpl.DistributionLambda):
             return IndependentGamma.new(t, event_shape, validate_args)
 
         super(IndependentGamma, self).__init__(
-            new_from_t,
-            convert_to_tensor_fn,
-            **kwargs
+            new_from_t, convert_to_tensor_fn, **kwargs
         )
 
         self._event_shape = event_shape
@@ -734,9 +722,7 @@ class IndependentLogNormal(tfpl.DistributionLambda):
             return IndependentLogNormal.new(t, event_shape, validate_args)
 
         super(IndependentLogNormal, self).__init__(
-            new_from_t,
-            convert_to_tensor_fn,
-            **kwargs
+            new_from_t, convert_to_tensor_fn, **kwargs
         )
 
         self._event_shape = event_shape
@@ -845,9 +831,7 @@ class IndependentLogitNormal(tfpl.DistributionLambda):
             return IndependentLogitNormal.new(t, event_shape, validate_args)
 
         super(IndependentLogitNormal, self).__init__(
-            new_from_t,
-            convert_to_tensor_fn,
-            **kwargs
+            new_from_t, convert_to_tensor_fn, **kwargs
         )
 
         self._event_shape = event_shape
@@ -959,9 +943,7 @@ class IndependentMixtureNormal(tfpl.DistributionLambda):
             return IndependentMixtureNormal.new(t, event_shape, validate_args)
 
         super(IndependentMixtureNormal, self).__init__(
-            new_from_t,
-            convert_to_tensor_fn,
-            **kwargs
+            new_from_t, convert_to_tensor_fn, **kwargs
         )
 
         self._event_shape = event_shape
@@ -1135,9 +1117,7 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
             return IndependentTruncatedNormal.new(t, event_shape, validate_args)
 
         super(IndependentTruncatedNormal, self).__init__(
-            new_from_t,
-            convert_to_tensor_fn,
-            **kwargs
+            new_from_t, convert_to_tensor_fn, **kwargs
         )
 
         self._event_shape = event_shape
@@ -1248,9 +1228,7 @@ class IndependentWeibull(tfpl.DistributionLambda):
             return IndependentWeibull.new(t, event_shape, validate_args)
 
         super(IndependentWeibull, self).__init__(
-            new_from_t,
-            convert_to_tensor_fn,
-            **kwargs
+            new_from_t, convert_to_tensor_fn, **kwargs
         )
 
         self._event_shape = event_shape
@@ -1365,9 +1343,7 @@ class MultivariateNormalDiag(tfpl.DistributionLambda):
             return MultivariateNormalDiag.new(t, event_size, validate_args)
 
         super(MultivariateNormalDiag, self).__init__(
-            new_from_t,
-            convert_to_tensor_fn,
-            **kwargs
+            new_from_t, convert_to_tensor_fn, **kwargs
         )
 
         self._event_size = event_size

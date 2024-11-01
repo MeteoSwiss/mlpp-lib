@@ -432,9 +432,7 @@ class MultivariateLoss(tf.keras.losses.Loss):
     """
 
     def mse_metric(y_true, y_pred):
-        return tf.reduce_mean(
-            tf.square(y_true - y_pred), axis=0
-        )
+        return tf.reduce_mean(tf.square(y_true - y_pred), axis=0)
 
     def mae_metric(y_true, y_pred):
         return tf.reduce_mean(tf.abs(y_true - y_pred), axis=0)

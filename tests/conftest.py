@@ -76,7 +76,9 @@ def datatransformations() -> list:
     import mlpp_lib.normalizers as no
 
     datatransformations = [
-        no.create_transformation_from_str(n.name, inputs={"fillvalue": -5} if n.name == "Identity" else {}) # temporary fix, do we want to let the user define different fillvalue for each transformation ?
+        no.create_transformation_from_str(
+            n.name, inputs={"fillvalue": -5} if n.name == "Identity" else {}
+        )  # temporary fix, do we want to let the user define different fillvalue for each transformation ?
         for n in no.DataTransformation.__subclasses__()
     ]
 
@@ -96,7 +98,11 @@ def data_transformer() -> xr.Dataset:
         for i, transformation in enumerate(transformations_list)
     }
     data_transformer = no.DataTransformer(method_var_dict)
-    data_transformer.transformers['Identity'][0].fillvalue = -5 # temporary fix, do we want to let the user define different fillvalue for each transformation ?
+    data_transformer.transformers["Identity"][
+        0
+    ].fillvalue = (
+        -5
+    )  # temporary fix, do we want to let the user define different fillvalue for each transformation ?
 
     return data_transformer
 
