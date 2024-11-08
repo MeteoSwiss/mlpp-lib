@@ -14,7 +14,6 @@ from tensorflow.keras import Model, initializers
 
 from mlpp_lib.physical_layers import *
 from mlpp_lib.probabilistic_layers import *
-from mlpp_lib.utils import get_probabilistic_layer
 
 try:
     import tcn  # type: ignore
@@ -31,6 +30,32 @@ _LOGGER = logging.getLogger(__name__)
 class MonteCarloDropout(Dropout):
     def call(self, inputs):
         return super().call(inputs, training=True)
+
+
+def get_probabilistic_layer(
+    output_size,
+    probabilistic_layer: Union[str, dict]
+) -> Callable:
+    """Get the probabilistic layer."""
+
+    if isinstance(probabilistic_layer, dict):
+        probabilistic_layer_name = list(probabilistic_layer.keys())[0]
+        probabilistic_layer_options = probabilistic_layer[probabilistic_layer_name]
+    else:
+        probabilistic_layer_name = metric
+        probabilistic_layer_options = {}
+
+    if hasattr(probabilistic_layers, probabilistic_layer_name):
+        LOGGER.info(f"Using custom probabilistic layer: {probabiistic_layer_name}")
+        probabilistic_layer_obj = getattr(probabilistic_layers, probabilistic_layer_name)
+        probabilistic_layer = (
+            probabilistic_layer_obj(output_size, name="output", **probabilistic_layer_options) if isinstance(probabilistic_layer_obj, type) 
+            else probabilistic_layer_obj(output_size, name="output")
+        )
+    else:
+        raise KeyError(f"The probabilistic layer {probabilistic_layer_name} is not available.")
+
+    return probabilistic_layer
 
 
 def _build_fcn_block(
