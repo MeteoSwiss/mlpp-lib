@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Union, Any
+from typing import Optional, Union, Any, Callable
 
 import numpy as np
 import tensorflow as tf
