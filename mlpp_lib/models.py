@@ -67,8 +67,8 @@ def _build_fcn_block(
 def _build_fcn_output(x, output_size, probabilistic_layer, out_bias_init):
     # probabilistic prediction
     if probabilistic_layer:
-        probabilistic_layer = globals()[probabilistic_layer]
         n_params = probabilistic_layer.params_size(output_size)
+        probabilistic_layer = get_probabilistic_layer(output_size, probabilistic_layer)
         if isinstance(out_bias_init, np.ndarray):
             out_bias_init = np.hstack(
                 [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
@@ -76,7 +76,7 @@ def _build_fcn_output(x, output_size, probabilistic_layer, out_bias_init):
             out_bias_init = initializers.Constant(out_bias_init)
 
         x = Dense(n_params, bias_initializer=out_bias_init, name="dist_params")(x)
-        outputs = probabilistic_layer(output_size, name="output")(x)
+        outputs = probabilistic_layer(x)
 
     # deterministic prediction
     else:
@@ -379,8 +379,8 @@ def deep_cross_network(
 
     # probabilistic prediction
     if probabilistic_layer:
-        probabilistic_layer = globals()[probabilistic_layer]
         n_params = probabilistic_layer.params_size(output_size)
+        probabilistic_layer = get_probabilistic_layer(output_size, probabilistic_layer)
         if isinstance(out_bias_init, np.ndarray):
             out_bias_init = np.hstack(
                 [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
@@ -388,7 +388,7 @@ def deep_cross_network(
             out_bias_init = initializers.Constant(out_bias_init)
 
         x = Dense(n_params, bias_initializer=out_bias_init, name="dist_params")(merge)
-        outputs = probabilistic_layer(output_size, name="output")(x)
+        outputs = probabilistic_layer(x)
 
     # deterministic prediction
     else:
