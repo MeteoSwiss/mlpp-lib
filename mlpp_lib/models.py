@@ -42,7 +42,7 @@ def get_probabilistic_layer(
         probabilistic_layer_name = list(probabilistic_layer.keys())[0]
         probabilistic_layer_options = probabilistic_layer[probabilistic_layer_name]
     else:
-        probabilistic_layer_name = metric
+        probabilistic_layer_name = probabilistic_layer
         probabilistic_layer_options = {}
 
     if hasattr(probabilistic_layers, probabilistic_layer_name):
