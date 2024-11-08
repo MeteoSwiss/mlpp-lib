@@ -380,7 +380,6 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                                 + c_l * Phi((c_l - mu) / sigma) 
                                 + mu * (Phi((c_h - mu) / sigma) - Phi(c_l - mu / sigma)) 
                                 + sigma * (phi(c_l - mu / sigma) - phi((c_h - mu) / sigma))
-                                
                     Ref for TruncatedNormal mean: https://en.wikipedia.org/wiki/Truncated_normal_distribution
                     """
                     mu, sigma = self.normal.mean(), self.normal.stddev()
