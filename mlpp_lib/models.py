@@ -14,6 +14,7 @@ from tensorflow.keras import Model, initializers
 
 from mlpp_lib.physical_layers import *
 from mlpp_lib.probabilistic_layers import *
+from mlpp_lib.utils import get_probabilistic_layer
 
 try:
     import tcn  # type: ignore
