@@ -46,7 +46,7 @@ def get_probabilistic_layer(
         probabilistic_layer_options = {}
 
     if hasattr(probabilistic_layers, probabilistic_layer_name):
-        LOGGER.info(f"Using custom probabilistic layer: {probabilistic_layer_name}")
+        _LOGGER.info(f"Using custom probabilistic layer: {probabilistic_layer_name}")
         probabilistic_layer_obj = getattr(probabilistic_layers, probabilistic_layer_name)
         n_params = getattr(probabilistic_layers, probabilistic_layer_name).param_size(output_size)
         probabilistic_layer = (
