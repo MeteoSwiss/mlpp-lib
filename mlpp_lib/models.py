@@ -13,7 +13,7 @@ from tensorflow.keras.layers import (
 from tensorflow.keras import Model, initializers
 
 from mlpp_lib.physical_layers import *
-from mlpp_lib.probabilistic_layers import *
+from mlpp_lib import probabilistic_layers
 
 try:
     import tcn  # type: ignore
@@ -46,8 +46,9 @@ def get_probabilistic_layer(
         probabilistic_layer_options = {}
 
     if hasattr(probabilistic_layers, probabilistic_layer_name):
-        LOGGER.info(f"Using custom probabilistic layer: {probabiistic_layer_name}")
+        LOGGER.info(f"Using custom probabilistic layer: {probabilistic_layer_name}")
         probabilistic_layer_obj = getattr(probabilistic_layers, probabilistic_layer_name)
+        n_params = getattr(probabilistic_layers, probabilistic_layer_name).param_size(output_size)
         probabilistic_layer = (
             probabilistic_layer_obj(output_size, name="output", **probabilistic_layer_options) if isinstance(probabilistic_layer_obj, type) 
             else probabilistic_layer_obj(output_size, name="output")
@@ -55,7 +56,7 @@ def get_probabilistic_layer(
     else:
         raise KeyError(f"The probabilistic layer {probabilistic_layer_name} is not available.")
 
-    return probabilistic_layer
+    return probabilistic_layer, n_params
 
 
 def _build_fcn_block(
@@ -93,8 +94,7 @@ def _build_fcn_block(
 def _build_fcn_output(x, output_size, probabilistic_layer, out_bias_init):
     # probabilistic prediction
     if probabilistic_layer:
-        n_params = globals()[probabilistic_layer].params_size(output_size)
-        probabilistic_layer = get_probabilistic_layer(output_size, probabilistic_layer)
+        probabilistic_layer, n_params = get_probabilistic_layer(output_size, probabilistic_layer)
         if isinstance(out_bias_init, np.ndarray):
             out_bias_init = np.hstack(
                 [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
@@ -273,7 +273,7 @@ def fully_connected_multibranch_network(
         )
 
     if probabilistic_layer:
-        n_params = globals()[probabilistic_layer].params_size(output_size)
+        _, n_params = get_probabilistic_layer(output_size, probabilistic_layer)
         n_branches = n_params
     else:
         n_branches = output_size
@@ -405,8 +405,7 @@ def deep_cross_network(
 
     # probabilistic prediction
     if probabilistic_layer:
-        n_params = globals()[probabilistic_layer].params_size(output_size)
-        probabilistic_layer = get_probabilistic_layer(output_size, probabilistic_layer)
+        probabilistic_layer, n_params = get_probabilistic_layer(output_size, probabilistic_layer)
         if isinstance(out_bias_init, np.ndarray):
             out_bias_init = np.hstack(
                 [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
