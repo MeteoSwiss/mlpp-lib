@@ -209,7 +209,7 @@ class DataSplitter:
                     end_date = np.datetime64(test_indexers[1])
                     test_indexers = self.time_index[
                         np.logical_and(
-                            self.time_index >= start_date, self.time_index <= end_date
+                            self.time_index >= start_date, self.time_index < end_date
                         )
                     ]
                 test_indexers = [t for t in test_indexers if t in self.time_index]
