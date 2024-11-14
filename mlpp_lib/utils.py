@@ -5,7 +5,7 @@ import numpy as np
 import xarray as xr
 import tensorflow as tf
 
-from mlpp_lib import callbacks, losses, metrics, models, probabilistic_layers
+from mlpp_lib import callbacks, losses, metrics, models
 
 
 LOGGER = logging.getLogger(__name__)
