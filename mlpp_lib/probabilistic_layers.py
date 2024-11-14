@@ -307,9 +307,18 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
         # distribution function to `DistributionLambda.__init__` below as the first
         # positional argument.
         kwargs.pop("make_distribution_fn", None)
+        # get the clipping parameters and pop them
+        _clip_low = kwargs.pop("clip_low", 0.0)
+        _clip_high = kwargs.pop("clip_high", 1.0)
 
         def new_from_t(t):
-            return IndependentDoublyCensoredNormal.new(t, event_shape, validate_args)
+            return IndependentDoublyCensoredNormal.new(
+                t,
+                event_shape,
+                validate_args,
+                clip_low=_clip_low,
+                clip_high=_clip_high,
+            )
 
         super(IndependentDoublyCensoredNormal, self).__init__(
             new_from_t, convert_to_tensor_fn, **kwargs
@@ -320,7 +329,14 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
         self._validate_args = validate_args
 
     @staticmethod
-    def new(params, event_shape=(), validate_args=False, name=None):
+    def new(
+        params,
+        event_shape=(),
+        validate_args=False,
+        name=None,
+        clip_low=0.0,
+        clip_high=1.0,
+    ):
         """Create the distribution instance from a `params` vector."""
         with tf.name_scope(name or "IndependentDoublyCensoredNormal"):
             params = tf.convert_to_tensor(params, name="params")
@@ -343,7 +359,7 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
             normal_dist = tfd.Normal(loc=loc, scale=scale, validate_args=validate_args)
 
             class CustomCensored(tfd.Distribution):
-                def __init__(self, normal):
+                def __init__(self, normal, clip_low=0.0, clip_high=1.0):
                     self.normal = normal
                     super(CustomCensored, self).__init__(
                         dtype=normal.dtype,
@@ -351,6 +367,8 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                         validate_args=validate_args,
                         allow_nan_stats=True,
                     )
+                    self.clip_low = clip_low
+                    self.clip_high = clip_high
 
                 def _sample_n(self, n, seed=None):
 
@@ -358,32 +376,38 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                     samples = self.normal.sample(sample_shape=(n,), seed=seed)
 
                     # Clip values between 0 and 1
-                    chosen_samples = tf.clip_by_value(samples, 0, 1)
+                    chosen_samples = tf.clip_by_value(
+                        samples, self.clip_low, self.clip_high
+                    )
 
                     return chosen_samples
 
                 def _mean(self):
                     """
                     Original: X ~ N(mu, sigma)
-                    Censored: Y = X if 0 <= X <= 1 else 0 if X < 0 else 1
+                    Censored: Y = X if clip_low <= X <= clip_high else clip_low if X < clip_low else clip_high
                     Phi / phi: CDF / PDF of standard normal distribution
 
                     Law of total expectations:
-                        E[Y] = E[Y | X > 1] * P(X > 1) + E[Y | X < 0] * P(X < 0) + E[Y | 0 <= X <= 1] * P(0 <= X <= 1)
-                             = 1 * P(X > 1) + P(X < 0) * 0 + E[X | 0 <= X <= 1] * P(0 <= X <= 1)
-                             = 1 * P(X > 1) + E[Z ~ TruncNormal(mu, sigma, 0, 1)] * (Phi((1 - mu) / sigma) - Phi(-mu / sigma))
-                             = 1 * (1 - Phi((1 - mu) / sigma)) + mu * (Phi((1 - mu) / sigma) - Phi(-mu / sigma)) + sigma * (phi(-mu / sigma) - phi((1 - mu) / sigma))
+                        E[Y] = E[Y | X > c_h] * P(X > c_h) + E[Y | X < c_l] * P(X < c_l) + E[Y | c_l <= X <= c_h] * P(c_l <= X <= c_h)
+                             = c_h * P(X > c_h) + P(X < c_l) * c_l + E[Y | c_l <= X <= c_h] * P(c_l <= X <= c_h)
+                             = c_h * P(X > c_h) + P(X < c_l) * c_l + E[Z ~ TruncNormal(mu, sigma, c_l, c_h)] * (Phi((c_h - mu) / sigma) - Phi(c_l - mu / sigma))
+                             = c_h * (1 - Phi((c_h - mu) / sigma))
+                                + c_l * Phi((c_l - mu) / sigma)
+                                + mu * (Phi((c_h - mu) / sigma) - Phi(c_l - mu / sigma))
+                                + sigma * (phi(c_l - mu / sigma) - phi((c_h - mu) / sigma))
                     Ref for TruncatedNormal mean: https://en.wikipedia.org/wiki/Truncated_normal_distribution
                     """
                     mu, sigma = self.normal.mean(), self.normal.stddev()
-                    low_bound_standard = (0 - mu) / sigma
-                    high_bound_standard = (1 - mu) / sigma
+                    low_bound_standard = (self.clip_low - mu) / sigma
+                    high_bound_standard = (self.clip_high - mu) / sigma
 
                     cdf = lambda x: tfd.Normal(0, 1).cdf(x)
                     pdf = lambda x: tfd.Normal(0, 1).prob(x)
 
                     return (
-                        1 * (1 - cdf(high_bound_standard))
+                        self.clip_high * (1 - cdf(high_bound_standard))
+                        + self.clip_low * cdf(low_bound_standard)
                         + mu * (cdf(high_bound_standard) - cdf(low_bound_standard))
                         + sigma * (pdf(low_bound_standard) - pdf(high_bound_standard))
                     )
@@ -394,10 +418,12 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                     cdf = lambda x: tfd.Normal(0, 1).cdf(x)
                     pdf = lambda x: tfd.Normal(0, 1).prob(x)
 
-                    logprob_left = lambda x: tf.math.log(cdf(-mu / sigma) + 1e-3)
+                    logprob_left = lambda x: tf.math.log(
+                        cdf(self.clip_low - mu / sigma) + 1e-3
+                    )
                     logprob_middle = lambda x: self.normal.log_prob(x)
                     logprob_right = lambda x: tf.math.log(
-                        1 - cdf((1 - mu) / sigma) + 1e-3
+                        1 - cdf((self.clip_high - mu) / sigma) + 1e-3
                     )
 
                     return (
@@ -407,7 +433,7 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
                     )
 
             return independent_lib.Independent(
-                CustomCensored(normal_dist),
+                CustomCensored(normal_dist, clip_low=clip_low, clip_high=clip_high),
                 reinterpreted_batch_ndims=tf.size(event_shape),
                 validate_args=validate_args,
             )
