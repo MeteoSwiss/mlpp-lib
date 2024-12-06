@@ -1,5 +1,5 @@
-import tensorflow as tf
-from tensorflow.keras.layers import Layer
+from keras.layers import Layer
+import keras.backend as K
 
 
 class ThermodynamicLayer(Layer):
@@ -23,7 +23,7 @@ class ThermodynamicLayer(Layer):
         self.D_idx = 1  # dew_point_deficit
         self.P_idx = 2  # surface_air_pressure
 
-        self.EPSILON = tf.constant(622.0)
+        self.EPSILON = K.constant(622.0)
 
     def build(self, input_shape: tuple[int]) -> None:
         super().build(input_shape)
@@ -38,11 +38,11 @@ class ThermodynamicLayer(Layer):
         dew_point_deficit = inputs[..., self.D_idx]
         surface_air_pressure = inputs[..., self.P_idx]
 
-        dew_point_temperature = air_temperature - tf.nn.relu(dew_point_deficit)
-        water_vapor_saturation_pressure = 6.112 * tf.exp(
+        dew_point_temperature = air_temperature - K.relu(dew_point_deficit)
+        water_vapor_saturation_pressure = 6.112 * K.exp(
             (17.67 * air_temperature) / (air_temperature + 243.5)
         )
-        water_vapor_pressure = 6.112 * tf.exp(
+        water_vapor_pressure = 6.112 * K.exp(
             (17.67 * dew_point_temperature) / (dew_point_temperature + 243.5)
         )
         relative_humidity = (
@@ -52,7 +52,7 @@ class ThermodynamicLayer(Layer):
             water_vapor_pressure / (surface_air_pressure - water_vapor_pressure)
         )
 
-        out = tf.concat(
+        out = K.concat(
             [
                 air_temperature[..., None],
                 dew_point_temperature[..., None],
