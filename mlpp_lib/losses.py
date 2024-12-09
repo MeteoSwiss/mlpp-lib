@@ -9,6 +9,7 @@ from keras import tree
 from keras.src.losses.loss import reduce_weighted_values
 from keras.src.losses.losses import LossFunctionWrapper
 from keras.src import backend
+import warnings
 
 class DistributionLoss(keras.Loss):
     """Loss base class allowing for non-tensor (distributions) inputs.
@@ -72,13 +73,18 @@ class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
             params = [getattr(y_pred, p) for p in self._sr_param_order(y_pred)]
             params = self._sr_reparametrization(y_pred)(*params)
             
-            return fn(y_true, *params, **kwargs)
+            return fn(y_true.squeeze(), *params, **kwargs) # TODO check y_true.squeeze() for generic cases
         
         super().__init__(_extract_wrapper, **kwargs)
         
     def call(self, y_true, y_pred):
-        return self.fn(y_true, y_pred, **self._fn_kwargs)
-    
+        losses = self.fn(y_true, y_pred, **self._fn_kwargs)
+        if losses.numel() != y_true.shape[0]:
+            warnings.warn(
+                    f"The number of elements in the losses tensor (shape {losses.shape}) is not as expected. There probably is an error.",
+                    UserWarning,)
+        return losses
+
     @staticmethod
     def _sr_param_order(dist: torch.distributions.Distribution) -> list[str]:
         """Given a distribution, returns a list 

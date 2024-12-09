@@ -16,7 +16,7 @@ from keras import Model, initializers
 from mlpp_lib.physical_layers import *
 # from mlpp_lib import probabilistic_layers
 from mlpp_lib.probabilistic_layers import BaseDistributionLayer, BaseParametricDistribution
-from mlpp_lib.torch_prob_layers import distribution_to_layer, BaseSamplerLayer
+
 
 try:
     import tcn  # type: ignore
@@ -55,11 +55,11 @@ class MonteCarloDropout(Dropout):
     def call(self, inputs):
         return super().call(inputs, training=True)
 
-def get_probabilistic_layer(distribution: str, bias_init, distribution_kwargs={},num_samples=21):
-    probabilistic_layer = distribution_to_layer[distribution](**distribution_kwargs)
-    return BaseSamplerLayer(prob_layer=probabilistic_layer,
-                            num_samples=num_samples,
-                            bias_init=bias_init)
+# def get_probabilistic_layer(distribution: str, bias_init, distribution_kwargs={},num_samples=21):
+#     probabilistic_layer = distribution_to_layer[distribution](**distribution_kwargs)
+#     return BaseSamplerLayer(prob_layer=probabilistic_layer,
+#                             num_samples=num_samples,
+#                             bias_init=bias_init)
 
 # def get_probabilistic_layer(
 #     output_size,

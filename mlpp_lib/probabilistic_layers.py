@@ -32,16 +32,17 @@ class UniveriateGaussianDistribution(nn.Module, BaseParametricDistribution):
     '''
     def __init__(self, **kwargs):
         super(UniveriateGaussianDistribution, self).__init__()
-        self.get_positive_std = torch.nn.ReLU()
+        self.get_positive_std = torch.nn.Softplus()
 
     def forward(self, moments, num_samples=1, return_dist=False):
         
-        moments[:,1] = self.get_positive_std(moments[:,1]) + 0.0001
-        # new_moments = moments.clone()  # Create a copy of `moments`
-        # new_moments[:, 1] = self.get_positive_std(moments[:, 1])
+        # Create a copy of `moments` to avoid issues when using Softplus 
+        # on tensor selections 
+        new_moments = moments.clone()  
+        new_moments[:, 1] = self.get_positive_std(moments[:, 1])
 
         
-        normal_dist = torch.distributions.Normal(moments[:,0], moments[:,1])
+        normal_dist = torch.distributions.Normal(new_moments[:,0], new_moments[:,1])
         if return_dist:
             return normal_dist
         samples = normal_dist.rsample(sample_shape=(num_samples,1))
@@ -129,17 +130,20 @@ class BaseDistributionLayer(Layer):
         super(BaseDistributionLayer, self).__init__(**kwargs)
 
         self.prob_layer = TorchModuleWrapper(distribution, name=distribution.name)
-        
+        self.num_dist_params = distribution.num_parameters
         
         if isinstance(bias_init, np.ndarray):
             bias_init = np.hstack(
                 [bias_init, [0.0] * (distribution.num_parameters - bias_init.shape[0])]
             )
             bias_init = initializers.Constant(bias_init)
+        self.bias_init = bias_init
         # linear layer to map any input size into the number of parameters of the underlying distribution.
-        self.parameters_encoder = Dense(distribution.num_parameters, name='parameters_encoder', bias_initializer=bias_init)
         self.num_samples=num_samples
 
+    def build(self, input_shape):
+        self.parameters_encoder = Dense(self.num_dist_params, name='parameters_encoder', bias_initializer=self.bias_init)
+        super().build(input_shape)
 
     def call(self, inputs, output_type: Literal["distribution", "samples"]='distribution', **kwargs):
         predicted_parameters = self.parameters_encoder(inputs)
