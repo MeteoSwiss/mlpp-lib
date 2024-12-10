@@ -73,7 +73,7 @@ class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
             params = [getattr(y_pred, p) for p in self._sr_param_order(y_pred)]
             params = self._sr_reparametrization(y_pred)(*params)
             
-            return fn(y_true.squeeze(), *params, **kwargs) # TODO check y_true.squeeze() for generic cases
+            return fn(y_true, *params, **kwargs)
         
         super().__init__(_extract_wrapper, **kwargs)
         
@@ -84,6 +84,8 @@ class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
                     f"The number of elements in the losses tensor (shape {losses.shape}) is not as expected. There probably is an error.",
                     UserWarning,)
         return losses
+    
+
 
     @staticmethod
     def _sr_param_order(dist: torch.distributions.Distribution) -> list[str]:

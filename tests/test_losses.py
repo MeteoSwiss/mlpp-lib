@@ -13,7 +13,6 @@ DISTRIBUTIONS = [obj[0] for obj in getmembers(probabilistic_layers, isclass)
 def test_scoringrules_crps_normal():
     mu, sigma = torch.randn(32,1), torch.ones(32,1)
     y_pred = torch.distributions.Normal(mu, sigma)
-    
     y_true = torch.randn(32,1)
     loss_fn = DistributionLossWrapper(fn=sr.crps_normal)
     

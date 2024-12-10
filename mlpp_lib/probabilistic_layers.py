@@ -42,7 +42,7 @@ class UniveriateGaussianDistribution(nn.Module, BaseParametricDistribution):
         new_moments[:, 1] = self.get_positive_std(moments[:, 1])
 
         
-        normal_dist = torch.distributions.Normal(new_moments[:,0], new_moments[:,1])
+        normal_dist = torch.distributions.Normal(new_moments[:,0:1], new_moments[:,1:2])
         if return_dist:
             return normal_dist
         samples = normal_dist.rsample(sample_shape=(num_samples,1))

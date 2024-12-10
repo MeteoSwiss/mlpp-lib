@@ -6,31 +6,79 @@ from mlpp_lib.layers import FullyConnectedLayer
 from mlpp_lib.probabilistic_layers import (
     BaseDistributionLayer, 
     BaseParametricDistribution, 
-    UniveriateGaussianDistribution
+    UniveriateGaussianDistribution,
+    distribution_to_layer
 )
-from mlpp_lib.models import ProbabilisticModel
+from mlpp_lib.models import (
+    fully_connected_network, 
+    fully_connected_multibranch_network,
+    deep_cross_network,
+)
+
 from mlpp_lib import probabilistic_layers
 
 DISTRIBUTIONS = [obj[1] for obj in getmembers(probabilistic_layers, isclass) 
                  if issubclass(obj[1], BaseParametricDistribution) and obj[0] != 'BaseParametricDistribution']
 
 
-@pytest.mark.parametrize("distribution", DISTRIBUTIONS)
-def test_probabilistic_model(distribution):
-    encoder = FullyConnectedLayer(hidden_layers=[64,64,8], 
-                                  batchnorm=True, 
-                                  skip_connection=True)
+@pytest.mark.parametrize("distribution", list(distribution_to_layer.keys())+[None])
+@pytest.mark.parametrize("skip_connection", [True, False])
+@pytest.mark.parametrize("batchnorm", [True, False])
+def test_fcn_model_creation(distribution, skip_connection, batchnorm):
     
-    prob_layer = BaseDistributionLayer(distribution=distribution())
+    hidden_layers=[16,16,8]
+    output_size = 4
     
-    model = ProbabilisticModel(encoder_layer=encoder,
-                               probabilistic_layer=prob_layer)
+    model = fully_connected_network(output_size=output_size, 
+                            hidden_layers=hidden_layers,
+                            batchnorm=batchnorm,
+                            skip_connection=skip_connection,
+                            probabilistic_layer=distribution)
     
+     
     inputs = torch.randn(32,6)
     
     output = model(inputs)
     
     
+@pytest.mark.parametrize("distribution", list(distribution_to_layer.keys())+[None])
+@pytest.mark.parametrize("skip_connection", [True, False])
+@pytest.mark.parametrize("batchnorm", [True, False])
+@pytest.mark.parametrize("aggregation", ['sum', 'concat'])
+def test_multibranch_fcn_creation(distribution, skip_connection, batchnorm, aggregation):
+    hidden_layers=[16,16,8]
+    output_size = 4
+    n_branches = 3
+    
+    model = fully_connected_multibranch_network(output_size=output_size, 
+                                                hidden_layers=hidden_layers,
+                                                batchnorm=batchnorm,
+                                                skip_connection=skip_connection,
+                                                probabilistic_layer=distribution,
+                                                n_branches=n_branches,
+                                                aggregation=aggregation)
+    
+    
+    inputs = torch.randn(32,6)
+    
+    output = model(inputs)
+    
+
+@pytest.mark.parametrize("distribution", list(distribution_to_layer.keys())+[None], ids=lambda d: f"distribution={d}" if d else "distribution=None")
+def test_deep_cross_network(distribution):
+    hidden_layers=[16,16,8]
+    output_size = 4
+    n_crosses = 3
+    
+    model = deep_cross_network(output_size=output_size,
+                       hidden_layers=hidden_layers,
+                       n_cross_layers=n_crosses,
+                       cross_layers_hiddensize=16,
+                       probabilistic_layer=distribution)
+    
+    inputs = torch.randn(32,6)
+    
+    output = model(inputs)
     
 
 # import itertools
