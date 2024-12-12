@@ -2,13 +2,13 @@ import torch
 from inspect import getmembers, isclass
 from mlpp_lib import probabilistic_layers
 from mlpp_lib.losses import DistributionLossWrapper
-from mlpp_lib.probabilistic_layers import BaseParametricDistribution
+from mlpp_lib.probabilistic_layers import BaseParametricDistributionModule
 import scoringrules as sr
 import numpy as np
 import keras 
 
 DISTRIBUTIONS = [obj[0] for obj in getmembers(probabilistic_layers, isclass) 
-                 if issubclass(obj[1], BaseParametricDistribution) and obj[0] != 'BaseParametricDistribution']
+                 if issubclass(obj[1], BaseParametricDistributionModule) and obj[0] != 'BaseParametricDistribution']
 
 def test_scoringrules_crps_normal():
     mu, sigma = torch.randn(32,1), torch.ones(32,1)

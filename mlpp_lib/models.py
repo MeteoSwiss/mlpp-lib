@@ -16,7 +16,7 @@ from keras import Model, initializers
 
 from mlpp_lib.physical_layers import *
 # from mlpp_lib import probabilistic_layers
-from mlpp_lib.probabilistic_layers import BaseDistributionLayer, BaseParametricDistribution, distribution_to_layer
+from mlpp_lib.probabilistic_layers import BaseDistributionLayer, BaseParametricDistributionModule, distribution_to_layer
 from mlpp_lib.layers import FullyConnectedLayer, MultibranchLayer, CrossNetLayer, ParallelConcatenateLayer
 
 try:
@@ -130,8 +130,7 @@ def _build_fcn_output(output_size, out_bias_init, probabilistic_layer=None, **di
         return Dense(output_size, name='output', bias_initializer=out_bias_init)
     
     
-    prob_layer = get_probabilistic_layer(distribution=probabilistic_layer, bias_init=out_bias_init,
-                                         **distribution_kwargs)
+    prob_layer = get_probabilistic_layer(distribution=probabilistic_layer, bias_init=out_bias_init,distribution_kwargs=distribution_kwargs)
     return prob_layer
  
 def fully_connected_network(
@@ -144,6 +143,7 @@ def fully_connected_network(
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
     skip_connection: bool = False,
+    prob_layer_kwargs: dict = {}
 ) -> Model:
     """
     Get an unbuilt Fully Connected Neural Network.
@@ -192,7 +192,7 @@ def fully_connected_network(
     
     output_layer = _build_fcn_output(out_bias_init=out_bias_init,
                                      output_size=output_size,
-                                     probabilistic_layer=probabilistic_layer)
+                                     probabilistic_layer=probabilistic_layer, **prob_layer_kwargs)
     
     if probabilistic_layer is None:
         return keras.models.Sequential([ffnn, output_layer])
@@ -213,7 +213,8 @@ def fully_connected_multibranch_network(
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
     skip_connection: bool = False,
-    aggregation: Literal['sum', 'concat']='concat'
+    aggregation: Literal['sum', 'concat']='concat',
+    prob_layer_kwargs: dict = {}
 ) -> Model:
     """
     Returns an unbuilt a multi-branch Fully Connected Neural Network.
@@ -276,7 +277,7 @@ def fully_connected_multibranch_network(
     
     output_layer = _build_fcn_output(out_bias_init=out_bias_init,
                                      output_size=output_size,
-                                     probabilistic_layer=probabilistic_layer)
+                                     probabilistic_layer=probabilistic_layer, **prob_layer_kwargs)
     
     if probabilistic_layer is None:
         return keras.models.Sequential([mb_ffnn, output_layer])
@@ -295,7 +296,8 @@ def deep_cross_network(
     dropout: Optional[Union[float, list[float]]] = None,
     mc_dropout: bool = False,
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
-    probabilistic_layer: Optional[str] = None
+    probabilistic_layer: Optional[str] = None,
+    prob_layer_kwargs: dict = {}
 ):
     """
     Build a Deep and Cross Network (see https://arxiv.org/abs/1708.05123).
@@ -357,7 +359,7 @@ def deep_cross_network(
 
     output_layer = _build_fcn_output(out_bias_init=out_bias_init,
                                      output_size=output_size,
-                                     probabilistic_layer=probabilistic_layer)
+                                     probabilistic_layer=probabilistic_layer, **prob_layer_kwargs)
 
     if probabilistic_layer is None:
         return keras.models.Sequential([encoder, output_layer])

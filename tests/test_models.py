@@ -5,8 +5,8 @@ import pytest
 from mlpp_lib.layers import FullyConnectedLayer
 from mlpp_lib.probabilistic_layers import (
     BaseDistributionLayer, 
-    BaseParametricDistribution, 
-    UniveriateGaussianDistribution,
+    BaseParametricDistributionModule, 
+    UniveriateGaussianModule,
     distribution_to_layer
 )
 from mlpp_lib.models import (
@@ -18,8 +18,13 @@ from mlpp_lib.models import (
 from mlpp_lib import probabilistic_layers
 
 DISTRIBUTIONS = [obj[1] for obj in getmembers(probabilistic_layers, isclass) 
-                 if issubclass(obj[1], BaseParametricDistribution) and obj[0] != 'BaseParametricDistribution']
+                 if issubclass(obj[1], BaseParametricDistributionModule) and obj[0] != 'BaseParametricDistributionModule']
 
+
+distribution_modules_kwargs = {
+    'a': 0,
+    'b': 1
+}
 
 @pytest.mark.parametrize("distribution", list(distribution_to_layer.keys())+[None])
 @pytest.mark.parametrize("skip_connection", [True, False])
@@ -33,7 +38,8 @@ def test_fcn_model_creation(distribution, skip_connection, batchnorm):
                             hidden_layers=hidden_layers,
                             batchnorm=batchnorm,
                             skip_connection=skip_connection,
-                            probabilistic_layer=distribution)
+                            probabilistic_layer=distribution,
+                            prob_layer_kwargs=distribution_modules_kwargs)
     
      
     inputs = torch.randn(32,6)
@@ -56,7 +62,8 @@ def test_multibranch_fcn_creation(distribution, skip_connection, batchnorm, aggr
                                                 skip_connection=skip_connection,
                                                 probabilistic_layer=distribution,
                                                 n_branches=n_branches,
-                                                aggregation=aggregation)
+                                                aggregation=aggregation,
+                                                prob_layer_kwargs=distribution_modules_kwargs)
     
     
     inputs = torch.randn(32,6)
@@ -74,7 +81,8 @@ def test_deep_cross_network(distribution):
                        hidden_layers=hidden_layers,
                        n_cross_layers=n_crosses,
                        cross_layers_hiddensize=16,
-                       probabilistic_layer=distribution)
+                       probabilistic_layer=distribution,
+                       prob_layer_kwargs=distribution_modules_kwargs)
     
     inputs = torch.randn(32,6)
     

@@ -7,10 +7,11 @@ from abc import ABC, abstractmethod
 import numpy as np
 from keras import initializers
 from typing import Literal
+from inspect import getmembers, isclass
+import sys
+from mlpp_lib.custom_distributions import TruncatedNormalDistribution
 
-
-
-class BaseParametricDistribution(ABC):
+class BaseParametricDistributionModule(ABC):
     """ Base class for parametric distributions layers
     """
     @property
@@ -24,14 +25,15 @@ class BaseParametricDistribution(ABC):
     def name(self):
         pass
     
-class UniveriateGaussianDistribution(nn.Module, BaseParametricDistribution):
+class UniveriateGaussianModule(nn.Module, BaseParametricDistributionModule):
     '''
     Torch implementation of a Gaussian sampling layer given mean and covariance
     values of shape [None, 2]. This layer uses the reparametrization trick
     to allow the flow of gradients.
     '''
+    _name = 'gaussian'
     def __init__(self, **kwargs):
-        super(UniveriateGaussianDistribution, self).__init__()
+        super(UniveriateGaussianModule, self).__init__()
         self.get_positive_std = torch.nn.Softplus()
 
     def forward(self, moments, num_samples=1, return_dist=False):
@@ -45,9 +47,9 @@ class UniveriateGaussianDistribution(nn.Module, BaseParametricDistribution):
         normal_dist = torch.distributions.Normal(new_moments[:,0:1], new_moments[:,1:2])
         if return_dist:
             return normal_dist
-        samples = normal_dist.rsample(sample_shape=(num_samples,1))
-        samples = samples.permute(2,0,1)
-        return samples
+        samples = normal_dist.rsample(sample_shape=(num_samples,))
+        return samples.permute(1,0,2)
+
     
     @property
     def num_parameters(self):
@@ -55,28 +57,65 @@ class UniveriateGaussianDistribution(nn.Module, BaseParametricDistribution):
     
     @property
     def name(self):
-        return 'univariate_gaussian'
+        return self._name
     
     
-class WeibullDistribution(nn.Module, BaseParametricDistribution):
+class UnivariateTruncatedGaussianModule(nn.Module, BaseParametricDistributionModule):
+    _name = 'truncated_gaussian'
+    def __init__(self, a, b, **kwargs):
+        super(UnivariateTruncatedGaussianModule, self).__init__()
+        self.get_positive_std = torch.nn.Softplus()
+        if type(a) != torch.Tensor:
+            a = torch.tensor(a)
+        if type(b) != torch.Tensor:
+            b = torch.tensor(b)
+            
+        self.a, self.b = a, b
+            
+        
+    def forward(self, moments, num_samples=1, return_dist=False):
+        
+        # Create a copy of `moments` to avoid issues when using Softplus 
+        # on tensor selections 
+        new_moments = moments.clone()  
+        new_moments[:, 1] = self.get_positive_std(moments[:, 1])
+
+        
+        trunc_normal_dist = TruncatedNormalDistribution(mu_bar=new_moments[:,0:1], sigma_bar=new_moments[:,1:2], a=self.a, b=self.b)
+        if return_dist:
+            return trunc_normal_dist
+        samples = trunc_normal_dist.rsample(sample_shape=(num_samples,))
+        return samples.permute(1,0,2)
+
+    @property
+    def num_parameters(self):
+        return 2
+    
+    @property
+    def name(self):
+        return self._name
+    
+    
+class WeibullModule(nn.Module, BaseParametricDistributionModule):
     """
     Toch implementation of a 2-parameters Weibull distribution.
     """
+    _name = 'weibull'
     def __init__(self, **kwargs):
-        super(WeibullDistribution, self).__init__()
+        super(WeibullModule, self).__init__()
         self.get_positive_params = torch.nn.Softplus()
         
     def forward(self, params, num_samples=1, return_dist=False):
         params = self.get_positive_params(params)
 
-        weibull_dist = torch.distributions.Weibull(scale=params[:,0],
-                                                   concentration=params[:,1])
+        weibull_dist = torch.distributions.Weibull(scale=params[:,0:1],
+                                                   concentration=params[:,1:2])
         if return_dist:
             return weibull_dist
         
-        samples = weibull_dist.rsample(sample_shape=(num_samples,1))
+        samples = weibull_dist.rsample(sample_shape=(num_samples,))
 
-        samples = samples.permute(2,0,1)
+        return samples.permute(1,0,2)
         return samples
     
     @property
@@ -85,12 +124,13 @@ class WeibullDistribution(nn.Module, BaseParametricDistribution):
     
     @property
     def name(self):
-        return 'weibull'
+        return self._name
     
     
-class ExponentialDistribution(nn.Module, BaseParametricDistribution):
+class ExponentialModule(nn.Module, BaseParametricDistributionModule):
+    _name = 'exponential'
     def __init__(self, **kwargs):
-        super(ExponentialDistribution, self).__init__()
+        super(ExponentialModule, self).__init__()
         self.get_positive_lambda = torch.nn.Softplus()
     
     def forward(self, params, num_samples=1, return_dist=False):
@@ -110,8 +150,66 @@ class ExponentialDistribution(nn.Module, BaseParametricDistribution):
     
     @property
     def name(self):
-        return 'exponential'
+        return self._name
     
+class BetaModule(nn.Module, BaseParametricDistributionModule):
+    _name = 'beta'
+    
+    def __init__(self, **kwargs):
+        super(BetaModule, self).__init__()
+        
+        self.get_positive_concentrations = torch.nn.Softplus()
+        
+    def forward(self, params, num_samples=1, return_dist=False):
+        params = self.get_positive_concentrations(params)
+        
+        beta_dist = torch.distributions.Beta(concentration1=params[:,0:1], # c1 = alpha
+                                             concentration0=params[:,1:2]) # c0 = beta
+        
+        if return_dist:
+            return beta_dist
+
+        samples = beta_dist.rsample(sample_shape=(num_samples,))
+        return samples.permute(1,0,2)
+        return samples
+    
+    @property
+    def num_parameters(self):
+        return 2
+    
+    @property
+    def name(self):
+        return self._name
+    
+    
+class GammaModule(nn.Module, BaseParametricDistributionModule):
+    
+    _name = 'gamma'
+    
+    def __init__(self, **kwargs):
+        super(GammaModule, self).__init__()
+        self.get_positive_params = torch.nn.Softplus()
+        
+    def forward(self, params, num_samples=1, return_dist=False):
+        params = self.get_positive_params(params)
+        
+        gamma_dist = torch.distributions.Gamma(concentration=params[:,0:1], # alpha
+                                               rate=params[:,1:2]) # beta or 1/scale
+        
+        if return_dist:
+            return gamma_dist
+
+        samples = gamma_dist.rsample(sample_shape=(num_samples,))
+        return samples.permute(1,0,2)
+        return samples
+    
+    @property
+    def num_parameters(self):
+        return 2
+    
+    @property
+    def name(self):
+        return self._name
 
 @keras.saving.register_keras_serializable()
 class BaseDistributionLayer(Layer):
@@ -123,7 +221,7 @@ class BaseDistributionLayer(Layer):
     it merely applies a linear layer. The underlying probabilistic layer needs to take care 
     of parameter constraints, e.g, the positiveness of the parameters.
     '''
-    def __init__(self, distribution: BaseParametricDistribution, 
+    def __init__(self, distribution: BaseParametricDistributionModule, 
                  num_samples: int=21, 
                  bias_init = 'zeros',
                  **kwargs):
@@ -180,11 +278,9 @@ class BaseDistributionLayer(Layer):
     
     
     
-distribution_to_layer = {
-    'gaussian': UniveriateGaussianDistribution,
-    'weibull': WeibullDistribution,
-    'exponential': ExponentialDistribution
-}
+distribution_to_layer = {obj[1]._name: obj[1] for obj in getmembers(sys.modules[__name__], isclass) 
+                 if issubclass(obj[1], BaseParametricDistributionModule) and obj[0] != 'BaseParametricDistributionModule'}
+
 
 
 
