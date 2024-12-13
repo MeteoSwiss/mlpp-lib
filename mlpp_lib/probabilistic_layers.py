@@ -10,6 +10,7 @@ from typing import Literal
 from inspect import getmembers, isclass
 import sys
 from mlpp_lib.custom_distributions import TruncatedNormalDistribution
+from mlpp_lib.layers import MeanAndTriLCovLayer
 
 class BaseParametricDistributionModule(ABC):
     """ Base class for parametric distributions layers
@@ -59,6 +60,46 @@ class UniveriateGaussianModule(nn.Module, BaseParametricDistributionModule):
     def name(self):
         return self._name
     
+class MultivariateGaussianTriLModule(nn.Module, BaseParametricDistributionModule):
+    """Multivariate Gaussian ~N(mu, L) where mu = E[x] is the mean vector, and L is a lower triangular 
+    matrix such that LL^T = Cov(x). Matrix L is only required to be a lower triagular square matrix. 
+    Internally, the values on the diagonal will be ensured positive with a softplus. 
+    """
+    _name = 'multivariate_tril_gaussian'
+    def __init__(self, dim, **kwargs):
+        super(MultivariateGaussianTriLModule, self).__init__()
+        self.dim = dim
+        
+    def forward(self, mean_and_tril_cov, num_samples=1, return_dist=True):
+        mean = mean_and_tril_cov[0]
+        tril_cov = mean_and_tril_cov[1]
+        
+        tril_cov = self._ensure_lower_cholesky(tril_cov)
+        
+        multivariate_normal = torch.distributions.MultivariateNormal(loc=mean, scale_tril=tril_cov)
+        if return_dist:
+            return multivariate_normal
+        samples = multivariate_normal.rsample(sample_shape=(num_samples,))
+        return samples.permute(1,0,2)
+        
+        
+    def _ensure_lower_cholesky(self, x):
+        """Ensures positive values on the diagonal. 
+        The input is expected to be a lower triangular matrix.
+
+        """
+        diag = torch.diagonal(x, dim1=-2, dim2=-1) # get diagonals
+        diag_fixed = torch.nn.functional.softplus(diag) # make them positive
+        # remove old diagonals and replace the new ones
+        return x - torch.diag_embed(diag) + torch.diag_embed(diag_fixed)
+    
+    @property
+    def num_parameters(self):
+        return (self.dim, self.dim * (self.dim + 1) // 2)
+    
+    @property
+    def name(self):
+        return self._name
     
 class UnivariateTruncatedGaussianModule(nn.Module, BaseParametricDistributionModule):
     _name = 'truncated_gaussian'
@@ -238,9 +279,13 @@ class BaseDistributionLayer(Layer):
         self.bias_init = bias_init
         # linear layer to map any input size into the number of parameters of the underlying distribution.
         self.num_samples=num_samples
+        self.is_multivariate_gaussian = isinstance(distribution, MultivariateGaussianTriLModule)
 
     def build(self, input_shape):
-        self.parameters_encoder = Dense(self.num_dist_params, name='parameters_encoder', bias_initializer=self.bias_init)
+        if not self.is_multivariate_gaussian:
+            self.parameters_encoder = Dense(self.num_dist_params, name='parameters_encoder', bias_initializer=self.bias_init)
+        else:
+            self.parameters_encoder = MeanAndTriLCovLayer(d1=self.prob_layer.module.num_parameters[0])
         super().build(input_shape)
 
     def call(self, inputs, output_type: Literal["distribution", "samples"]='distribution', **kwargs):

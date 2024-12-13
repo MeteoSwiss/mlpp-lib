@@ -2,6 +2,7 @@ from keras.src.layers import Layer
 from typing import Optional, Union, Literal
 import keras
 import keras.ops as ops
+import torch
 from keras.src.layers import (
     Add,
     Dense,
@@ -151,3 +152,48 @@ class ParallelConcatenateLayer(Layer):
     def call(self, inputs):
         
         return keras.layers.Concatenate(axis=-1)([l(inputs) for l in self.layers])
+    
+    
+class MeanAndTriLCovLayer(Layer):
+    """ Layer that learns to output the mean of a distribution and 
+    a lower triangular matrix which could be interpreted 
+    as L such that LL^T=Cov(x) by a downstream distribution. 
+    The layer does not apply any constraints on the outputs. 
+    """
+    
+    def __init__(self, d1, bias_init='zeros'):
+        super().__init__()
+        d2 = d1 * (d1 + 1) // 2
+        
+        self.mean_layer = Dense(d1, bias_initializer=bias_init, name='mean_layer')
+        self.tril_cov_layer = Dense(d2, name='tril_cov_layer')
+        self.d1 = d1
+        
+    def call(self, inputs):
+        mean = self.mean_layer(inputs)
+        flat_cov = self.tril_cov_layer(inputs)
+        
+        tril_cov = self._build_lower_triangular(flat=flat_cov)
+        
+        return mean, tril_cov
+        
+        
+    def _build_lower_triangular(self, flat):
+        """
+        Convert the flat tensor into a lower triangular matrix.
+        Does not apply any constraints.
+        Args:
+        - flat: Tensor of shape (batch_size, dim * (dim + 1) // 2)
+        
+        Returns:
+        - L: Lower triangular matrix of shape (batch_size, dim, dim)
+        """
+        batch_size = flat.size(0)
+
+        L = torch.zeros(batch_size, self.d1, self.d1, device=flat.device, dtype=flat.dtype)
+        
+        tril_indices = torch.tril_indices(row=self.d1, col=self.d1, offset=0)
+
+        L[:, tril_indices[0], tril_indices[1]] = flat
+        
+        return L

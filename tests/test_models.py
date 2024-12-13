@@ -23,7 +23,8 @@ DISTRIBUTIONS = [obj[1] for obj in getmembers(probabilistic_layers, isclass)
 
 distribution_modules_kwargs = {
     'a': 0,
-    'b': 1
+    'b': 1,
+    'dim': 3
 }
 
 @pytest.mark.parametrize("distribution", list(distribution_to_layer.keys())+[None])

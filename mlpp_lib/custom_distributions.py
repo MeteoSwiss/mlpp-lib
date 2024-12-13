@@ -63,6 +63,8 @@ class TruncatedNormalDistribution(Distribution):
         
         return self.sigma_bar**2 * (1.0 - (beta*pdf_b - alpha*pdf_a)/(CDF_b - CDF_a) - ((pdf_b - pdf_a)/(CDF_b - CDF_a))**2)
         
+    def sample(self, shape):
+        return self.rsample(shape)
     
     def rsample(self, shape):
         # get some random probability [0,1]
