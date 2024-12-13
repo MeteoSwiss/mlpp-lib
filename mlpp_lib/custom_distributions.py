@@ -78,3 +78,69 @@ class TruncatedNormalDistribution(Distribution):
             'mu_bar': constraints.real,
             'sigma_bar': constraints.positive,
         }
+         
+class CensoredNormalDistribution(torch.distributions.Distribution):
+    r"""Implements a censored Normal distribution. 
+    Values of the underlying normal that lie outside the range [a,b] 
+    are assigned to a and b respectively. 
+    
+    .. math::
+        f_Y(y) =
+            \begin{cases}
+            a, & \text{if } y \leq a  \\
+            \sim N(\bar{\mu}, \bar{\sigma})  & \text{if } a < y < b  \\
+            b, & \text{if } y \geq b  \\
+            \end{cases}
+
+    
+    """
+
+    def __init__(self, mu_bar: torch.Tensor, sigma_bar: torch.Tensor, a: torch.Tensor,b: torch.Tensor):
+        """
+        Args:
+            mu_bar (torch.Tensor): The mean of the latent normal distribution
+            sigma_bar (torch.Tensor): The std of the latend normal distribution
+            a (torch.Tensor): The lower bound of the distribution.
+            b (torch.Tensor): The upper bound of the distribution.
+        """
+        
+        
+        self._n = Normal(mu_bar, sigma_bar)
+        self.mu_bar = mu_bar
+        self.sigma_bar = sigma_bar
+        
+        super().__init__()
+        self.a = a 
+        self.b = b
+        
+
+    def mean(self):
+        alpha = (self.a - self.mu_bar) / self.sigma_bar
+        beta = (self.b - self.mu_bar) / self.sigma_bar
+        
+        sn = torch.distributions.Normal(torch.zeros_like(self.mu_bar), torch.ones_like(self.mu_bar))
+        E_z = TruncatedNormalDistribution(self.mu_bar, self.sigma_bar, self.a, self.b).mean()
+        return (
+            self.b * (1-sn.cdf(beta))
+            + self.a * sn.cdf(alpha)
+            + E_z * (sn.cdf(beta) - sn.cdf(alpha))
+        )
+        
+        
+    def variance(self):
+        pass
+        # TODO derive and implement
+        
+
+    def sample(self, shape):
+        # note: clipping degenerates the gradients. 
+        # Do not use for MC optimization. 
+        s = self._n.sample(shape)
+        return torch.clip(s, min=self.a, max=self.b)
+    
+    @property
+    def arg_constraints(self):
+        return {
+        'mu_bar': constraints.real,
+        'sigma_bar': constraints.positive,  # Enforce positive scale
+        }
