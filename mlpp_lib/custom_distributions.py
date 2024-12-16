@@ -62,6 +62,22 @@ class TruncatedNormalDistribution(Distribution):
         CDF_b = sn.cdf(beta)
         
         return self.sigma_bar**2 * (1.0 - (beta*pdf_b - alpha*pdf_a)/(CDF_b - CDF_a) - ((pdf_b - pdf_a)/(CDF_b - CDF_a))**2)
+    
+    
+    def moment(self, k):
+        # Source: A Recursive Formula for the Moments of a Truncated Univariate Normal Distribution  (Eric Orjebin)
+        if k == -1:
+            return torch.zeros_like(self.mu_bar)
+        if k == 0:
+            return torch.ones_like(self.mu_bar)
+        
+        alpha = (self.a - self.mu_bar) / self.sigma_bar
+        beta = (self.b - self.mu_bar) / self.sigma_bar
+        sn = torch.distributions.Normal(torch.zeros_like(self.mu_bar), torch.ones_like(self.mu_bar))
+        
+        scale = ((self.b**(k-1) * torch.exp(sn.log_prob(beta)) - self.a**(k-1) * torch.exp(sn.log_prob(alpha))) / (sn.cdf(beta) - sn.cdf(alpha)))
+        
+        return (k-1)* self.sigma_bar ** 2 * self.moment(k-2) + self.mu_bar * self.moment(k-1) - self.sigma_bar * scale
         
     def sample(self, shape):
         return self.rsample(shape)
@@ -128,8 +144,20 @@ class CensoredNormalDistribution(torch.distributions.Distribution):
         
         
     def variance(self):
-        pass
-        # TODO derive and implement
+        # Variance := Var(Y) = E(Y^2) - E(Y)^2
+        alpha = (self.a - self.mu_bar) / self.sigma_bar
+        beta = (self.b - self.mu_bar) / self.sigma_bar
+        sn = torch.distributions.Normal(torch.zeros_like(self.mu_bar), torch.ones_like(self.sigma_bar))
+        tn = TruncatedNormalDistribution(mu_bar=self.mu_bar, sigma_bar=self.sigma_bar, a=self.a, b=self.b)
+        
+        # Law of total expectation:
+        # E(Y^2)    = E(Y^2|X>b)*P(X>b) + E(Y^2|X<a)*P(X<a) + E(Y^2 | a<X<b)*P(a<X<b)
+        #           = b^2 * P(X>b)       + a^2 * P(X<a)     + E(Z^2~TruncNormal(mu,sigma,a,b)) * P(a<X<b)
+       
+        E_z2 = tn.moment(2) # E(Z^2)
+        E_y2 =  self.b**2 * (1-sn.cdf(beta)) + self.a**2 * sn.cdf(alpha) + E_z2 * (sn.cdf(beta) - sn.cdf(alpha)) # E(Y^2)
+        
+        return E_y2 - self.mean()**2 # Var(Y)=E(Y^2)-E(Y)^2
         
 
     def sample(self, shape):
