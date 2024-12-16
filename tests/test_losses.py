@@ -1,8 +1,8 @@
 import torch
 from inspect import getmembers, isclass
 from mlpp_lib import probabilistic_layers
-from mlpp_lib.losses import DistributionLossWrapper
-from mlpp_lib.probabilistic_layers import BaseParametricDistributionModule
+from mlpp_lib.losses import DistributionLossWrapper, SampleLossWrapper
+from mlpp_lib.probabilistic_layers import BaseParametricDistributionModule, UniveriateGaussianModule
 import scoringrules as sr
 import numpy as np
 import keras 
@@ -19,6 +19,26 @@ def test_scoringrules_crps_normal():
     loss = loss_fn(y_true, y_pred).item()
     
     assert np.isclose(loss, crps_closed_form_gaussian(y_true, mu, sigma).mean(), atol=1e-4)
+    
+    
+def test_scoringrules_crps_ensamble_normal():
+    
+    mu, sigma = torch.randn(32,1), torch.ones(32,1)
+    
+    crps_ens = SampleLossWrapper(fn=sr.crps_ensemble, estimator='nrg')
+    
+    normal = UniveriateGaussianModule()
+    samples = normal(moments=torch.cat([mu, sigma], dim=-1), num_samples=10000)
+
+    # internally applies softplus, must retrieve it. 
+    # the mu-sigma passed are not the true mean and variance used by the model.
+    # they undergo constraints. 
+    sigma_softplus = normal(moments=torch.cat([mu, sigma], dim=-1), return_dist=True).scale
+    y_true = torch.randn(32,1)
+
+    loss = crps_ens(y_true=y_true, y_pred=samples)
+    
+    assert np.isclose(loss, crps_closed_form_gaussian(y_true, mu, sigma_softplus).mean(), atol=1e-2)
 
 # from inspect import getmembers, isclass
 

@@ -53,13 +53,14 @@ class DistributionLoss(keras.Loss):
                 reduction=self.reduction,
                 dtype=self.dtype,
             )
-            
+
             
 class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
     '''
-    Wraps a scoringrules score function into a keras loss function,
-    such that it can be used with y_pred being a tensor and y_pred 
-    being a torch.distributions.Distribution.
+    Wraps a scoringrules score function with analytical fomulation into a keras loss function,
+    such that it can be used with y_true being a tensor and y_pred 
+    being a torch.distributions.Distribution. This means that the loss value is computed 
+    directly from the parameters of the distribution rather than samples.
     '''
     def __init__(self, fn: tp.Callable[[torch.Tensor], torch.Tensor],**kwargs):
         """_summary_
@@ -150,7 +151,37 @@ SR_REPARAM = {
     "Normal": lambda loc, scale: (loc, scale),
     "Exponential": lambda x: (x,),
     "Weibull": lambda x: (x,)
-}         
+}    
+
+
+
+class SampleLossWrapper(LossFunctionWrapper):
+    """
+    Wraps a scoringrules ensamble-based estimation of a score function into a keras loss function,
+    such that it can be used with y_pred being a tensor of shape [B,S,D] and y_true 
+    being a tensor of shape [B,D], where B=batch dim, S=samples dim, and D=data dim.
+    This means that the loss value is computed with a MC approach via the samples. 
+    For gradient-based optimization, this only makes sense if the underlying 
+    torch.distributions.Distribution implements rsample(), ie the reparametrization of the sampling function. 
+    """
+    def __init__(self, fn: tp.Callable[[torch.Tensor], torch.Tensor], estimator: str = 'pwm', **kwargs):
+    
+        kwargs = {'backend': backend.backend(), **kwargs}
+        
+        def _extract_wrapper(y_true: torch.Tensor, y_pred: torch.Tensor, **kwargs):
+            
+            return fn(y_true, y_pred, axis=1, estimator=estimator, **kwargs)
+        
+        super().__init__(_extract_wrapper, **kwargs)
+        
+        
+    def call(self, y_true, y_pred):
+        losses = self.fn(y_true, y_pred, **self._fn_kwargs)
+        if losses.numel() != y_true.shape[0]:
+            warnings.warn(
+                    f"The number of elements in the losses tensor (shape {losses.shape}) is not as expected. There probably is an error.",
+                    UserWarning,)
+        return losses     
     
 # from typing import Literal, Optional, Union
 

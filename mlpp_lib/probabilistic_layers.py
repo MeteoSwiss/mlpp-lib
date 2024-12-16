@@ -9,7 +9,7 @@ from keras import initializers
 from typing import Literal
 from inspect import getmembers, isclass
 import sys
-from mlpp_lib.custom_distributions import TruncatedNormalDistribution
+from mlpp_lib.custom_distributions import TruncatedNormalDistribution, CensoredNormalDistribution
 from mlpp_lib.layers import MeanAndTriLCovLayer
 
 class BaseParametricDistributionModule(ABC):
@@ -136,6 +136,66 @@ class UnivariateTruncatedGaussianModule(nn.Module, BaseParametricDistributionMod
     def name(self):
         return self._name
     
+class UnivariateCensoredGaussianModule(nn.Module, BaseParametricDistributionModule):
+    _name = 'censored_gaussian'
+    def __init__(self, a: torch.Tensor,b: torch.Tensor, **kwargs):
+        super(UnivariateCensoredGaussianModule, self).__init__()
+        self.get_positive_std = torch.nn.Softplus()
+        if type(a) != torch.Tensor:
+            a = torch.tensor(a)
+        if type(b) != torch.Tensor:
+            b = torch.tensor(b)
+        self.a, self.b = a, b
+        
+    def forward(self, moments, num_samples=1, return_dist=False):
+        new_moments = moments.clone()  
+        new_moments[:, 1] = self.get_positive_std(moments[:, 1])
+        
+        censored_normal_dist = CensoredNormalDistribution(mu_bar=new_moments[:,0:1], sigma_bar=new_moments[:,1:2], a=self.a, b=self.b)
+        if return_dist:
+            return censored_normal_dist
+        samples = censored_normal_dist.sample((num_samples,))
+        
+        return samples.permute(1,0,2)
+
+    @property
+    def num_parameters(self):
+        return 2
+    
+    @property
+    def name(self):
+        return self._name
+    
+class UnivariateLogNormalModule(nn.Module, BaseParametricDistributionModule):
+    """
+    Module implementing Y such that
+    X ~ Normal(loc, scale)
+    Y = exp(X) ~ LogNormal(loc, scale)
+    """
+    _name = 'log_gaussian'
+
+    def __init__(self, **kwargs):
+        super(UnivariateLogNormalModule, self).__init__()
+        self.get_positive_std = torch.nn.Softplus()
+        
+        
+    def forward(self, moments, num_samples=1, return_dist=False):
+        new_moments = moments.clone()  
+        new_moments[:, 1] = self.get_positive_std(moments[:, 1])
+        
+        normal_dist = torch.distributions.LogNormal(new_moments[:,0:1], new_moments[:,1:2])
+        if return_dist:
+            return normal_dist
+        samples = normal_dist.rsample(sample_shape=(num_samples,))
+        return samples.permute(1,0,2)
+        
+    @property
+    def num_parameters(self):
+        return 2
+    
+    @property
+    def name(self):
+        return self._name
     
 class WeibullModule(nn.Module, BaseParametricDistributionModule):
     """

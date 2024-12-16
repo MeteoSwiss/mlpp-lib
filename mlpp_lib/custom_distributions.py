@@ -21,8 +21,8 @@ class TruncatedNormalDistribution(Distribution):
         self._n = Normal(mu_bar, sigma_bar)
         self.mu_bar = mu_bar
         self.sigma_bar = sigma_bar
-        
         super().__init__()
+        
         self.a = a 
         self.b = b
         
@@ -94,6 +94,10 @@ class TruncatedNormalDistribution(Distribution):
             'mu_bar': constraints.real,
             'sigma_bar': constraints.positive,
         }
+        
+    @property
+    def has_rsample(self):
+        return True
          
 class CensoredNormalDistribution(torch.distributions.Distribution):
     r"""Implements a censored Normal distribution. 
@@ -124,8 +128,8 @@ class CensoredNormalDistribution(torch.distributions.Distribution):
         self._n = Normal(mu_bar, sigma_bar)
         self.mu_bar = mu_bar
         self.sigma_bar = sigma_bar
-        
         super().__init__()
+        
         self.a = a 
         self.b = b
         
