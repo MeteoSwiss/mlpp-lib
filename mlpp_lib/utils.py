@@ -3,7 +3,8 @@ from typing import Any, Callable, Union, Optional
 
 import numpy as np
 import xarray as xr
-import tensorflow as tf
+# import tensorflow as tf
+import keras
 
 from mlpp_lib import callbacks, losses, metrics, models
 
@@ -29,9 +30,9 @@ def get_callback(callback: Union[str, dict]) -> Callable:
             if isinstance(callback_obj, type)
             else callback_obj
         )
-    elif hasattr(tf.keras.callbacks, callback_name):
+    elif hasattr(keras.callbacks, callback_name):
         LOGGER.info(f"Using keras built-in callback: {callback_name}")
-        callback_obj = getattr(tf.keras.callbacks, callback_name)
+        callback_obj = getattr(keras.callbacks, callback_name)
         callback = (
             callback_obj(**callback_options)
             if isinstance(callback_obj, type)
@@ -47,7 +48,7 @@ def get_model(
     input_shape: tuple[int],
     output_shape: Union[int, tuple[int]],
     model_config: dict[str, Any],
-) -> tf.keras.Model:
+) -> keras.Model:
     """Get the keras model."""
 
     model_name = list(model_config.keys())[0]
@@ -77,9 +78,9 @@ def get_loss(loss: Union[str, dict]) -> Callable:
         LOGGER.info(f"Using custom mlpp loss: {loss_name}")
         loss_obj = getattr(losses, loss_name)
         loss = loss_obj(**loss_options) if isinstance(loss_obj, type) else loss_obj
-    elif hasattr(tf.keras.losses, loss_name):
+    elif hasattr(keras.losses, loss_name):
         LOGGER.info(f"Using keras built-in loss: {loss_name}")
-        loss_obj = getattr(tf.keras.losses, loss_name)
+        loss_obj = getattr(keras.losses, loss_name)
         loss = loss_obj(**loss_options) if isinstance(loss_obj, type) else loss_obj
     else:
         raise KeyError(f"The loss {loss_name} is not available.")
@@ -103,9 +104,9 @@ def get_metric(metric: Union[str, dict]) -> Callable:
         metric = (
             metric_obj(**metric_options) if isinstance(metric_obj, type) else metric_obj
         )
-    elif hasattr(tf.keras.metrics, metric_name):
+    elif hasattr(keras.metrics, metric_name):
         LOGGER.info(f"Using keras built-in metric: {metric_name}")
-        metric_obj = getattr(tf.keras.metrics, metric_name)
+        metric_obj = getattr(keras.metrics, metric_name)
         metric = (
             metric_obj(**metric_options) if isinstance(metric_obj, type) else metric_obj
         )
@@ -117,7 +118,7 @@ def get_metric(metric: Union[str, dict]) -> Callable:
 
 def get_scheduler(
     scheduler_config: Union[dict, None]
-) -> Optional[tf.keras.optimizers.schedules.LearningRateSchedule]:
+) -> Optional[keras.optimizers.schedules.LearningRateSchedule]:
     """Create a learning rate scheduler from a config dictionary."""
 
     if not isinstance(scheduler_config, dict):
@@ -139,13 +140,13 @@ def get_scheduler(
             f"Scheduler options for '{scheduler_name}' should be a dictionary."
         )
 
-    if hasattr(tf.keras.optimizers.schedules, scheduler_name):
+    if hasattr(keras.optimizers.schedules, scheduler_name):
         LOGGER.info(f"Using keras built-in learning rate scheduler: {scheduler_name}")
-        scheduler_cls = getattr(tf.keras.optimizers.schedules, scheduler_name)
+        scheduler_cls = getattr(keras.optimizers.schedules, scheduler_name)
         scheduler = scheduler_cls(**scheduler_options)
     else:
         raise KeyError(
-            f"The scheduler '{scheduler_name}' is not available in tf.keras.optimizers.schedules."
+            f"The scheduler '{scheduler_name}' is not available in keras.optimizers.schedules."
         )
 
     return scheduler
@@ -163,9 +164,9 @@ def get_optimizer(optimizer: Union[str, dict]) -> Callable:
         optimizer_name = optimizer
         optimizer_options = {}
 
-    if hasattr(tf.keras.optimizers, optimizer_name):
+    if hasattr(keras.optimizers, optimizer_name):
         LOGGER.info(f"Using keras built-in optimizer: {optimizer_name}")
-        optimizer_obj = getattr(tf.keras.optimizers, optimizer_name)
+        optimizer_obj = getattr(keras.optimizers, optimizer_name)
         optimizer = (
             optimizer_obj(**optimizer_options)
             if isinstance(optimizer_obj, type)

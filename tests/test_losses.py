@@ -28,7 +28,7 @@ def test_scoringrules_crps_ensamble_normal():
     crps_ens = SampleLossWrapper(fn=sr.crps_ensemble, estimator='nrg')
     
     normal = UniveriateGaussianModule()
-    samples = normal(moments=torch.cat([mu, sigma], dim=-1), num_samples=10000)
+    samples = normal(moments=torch.cat([mu, sigma], dim=-1), num_samples=1000)
 
     # internally applies softplus, must retrieve it. 
     # the mu-sigma passed are not the true mean and variance used by the model.
@@ -39,6 +39,9 @@ def test_scoringrules_crps_ensamble_normal():
     loss = crps_ens(y_true=y_true, y_pred=samples)
     
     assert np.isclose(loss, crps_closed_form_gaussian(y_true, mu, sigma_softplus).mean(), atol=1e-2)
+    
+    
+
 
 # from inspect import getmembers, isclass
 

@@ -29,6 +29,7 @@ class FullyConnectedLayer(Layer):
                 dropout: Optional[Union[float, list[float]]] = None,
                 mc_dropout: bool = False,
                 skip_connection: bool = False,
+                skip_connection_act: str = 'linear',
                 indx=0):
         super().__init__()
         
@@ -63,7 +64,7 @@ class FullyConnectedLayer(Layer):
         if skip_connection:
             self.skip_enc = Dense(hidden_layers[-1], name=f"skip_dense")
             self.skip_add = Add(name=f"skip_add")
-            self.skip_act = Activation(activation=activations[-1], name=f"skip_activation")
+            self.skip_act = Activation(activation=skip_connection_act, name=f"skip_activation")
             
             
     def compute_output_shape(self, input_shape):

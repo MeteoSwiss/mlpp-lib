@@ -1,3 +1,46 @@
+import torch
+import scoringrules as sr
+import keras 
+import pytest
+
+from mlpp_lib.layers import FullyConnectedLayer
+from mlpp_lib.losses import DistributionLossWrapper, SampleLossWrapper
+from mlpp_lib.models import ProbabilisticModel
+from mlpp_lib.probabilistic_layers import BaseDistributionLayer, UniveriateGaussianModule
+
+@pytest.mark.parametrize("output_type", ['distribution', 'samples'], ids=['train=CRPS closed form', 'train=CRPS MC estimate'])
+def test_train_noisy_polynomial(output_type):
+    # test whether the model can learn y = x^2 + e ~ N(0,sigma)
+    num_samples = 1000
+    x_values = torch.linspace(-1, 1, num_samples).reshape(-1,1)
+
+    true_mean = x_values**2  # Mean centered at x^2 for x in [-1,1]
+    true_std = 0.05 
+
+    # Generate the dataset in torch
+    y_values = torch.normal(mean=true_mean, std=true_std * torch.ones_like(true_mean)).reshape(-1,1)
+    
+    if output_type == 'distribution':
+        crps_normal = DistributionLossWrapper(fn=sr.crps_normal)
+    else:
+        crps_normal = SampleLossWrapper(fn=sr.crps_ensemble)
+    
+    prob_layer = BaseDistributionLayer(distribution=UniveriateGaussianModule(), num_samples=21)
+    encoder = FullyConnectedLayer(hidden_layers=[16,8], 
+                                  batchnorm=False, 
+                                  skip_connection=False,
+                                  activations='sigmoid')
+    
+    model = ProbabilisticModel(encoder_layer=encoder, probabilistic_layer=prob_layer, default_output_type=output_type)
+    
+    model(x_values[:100]) # infer shapes
+    model.compile(loss=crps_normal, optimizer=keras.optimizers.Adam(learning_rate=0.1))
+    
+    history = model.fit(x=x_values, y=y_values, epochs=50, batch_size=200)
+    
+    # Assert it learned something
+    assert history.history['loss'][-1] < 0.05
+    
 # import json
 
 # import cloudpickle

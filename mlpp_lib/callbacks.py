@@ -2,7 +2,7 @@ import time
 
 import numpy as np
 import properscoring as ps
-from tensorflow.keras import callbacks
+from keras import callbacks
 
 
 class EnsembleMetrics(callbacks.Callback):

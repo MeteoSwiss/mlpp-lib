@@ -1,3 +1,33 @@
+import torch
+import pytest
+
+from mlpp_lib.probabilistic_layers import (
+    BaseDistributionLayer, 
+    MultivariateGaussianTriLModule,
+    UnivariateCensoredGaussianModule
+)
+from mlpp_lib.probabilistic_layers import MissingReparameterizationError
+
+
+def test_multivariate_gaussian():
+    distr = MultivariateGaussianTriLModule(dim=4)
+    multivariate_gaussian_layer = BaseDistributionLayer(distribution=distr, num_samples=21)
+
+    inputs = torch.randn(16,8)
+    
+    # ensure you can sample, ie the generated matrix L is a valid Cholesky lower triangular
+    multivariate_gaussian_layer(inputs, output_type='samples')
+    
+    
+def test_defense_missing_rsample():
+    # censored normal does not have rsample so far
+    distr = UnivariateCensoredGaussianModule(a=-1., b=1.)
+    censored_gaussian_layer = BaseDistributionLayer(distribution=distr, num_samples=21)
+    # ensure that trying to call the layer in training mode requiring samples raises an error 
+    with pytest.raises(MissingReparameterizationError):
+        censored_gaussian_layer(torch.randn(32,4), output_type='samples', training=True)
+    
+    
 # from inspect import getmembers, isclass
 
 # import numpy as np

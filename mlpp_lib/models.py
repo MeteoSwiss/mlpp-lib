@@ -33,20 +33,28 @@ class ProbabilisticModel(keras.Model):
     """ A probabilistic model composed of an encoder layer 
     and a probabilistic layer predicting the output's distribution.
     """
-    def __init__(self, encoder_layer: keras.Layer, probabilistic_layer: BaseDistributionLayer):
-        """
+    def __init__(self, encoder_layer: keras.Layer, probabilistic_layer: BaseDistributionLayer, default_output_type: Literal["distribution", "samples"] = "distribution"):
+        """_summary_
+
         Args:
             encoder_layer (keras.Layer): The encoder layer, transforming the inputs into 
             some latent dimension.
             probabilistic_layer (BaseDistributionLayer): the output layer predicting the distribution.
+            default_output_type (Literal[distribution, samples], optional): Defines the defult behaviour of self.call(), where the model can either output a parametric 
+            distribution, or samples obtained from it. This is important to when fitting the model, as the type of output defines what loss functions are suitable. 
+            Defaults to "distribution".
         """
         super().__init__()
         
         self.encoder_layer = encoder_layer
         self.probabilistic_layer = probabilistic_layer
+        self.default_output_type = default_output_type
         
         
-    def call(self, inputs, output_type: Literal["distribution", "samples"]='distribution'):
+    def call(self, inputs, output_type: Optional[Literal["distribution", "samples"]] = None):
+        if output_type is None:
+            output_type = self.default_output_type
+            
         enc = self.encoder_layer(inputs)
         return self.probabilistic_layer(enc, output_type=output_type)
     
