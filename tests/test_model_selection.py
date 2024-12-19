@@ -1,11 +1,11 @@
-# from typing import Mapping, Optional, Any
-# from dataclasses import dataclass
+from typing import Mapping, Optional, Any
+from dataclasses import dataclass
 
-# import pandas as pd
-# import numpy as np
-# import pytest
+import pandas as pd
+import numpy as np
+import pytest
 
-# import mlpp_lib.model_selection as ms
+import mlpp_lib.model_selection as ms
 
 
 # def check_splits(splits: dict):
@@ -48,67 +48,67 @@
 #     assert len(test_reftimes) > 0, "Test split is empty."
 
 
-# @dataclass
-# class ValidDataSplitterOptions:
+@dataclass
+class ValidDataSplitterOptions:
 
-#     time: str
-#     station: str
+    time: str
+    station: str
 
-#     reftimes = pd.date_range("2018-01-01", "2018-03-31", freq="24h")
-#     stations = [chr(i) * 3 for i in range(ord("A"), ord("Z"))]
+    reftimes = pd.date_range("2018-01-01", "2018-03-31", freq="24h")
+    stations = [chr(i) * 3 for i in range(ord("A"), ord("Z"))]
 
-#     def __post_init__(self):
+    def __post_init__(self):
 
-#         if self.time == "fractions":
-#             self.time_split = {"train": 0.6, "val": 0.2, "test": 0.2}
-#             self.time_split_method = "sequential"
-#         elif self.time == "lists":
-#             self.time_split = self.time_split_lists()
-#             self.time_split_method = None
-#         elif self.time == "slices":
-#             self.time_split = self.time_split_slices()
-#             self.time_split_method = None
-#         elif self.time == "mixed-with-list":
-#             self.time_split = {"train": 0.7, "val": 0.3, "test": self.reftimes[-10:]}
-#             self.time_split_method = "sequential"
-#         elif self.time == "mixed-with-slice":
-#             slice_start = self.reftimes[-10].strftime("%Y-%m-%d")
-#             slice_end = self.reftimes[-1].strftime("%Y-%m-%d")
-#             self.time_split = {
-#                 "train": 0.7,
-#                 "val": 0.3,
-#                 "test": (slice_start, slice_end),
-#             }
-#             self.time_split_method = "sequential"
+        if self.time == "fractions":
+            self.time_split = {"train": 0.6, "val": 0.2, "test": 0.2}
+            self.time_split_method = "sequential"
+        elif self.time == "lists":
+            self.time_split = self.time_split_lists()
+            self.time_split_method = None
+        elif self.time == "slices":
+            self.time_split = self.time_split_slices()
+            self.time_split_method = None
+        elif self.time == "mixed-with-list":
+            self.time_split = {"train": 0.7, "val": 0.3, "test": self.reftimes[-10:]}
+            self.time_split_method = "sequential"
+        elif self.time == "mixed-with-slice":
+            slice_start = self.reftimes[-10].strftime("%Y-%m-%d")
+            slice_end = self.reftimes[-1].strftime("%Y-%m-%d")
+            self.time_split = {
+                "train": 0.7,
+                "val": 0.3,
+                "test": (slice_start, slice_end),
+            }
+            self.time_split_method = "sequential"
 
-#         if self.station == "fractions":
-#             self.station_split = {"train": 0.6, "val": 0.2, "test": 0.2}
-#             self.station_split_method = "random"
-#         elif self.station == "lists":
-#             self.station_split = self.station_split_lists()
-#             self.station_split_method = None
-#         elif self.station == "mixed":
-#             self.station_split = {"train": 0.7, "val": 0.3, "test": self.stations[-5:]}
-#             self.station_split_method = "random"
+        if self.station == "fractions":
+            self.station_split = {"train": 0.6, "val": 0.2, "test": 0.2}
+            self.station_split_method = "random"
+        elif self.station == "lists":
+            self.station_split = self.station_split_lists()
+            self.station_split_method = None
+        elif self.station == "mixed":
+            self.station_split = {"train": 0.7, "val": 0.3, "test": self.stations[-5:]}
+            self.station_split_method = "random"
 
-#     def time_split_lists(self):
-#         frac = {"train": 0.6, "val": 0.2, "test": 0.2}
-#         return ms.sequential_split(self.reftimes, frac)
+    def time_split_lists(self):
+        frac = {"train": 0.6, "val": 0.2, "test": 0.2}
+        return ms.sequential_split(self.reftimes, frac)
 
-#     def time_split_slices(self):
-#         out = {
-#             "train": [self.reftimes[0], self.reftimes[30]],
-#             "val": [self.reftimes[31], self.reftimes[40]],
-#             "test": [self.reftimes[41], self.reftimes[50]],
-#         }
-#         return out
+    def time_split_slices(self):
+        out = {
+            "train": [self.reftimes[0], self.reftimes[30]],
+            "val": [self.reftimes[31], self.reftimes[40]],
+            "test": [self.reftimes[41], self.reftimes[50]],
+        }
+        return out
 
-#     def station_split_lists(self):
-#         frac = {"train": 0.6, "val": 0.2, "test": 0.2}
-#         return ms.random_split(self.stations, frac)
+    def station_split_lists(self):
+        frac = {"train": 0.6, "val": 0.2, "test": 0.2}
+        return ms.random_split(self.stations, frac)
 
-#     def pytest_id(self):
-#         return f"time: {self.time}, station: {self.station}"
+    def pytest_id(self):
+        return f"time: {self.time}, station: {self.station}"
 
 
 # class TestDataSplitter:

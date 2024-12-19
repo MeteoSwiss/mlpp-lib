@@ -11,6 +11,7 @@ from inspect import getmembers, isclass
 import sys
 
 from mlpp_lib.custom_distributions import TruncatedNormalDistribution, CensoredNormalDistribution
+from mlpp_lib.exceptions import MissingReparameterizationError
 from mlpp_lib.layers import MeanAndTriLCovLayer
 
 class BaseParametricDistributionModule(ABC):
@@ -37,7 +38,7 @@ class UniveriateGaussianModule(nn.Module, BaseParametricDistributionModule):
     values of shape [None, 2]. This layer uses the reparametrization trick
     to allow the flow of gradients.
     '''
-    _name = 'gaussian'
+    _name = 'IndependentNormal'
     _distribution = torch.distributions.Normal
     def __init__(self, **kwargs):
         super(UniveriateGaussianModule, self).__init__()
@@ -396,9 +397,7 @@ class BaseDistributionLayer(Layer):
         
     #     return _param_orders[key]
         
-class MissingReparameterizationError(Exception):
-    """Raised when a sampling function without 'rsample' is used in a context requiring reparameterization."""
-    pass      
+      
     
     
     

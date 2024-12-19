@@ -42,7 +42,7 @@ def get_lr(optimizer: keras.optimizers.Optimizer) -> float:
     """Get the learning rate of the optimizer"""
 
     def lr(y_true, y_pred):
-        return optimizer.lr
+        return optimizer.learning_rate
 
     return lr
 

@@ -5,7 +5,7 @@ import numpy as np
 import xarray as xr
 # import tensorflow as tf
 import keras
-
+import importlib
 from mlpp_lib import callbacks, losses, metrics, models
 
 
@@ -59,7 +59,7 @@ def get_model(
     LOGGER.debug(model_options)
     if isinstance(output_shape, int):
         output_shape = (output_shape,)
-    model = getattr(models, model_name)(input_shape, output_shape[-1], **model_options)
+    model = getattr(models, model_name)(output_shape[-1], **model_options)
 
     return model
 
@@ -68,24 +68,27 @@ def get_loss(loss: Union[str, dict]) -> Callable:
     """Get the loss function, either keras built-in or mlpp custom."""
 
     if isinstance(loss, dict):
-        loss_name = list(loss.keys())[0]
-        loss_options = loss[loss_name]
+        wrapper = list(loss.keys())[0]
+        fn_ = loss[wrapper]
+        if isinstance(fn_, dict):
+            fn = list(fn_.keys())[0]
+            fn_args = fn_[fn]
+            
+            module_name, fn_name = fn.rsplit(".", 1)
+            
+        else:
+            module_name, fn_name = fn_.rsplit(".", 1)
+            fn_args = {}
+            
+        module = importlib.import_module(module_name)
+        loss_fn = getattr(module, fn_name)
+        LOGGER.info(f"Using {fn_name} loss from {module_name}")
+        return getattr(losses, wrapper)(fn=loss_fn, **fn_args)
+    
     else:
-        loss_name = loss
-        loss_options = {}
+        # TODO decide what to do
+        pass
 
-    if hasattr(losses, loss_name):
-        LOGGER.info(f"Using custom mlpp loss: {loss_name}")
-        loss_obj = getattr(losses, loss_name)
-        loss = loss_obj(**loss_options) if isinstance(loss_obj, type) else loss_obj
-    elif hasattr(keras.losses, loss_name):
-        LOGGER.info(f"Using keras built-in loss: {loss_name}")
-        loss_obj = getattr(keras.losses, loss_name)
-        loss = loss_obj(**loss_options) if isinstance(loss_obj, type) else loss_obj
-    else:
-        raise KeyError(f"The loss {loss_name} is not available.")
-
-    return loss
 
 
 def get_metric(metric: Union[str, dict]) -> Callable:

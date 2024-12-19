@@ -1,4 +1,6 @@
 import os
+
+from mlpp_lib.exceptions import MissingReparameterizationError
 os.environ["KERAS_BACKEND"] = "torch"
 import torch
 import keras
@@ -54,6 +56,9 @@ class DistributionLoss(keras.Loss):
                 dtype=self.dtype,
             )
 
+# class CRPSNormal(DistributionLossWrapper):
+#     def __init__(self):
+#         super(scoringrule...)
             
 class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
     '''
@@ -155,25 +160,29 @@ SR_REPARAM = {
 
 
 
-class SampleLossWrapper(LossFunctionWrapper):
+class SampleLossWrapper(DistributionLoss, LossFunctionWrapper):
     """
     Wraps a scoringrules ensamble-based estimation of a score function into a keras loss function,
-    such that it can be used with y_pred being a tensor of shape [B,S,D] and y_true 
-    being a tensor of shape [B,D], where B=batch dim, S=samples dim, and D=data dim.
-    This means that the loss value is computed with a MC approach via the samples. 
+    such that it can be used with with y_true being a tensor and y_pred 
+    being a torch.distributions.Distribution. Internally, num_samples samples will be sampled from 
+    the predicted distribution and the loss value is computed with a MC approach. 
     For gradient-based optimization, this only makes sense if the underlying 
     torch.distributions.Distribution implements rsample(), ie the reparametrization of the sampling function. 
     """
-    def __init__(self, fn: tp.Callable[[torch.Tensor], torch.Tensor], estimator: str = 'pwm', **kwargs):
+    def __init__(self, fn: tp.Callable[[torch.Tensor], torch.Tensor], num_samples: int=21, estimator: str = 'pwm', **kwargs):
     
         kwargs = {'backend': backend.backend(), **kwargs}
         
         def _extract_wrapper(y_true: torch.Tensor, y_pred: torch.Tensor, **kwargs):
-            
-            return fn(y_true, y_pred, axis=1, estimator=estimator, **kwargs)
+            if not y_pred.has_rsample:
+                raise MissingReparameterizationError(f"Gradient-based optimization will not work. {y_pred.__name__} does not implement rsample().")
+            # obtain num_samples samples from the distribution y_pred
+            y_pred_samples = y_pred.rsample(self.num_samples) # [Samples, Batch, Dim]
+            y_pred_samples = y_pred_samples.permute(1,0,2) # [Batch, Samples, Dim]
+            return fn(y_true, y_pred_samples, axis=1, estimator=estimator, **kwargs)
         
         super().__init__(_extract_wrapper, **kwargs)
-        
+        self.num_samples = (num_samples,)
         
     def call(self, y_true, y_pred):
         losses = self.fn(y_true, y_pred, **self._fn_kwargs)
