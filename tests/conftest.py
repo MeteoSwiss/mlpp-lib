@@ -171,7 +171,7 @@ def get_prob_model() -> keras.Model:
             }
         }
         model = get_model(n_inputs, n_outputs, model_config)
-        loss = get_loss("crps_energy")
+        loss = get_loss({'DistributionLossWrapper': 'scoringrules.crps_normal'})
         model.compile(
             optimizer=keras.optimizers.RMSprop(learning_rate=0.1),
             loss=loss,

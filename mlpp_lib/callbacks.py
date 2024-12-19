@@ -16,7 +16,7 @@ class EnsembleMetrics(callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs):
         """Compute a range of probabilistic scores at the end of each epoch."""
-        y_pred = self.model(self.X_val).sample(self.n_samples)
+        y_pred = self.model(self.X_val).sample((self.n_samples,))
 
         y_pred = y_pred.numpy()[:, :, 0].T
         y_val = np.squeeze(self.y_val)
