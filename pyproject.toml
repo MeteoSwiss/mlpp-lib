@@ -6,12 +6,11 @@ authors = ["Daniele Nerini <daniele.nerini@meteoswiss.ch>"]
 include = ["LICENSE", "README.md"]
 
 [tool.poetry.dependencies]
-python = ">=3.9, <3.11"
+python = ">=3.10, <3.11"
 numpy = "*"
-tensorflow = {version = "~2.16.1", optional = true}
-tensorflow-cpu = {version = "~2.16.1", optional = true}
-tensorflow-probability = "~0.24.0"
-tf-keras = "~2.16.0"
+keras = "^3.0.0"
+torch = "~2.5.0"
+scoringrules = "~0.7.0"
 pandas = "*"
 scipy = "*"
 xarray = "*"
@@ -21,12 +20,9 @@ numba = {version = "*", optional = true}
 zarr = {version = "*", optional = true}
 
 [tool.poetry.extras]
-tensorflow = ["tensorflow"]
-tensorflow-cpu = ["tensorflow-cpu"]
-extended = ["zarr", "numba", "tensorflow"]
+
 
 [tool.poetry.group.dev.dependencies]
-tensorflow = "~2.16.1"
 pytest = "*"
 black = "*"
 mlflow = "*"

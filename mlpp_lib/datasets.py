@@ -6,9 +6,10 @@ from typing import Hashable, Mapping, Optional, Sequence, Callable
 import dask.array as da
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 import xarray as xr
 from typing_extensions import Self
+from keras import KerasTensor
+import keras
 
 from .model_selection import DataSplitter
 from .normalizers import DataTransformer
@@ -556,7 +557,7 @@ class Dataset:
         return out
 
 
-class DataLoader(tf.keras.utils.Sequence):
+class DataLoader(keras.utils.Sequence):
     """A dataloader for mlpp.
 
     Parameters
@@ -598,16 +599,16 @@ class DataLoader(tf.keras.utils.Sequence):
         self.shuffle = shuffle
         self.block_size = block_size
         self.num_samples = len(self.dataset.x)
-        self.num_batches = int(np.ceil(self.num_samples / batch_size))
-        self._indices = tf.range(self.num_samples)
+        self.num_batches_ = int(np.ceil(self.num_samples / batch_size))
+        self._indices = keras.ops.arange(self.num_samples)
         self._seed = 0
         self._reset()
 
     def __len__(self) -> int:
-        return self.num_batches
+        return self.num_batches_
 
-    def __getitem__(self, index) -> tuple[tf.Tensor, ...]:
-        if index >= self.num_batches:
+    def __getitem__(self, index) -> tuple[KerasTensor, ...]:
+        if index >= self.num_batches_:
             self._reset()
             raise IndexError
         start = index * self.batch_size
@@ -626,38 +627,37 @@ class DataLoader(tf.keras.utils.Sequence):
         each block stay in their original order, but the blocks themselves are shuffled.
         """
         if self.block_size == 1:
-            self._indices = tf.random.shuffle(self._indices, seed=self._seed)
+            self._indices = keras.random.shuffle(self._indices, seed=self._seed)
             return
         num_blocks = self._indices.shape[0] // self.block_size
-        reshaped_indices = tf.reshape(
+        reshaped_indices = keras.ops.reshape(
             self._indices[: num_blocks * self.block_size], (num_blocks, self.block_size)
         )
-        shuffled_blocks = tf.random.shuffle(reshaped_indices, seed=self._seed)
-        shuffled_indices = tf.reshape(shuffled_blocks, [-1])
+        shuffled_blocks = keras.random.shuffle(reshaped_indices, seed=self._seed)
+        shuffled_indices = keras.reshape(shuffled_blocks, [-1])
         # Append any remaining elements if the number of indices isn't a multiple of the block size
         if shuffled_indices.shape[0] % self.block_size:
             remainder = self._indices[num_blocks * self.block_size :]
-            shuffled_indices = tf.concat([shuffled_indices, remainder], axis=0)
+            shuffled_indices = keras.ops.concatenate([shuffled_indices, remainder], axis=0)
         self._indices = shuffled_indices
-
     def _reset(self) -> None:
         """Reset iterator and shuffles data if needed"""
         self.index = 0
         if self.shuffle:
             self._shuffle_indices()
-            self.dataset.x = tf.gather(self.dataset.x, self._indices)
-            self.dataset.y = tf.gather(self.dataset.y, self._indices)
+            self.dataset.x = keras.ops.take(self.dataset.x, self._indices, axis=0)
+            self.dataset.y = keras.ops.take(self.dataset.y, self._indices, axis=0)
             if self.dataset.w is not None:
-                self.dataset.w = tf.gather(self.dataset.w, self._indices)
+                self.dataset.w = keras.ops.take(self.dataset.w, self._indices, axis=0)
             self._seed += 1
 
     def _to_device(self, device) -> None:
         """Transfer data to a device"""
-        with tf.device(device):
-            self.dataset.x = tf.constant(self.dataset.x)
-            self.dataset.y = tf.constant(self.dataset.y)
+        with keras.device(device):
+            self.dataset.x = keras.ops.array(self.dataset.x)
+            self.dataset.y = keras.ops.array(self.dataset.y)
             if self.dataset.w is not None:
-                self.dataset.w = tf.constant(self.dataset.w)
+                self.dataset.w = keras.ops.array(self.dataset.w)
 
 
 class DataFilter:
