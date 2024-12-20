@@ -14,7 +14,7 @@ from mlpp_lib.custom_distributions import TruncatedNormalDistribution, CensoredN
 from mlpp_lib.exceptions import MissingReparameterizationError
 from mlpp_lib.layers import MeanAndTriLCovLayer
 
-class BaseParametricDistributionModule(ABC):
+class BaseParametricDistributionModule(nn.Module, ABC):
     """ Base class for parametric distributions layers
     """
     @property
@@ -32,31 +32,86 @@ class BaseParametricDistributionModule(ABC):
     def has_rsample(self):
         return self._distribution.has_rsample
     
-class UniveriateGaussianModule(nn.Module, BaseParametricDistributionModule):
+    @abstractmethod
+    def process_params(self, **kwargs) -> torch.distributions.Distribution:
+        """
+        Given the distribution's parameters predicted by a previous layer,
+        ensures the constraints are met and the parametric distribution is returned.
+        """
+        pass
+    
+    def forward(self, predicted_parameters, num_samples=1, return_dist=True, pattern: Literal['sbd', 'bsd'] = 'sbd', reparametrized=False):
+        parametric_dist = self.process_params(predicted_parameters)
+        
+        dist = WrappingTorchDist(distribution=parametric_dist)
+        
+        if return_dist:
+            return dist
+        
+        if not reparametrized:
+            return dist.sample(num_samples, pattern=pattern)
+        return dist.rsample(num_samples, pattern)
+
+    
+class WrappingTorchDist():
+    """
+    Wraps a torch.distributions.Distribution instance. 
+    Unifies sample(torch.Size) and sample_n(int) in a single function and 
+    allows to specify a pattern for the samples between [Batch, Samples, Dim]
+    and [Samples, Batch, Dim].
+    """
+    def __init__(self, distribution: torch.distributions.Distribution):
+        self._distribution = distribution
+    
+    def _get_samples(self, sampling_fn, n: int, pattern: Literal['sbd', 'bsd'] = 'sbd'):
+        patterns_to_perm = {
+            "bsd": (1,0,2),
+            "sbd": (0,1,2)
+        }
+        samples = sampling_fn((n,)) if isinstance(n, int) else sampling_fn(n)
+        return samples.permute(*patterns_to_perm[pattern])
+            
+    def sample(self, n: int|tuple, pattern: Literal['sbd', 'bsd'] = 'sbd'):
+        return self._get_samples(sampling_fn=self._distribution.sample, n=n, pattern=pattern)
+            
+    def rsample(self, n: int|tuple, pattern: Literal['sbd', 'bsd'] = 'sbd'):
+        if not self._distribution.has_rsample:
+            raise MissingReparameterizationError(f"{self._distribution.__class__} does not implement rsample.")
+
+        return self._get_samples(sampling_fn=self._distribution.rsample, n=n, pattern=pattern)
+    
+    def __str__(self):
+        return f"Wrapper for {self._distribution.__class__.__name__} distribution."
+    
+    @property
+    def name(self):
+        return self._distribution.__class__.__name__
+    
+    @property
+    def has_rsample(self):
+        return self._distribution.has_rsample
+        
+class UniveriateGaussianModule(BaseParametricDistributionModule):
     '''
     Torch implementation of a Gaussian sampling layer given mean and covariance
     values of shape [None, 2]. This layer uses the reparametrization trick
     to allow the flow of gradients.
     '''
     _name = 'IndependentNormal'
-    _distribution = torch.distributions.Normal
+    _distribution = torch.distributions.Normal # WrappingTorchDist(base_dist=torch.distributions.Normal).sample(2)
     def __init__(self, **kwargs):
         super(UniveriateGaussianModule, self).__init__()
         self.get_positive_std = torch.nn.Softplus()
 
-    def forward(self, moments, num_samples=1, return_dist=False):
+    def process_params(self, moments):
         
         # Create a copy of `moments` to avoid issues when using Softplus 
         # on tensor selections 
         new_moments = moments.clone()  
         new_moments[:, 1] = self.get_positive_std(moments[:, 1])
 
-        
         normal_dist = self._distribution(new_moments[:,0:1], new_moments[:,1:2])
-        if return_dist:
-            return normal_dist
-        samples = normal_dist.rsample(sample_shape=(num_samples,))
-        return samples.permute(1,0,2)
+        return normal_dist
 
     
     @property
@@ -67,7 +122,7 @@ class UniveriateGaussianModule(nn.Module, BaseParametricDistributionModule):
     def name(self):
         return self._name
     
-class MultivariateGaussianTriLModule(nn.Module, BaseParametricDistributionModule):
+class MultivariateGaussianTriLModule(BaseParametricDistributionModule):
     """Multivariate Gaussian ~N(mu, L) where mu = E[x] is the mean vector, and L is a lower triangular 
     matrix such that LL^T = Cov(x). Matrix L is only required to be a lower triagular square matrix. 
     Internally, the values on the diagonal will be ensured positive with a softplus. 
@@ -79,17 +134,14 @@ class MultivariateGaussianTriLModule(nn.Module, BaseParametricDistributionModule
         super(MultivariateGaussianTriLModule, self).__init__()
         self.dim = dim
         
-    def forward(self, mean_and_tril_cov, num_samples=1, return_dist=True):
+    def process_params(self, mean_and_tril_cov):
         mean = mean_and_tril_cov[0]
         tril_cov = mean_and_tril_cov[1]
         
         tril_cov = self._ensure_lower_cholesky(tril_cov)
         
         multivariate_normal = self._distribution(loc=mean, scale_tril=tril_cov)
-        if return_dist:
-            return multivariate_normal
-        samples = multivariate_normal.rsample(sample_shape=(num_samples,))
-        return samples.permute(1,0,2)
+        return multivariate_normal
         
         
     def _ensure_lower_cholesky(self, x):
@@ -110,7 +162,7 @@ class MultivariateGaussianTriLModule(nn.Module, BaseParametricDistributionModule
     def name(self):
         return self._name
     
-class UnivariateTruncatedGaussianModule(nn.Module, BaseParametricDistributionModule):
+class UnivariateTruncatedGaussianModule(BaseParametricDistributionModule):
     _name = 'truncated_gaussian'
     _distribution = TruncatedNormalDistribution
     
@@ -125,7 +177,7 @@ class UnivariateTruncatedGaussianModule(nn.Module, BaseParametricDistributionMod
         self.a, self.b = a, b
             
         
-    def forward(self, moments, num_samples=1, return_dist=False):
+    def process_params(self, moments):
         
         # Create a copy of `moments` to avoid issues when using Softplus 
         # on tensor selections 
@@ -134,10 +186,7 @@ class UnivariateTruncatedGaussianModule(nn.Module, BaseParametricDistributionMod
 
         
         trunc_normal_dist = self._distribution(mu_bar=new_moments[:,0:1], sigma_bar=new_moments[:,1:2], a=self.a, b=self.b)
-        if return_dist:
-            return trunc_normal_dist
-        samples = trunc_normal_dist.rsample(sample_shape=(num_samples,))
-        return samples.permute(1,0,2)
+        return trunc_normal_dist
 
     @property
     def num_parameters(self):
@@ -147,7 +196,7 @@ class UnivariateTruncatedGaussianModule(nn.Module, BaseParametricDistributionMod
     def name(self):
         return self._name
     
-class UnivariateCensoredGaussianModule(nn.Module, BaseParametricDistributionModule):
+class UnivariateCensoredGaussianModule(BaseParametricDistributionModule):
     _name = 'censored_gaussian'
     _distribution = CensoredNormalDistribution
     def __init__(self, a: torch.Tensor,b: torch.Tensor, **kwargs):
@@ -159,16 +208,12 @@ class UnivariateCensoredGaussianModule(nn.Module, BaseParametricDistributionModu
             b = torch.tensor(b)
         self.a, self.b = a, b
         
-    def forward(self, moments, num_samples=1, return_dist=False):
+    def process_params(self, moments):
         new_moments = moments.clone()  
         new_moments[:, 1] = self.get_positive_std(moments[:, 1])
         
         censored_normal_dist = self._distribution(mu_bar=new_moments[:,0:1], sigma_bar=new_moments[:,1:2], a=self.a, b=self.b)
-        if return_dist:
-            return censored_normal_dist
-        samples = censored_normal_dist.sample((num_samples,))
-        
-        return samples.permute(1,0,2)
+        return censored_normal_dist
 
     @property
     def num_parameters(self):
@@ -178,7 +223,7 @@ class UnivariateCensoredGaussianModule(nn.Module, BaseParametricDistributionModu
     def name(self):
         return self._name
     
-class UnivariateLogNormalModule(nn.Module, BaseParametricDistributionModule):
+class UnivariateLogNormalModule(BaseParametricDistributionModule):
     """
     Module implementing Y such that
     X ~ Normal(loc, scale)
@@ -192,15 +237,12 @@ class UnivariateLogNormalModule(nn.Module, BaseParametricDistributionModule):
         self.get_positive_std = torch.nn.Softplus()
         
         
-    def forward(self, moments, num_samples=1, return_dist=False):
+    def process_params(self, moments):
         new_moments = moments.clone()  
         new_moments[:, 1] = self.get_positive_std(moments[:, 1])
         
-        normal_dist = self._distribution(new_moments[:,0:1], new_moments[:,1:2])
-        if return_dist:
-            return normal_dist
-        samples = normal_dist.rsample(sample_shape=(num_samples,))
-        return samples.permute(1,0,2)
+        log_normal_dist = self._distribution(new_moments[:,0:1], new_moments[:,1:2])
+        return log_normal_dist
         
     @property
     def num_parameters(self):
@@ -210,7 +252,7 @@ class UnivariateLogNormalModule(nn.Module, BaseParametricDistributionModule):
     def name(self):
         return self._name
     
-class WeibullModule(nn.Module, BaseParametricDistributionModule):
+class WeibullModule(BaseParametricDistributionModule):
     """
     Toch implementation of a 2-parameters Weibull distribution.
     """
@@ -220,18 +262,12 @@ class WeibullModule(nn.Module, BaseParametricDistributionModule):
         super(WeibullModule, self).__init__()
         self.get_positive_params = torch.nn.Softplus()
         
-    def forward(self, params, num_samples=1, return_dist=False):
+    def process_params(self, params):
         params = self.get_positive_params(params)
 
         weibull_dist = self._distribution(scale=params[:,0:1],
                                                    concentration=params[:,1:2])
-        if return_dist:
-            return weibull_dist
-        
-        samples = weibull_dist.rsample(sample_shape=(num_samples,))
-
-        return samples.permute(1,0,2)
-        return samples
+        return weibull_dist
     
     @property
     def num_parameters(self):
@@ -242,23 +278,19 @@ class WeibullModule(nn.Module, BaseParametricDistributionModule):
         return self._name
     
     
-class ExponentialModule(nn.Module, BaseParametricDistributionModule):
+class ExponentialModule(BaseParametricDistributionModule):
     _name = 'exponential'
     _distribution = torch.distributions.Exponential
     def __init__(self, **kwargs):
         super(ExponentialModule, self).__init__()
         self.get_positive_lambda = torch.nn.Softplus()
     
-    def forward(self, params, num_samples=1, return_dist=False):
+    def process_params(self, params):
         params = self.get_positive_lambda(params)
 
         # return torch.distributions.Exponential(rate=params)
         exp_dist = self._distribution(rate=params)
-        if return_dist:
-            return exp_dist
-        samples = exp_dist.rsample(sample_shape=(num_samples,))
-
-        return samples.permute(1,0,2)
+        return exp_dist
     
     @property
     def num_parameters(self):
@@ -268,7 +300,7 @@ class ExponentialModule(nn.Module, BaseParametricDistributionModule):
     def name(self):
         return self._name
     
-class BetaModule(nn.Module, BaseParametricDistributionModule):
+class BetaModule(BaseParametricDistributionModule):
     _name = 'beta'
     _distribution = torch.distributions.Beta
     
@@ -277,18 +309,13 @@ class BetaModule(nn.Module, BaseParametricDistributionModule):
         
         self.get_positive_concentrations = torch.nn.Softplus()
         
-    def forward(self, params, num_samples=1, return_dist=False):
+    def process_params(self, params):
         params = self.get_positive_concentrations(params)
         
         beta_dist = self._distribution(concentration1=params[:,0:1], # c1 = alpha
                                              concentration0=params[:,1:2]) # c0 = beta
         
-        if return_dist:
-            return beta_dist
-
-        samples = beta_dist.rsample(sample_shape=(num_samples,))
-        return samples.permute(1,0,2)
-        return samples
+        return beta_dist
     
     @property
     def num_parameters(self):
@@ -299,7 +326,7 @@ class BetaModule(nn.Module, BaseParametricDistributionModule):
         return self._name
     
     
-class GammaModule(nn.Module, BaseParametricDistributionModule):
+class GammaModule(BaseParametricDistributionModule):
     
     _name = 'gamma'
     _distribution = torch.distributions.Gamma
@@ -307,18 +334,13 @@ class GammaModule(nn.Module, BaseParametricDistributionModule):
         super(GammaModule, self).__init__()
         self.get_positive_params = torch.nn.Softplus()
         
-    def forward(self, params, num_samples=1, return_dist=False):
+    def process_params(self, params):
         params = self.get_positive_params(params)
         
         gamma_dist = self._distribution(concentration=params[:,0:1], # alpha
                                                rate=params[:,1:2]) # beta or 1/scale
         
-        if return_dist:
-            return gamma_dist
-
-        samples = gamma_dist.rsample(sample_shape=(num_samples,))
-        return samples.permute(1,0,2)
-        return samples
+        return gamma_dist
     
     @property
     def num_parameters(self):
@@ -364,15 +386,15 @@ class BaseDistributionLayer(Layer):
             self.parameters_encoder = MeanAndTriLCovLayer(d1=self.prob_layer.module.num_parameters[0])
         super().build(input_shape)
 
-    def call(self, inputs, output_type: Literal["distribution", "samples"]='distribution', training=None, **kwargs):
+    def call(self, inputs, output_type: Literal["distribution", "samples"]='distribution', training=None, num_samples=1, pattern: Literal['sbd', 'bsd'] = 'sbd', reparametrized=False):
         predicted_parameters = self.parameters_encoder(inputs)
         if output_type == 'distribution':
-            dist = self.prob_layer(predicted_parameters, num_samples=0, return_dist=True)
+            dist = self.prob_layer(predicted_parameters, num_samples=0, return_dist=True, pattern=pattern, reparametrized=reparametrized)
             return dist
         elif output_type == 'samples':
             if training and not self.prob_layer.module.has_rsample:
                 raise MissingReparameterizationError(f"Gradient-based optimization will not work, as the underlying {self.prob_layer.module._distribution.__name__} distribution does not have a reparametrized sampling function.")
-            samples = self.prob_layer(predicted_parameters, num_samples=self.num_samples, return_dist=False)
+            samples = self.prob_layer(predicted_parameters, num_samples=num_samples, return_dist=False, pattern=pattern, reparametrized=reparametrized)
             return samples
 
     def compute_output_shape(self, input_shape):

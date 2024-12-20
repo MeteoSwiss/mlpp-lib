@@ -2,7 +2,7 @@ import torch
 from inspect import getmembers, isclass
 from mlpp_lib import probabilistic_layers
 from mlpp_lib.losses import DistributionLossWrapper, SampleLossWrapper
-from mlpp_lib.probabilistic_layers import BaseParametricDistributionModule, UniveriateGaussianModule
+from mlpp_lib.probabilistic_layers import BaseParametricDistributionModule, UniveriateGaussianModule, WrappingTorchDist
 import scoringrules as sr
 import numpy as np
 import keras 
@@ -12,7 +12,7 @@ DISTRIBUTIONS = [obj[0] for obj in getmembers(probabilistic_layers, isclass)
 
 def test_scoringrules_crps_normal():
     mu, sigma = torch.randn(32,1), torch.ones(32,1)
-    y_pred = torch.distributions.Normal(mu, sigma)
+    y_pred = WrappingTorchDist(torch.distributions.Normal(mu, sigma))
     y_true = torch.randn(32,1)
     loss_fn = DistributionLossWrapper(fn=sr.crps_normal)
     
@@ -28,7 +28,7 @@ def test_scoringrules_crps_ensamble_normal():
     crps_ens = SampleLossWrapper(fn=sr.crps_ensemble, num_samples=1000, estimator='nrg')
     
     normal = UniveriateGaussianModule()
-    dist = normal(moments=torch.cat([mu, sigma], dim=-1), return_dist=True)
+    dist = normal.process_params(moments=torch.cat([mu, sigma], dim=-1))
 
     # internally applies softplus, must retrieve it. 
     # the mu-sigma passed are not the true mean and variance used by the model.

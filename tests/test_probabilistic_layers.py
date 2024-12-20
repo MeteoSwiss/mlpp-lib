@@ -4,7 +4,8 @@ import pytest
 from mlpp_lib.probabilistic_layers import (
     BaseDistributionLayer, 
     MultivariateGaussianTriLModule,
-    UnivariateCensoredGaussianModule
+    UnivariateCensoredGaussianModule,
+    UniveriateGaussianModule
 )
 from mlpp_lib.probabilistic_layers import MissingReparameterizationError
 
@@ -26,7 +27,21 @@ def test_defense_missing_rsample():
     # ensure that trying to call the layer in training mode requiring samples raises an error 
     with pytest.raises(MissingReparameterizationError):
         censored_gaussian_layer(torch.randn(32,4), output_type='samples', training=True)
+
+@pytest.mark.parametrize("pattern", ['bsd', 'sbd'], ids=['batch first', 'samples first'])
+def test_sampling_patterns(pattern):
+    distr = UniveriateGaussianModule()
     
+    distr_layer = BaseDistributionLayer(distribution=distr)
+    batch_dim, samples, data_dim = 32,12,7
+    inputs = torch.randn(batch_dim, data_dim)
+    
+    output = distr_layer(inputs, pattern=pattern, output_type='samples', num_samples=samples)
+    
+    if pattern == 'bsd':
+        assert output.shape == (batch_dim, samples, 1)
+    else:
+        assert output.shape == (samples, batch_dim, 1)
     
 # from inspect import getmembers, isclass
 

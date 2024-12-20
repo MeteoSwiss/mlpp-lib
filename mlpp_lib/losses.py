@@ -1,6 +1,7 @@
 import os
 
 from mlpp_lib.exceptions import MissingReparameterizationError
+from mlpp_lib.probabilistic_layers import WrappingTorchDist
 os.environ["KERAS_BACKEND"] = "torch"
 import torch
 import keras
@@ -26,7 +27,7 @@ class DistributionLoss(keras.Loss):
         with ops.name_scope(self.name):
             # added to avoid convert_to_tensor when y_pred is a distribution
             def _maybe_convert_to_tensor(x):
-                if isinstance(x, torch.distributions.Distribution):
+                if isinstance(x, torch.distributions.Distribution) or isinstance(x, WrappingTorchDist):
                     return x
                 return ops.convert_to_tensor(x, dtype=self.dtype)
 
@@ -75,8 +76,11 @@ class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
         """
         kwargs = {'backend': backend.backend(), **kwargs}
         
-        def _extract_wrapper(y_true, y_pred: torch.distributions.Distribution, **kwargs):
-            params = [getattr(y_pred, p) for p in self._sr_param_order(y_pred)]
+        def _extract_wrapper(y_true, y_pred: torch.distributions.Distribution | WrappingTorchDist, **kwargs):
+            if isinstance(y_pred, torch.distributions.Distribution):
+                params = [getattr(y_pred, p) for p in self._sr_param_order(y_pred)]
+            else: 
+                params = [getattr(y_pred._distribution, p) for p in self._sr_param_order(y_pred)]
             params = self._sr_reparametrization(y_pred)(*params)
             
             return fn(y_true, *params, **kwargs)
@@ -94,7 +98,7 @@ class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
 
 
     @staticmethod
-    def _sr_param_order(dist: torch.distributions.Distribution) -> list[str]:
+    def _sr_param_order(dist: WrappingTorchDist) -> list[str]:
         """Given a distribution, returns a list 
         of strings representing the attribute names of the 
         distribution in the order expected by scoringrules.
@@ -110,14 +114,14 @@ class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
             list[str]: the attributes in the expected order.
         """
         try:
-            return SR_PARAM_ORDER[dist.__class__.__name__]
+            return SR_PARAM_ORDER[dist.name]
         except KeyError:
             raise ValueError(
                 "The order of the distribution parameters passed to scoringrules"
-                f"must be specified. Not found for {dist.__class__.__name__}")
+                f"must be specified. Not found for {dist.name}")
     
     @staticmethod
-    def _sr_reparametrization(dist: torch.distributions.Distribution)-> tp.Callable[..., tp.Tuple[torch.Tensor, ...]]:
+    def _sr_reparametrization(dist: WrappingTorchDist)-> tp.Callable[..., tp.Tuple[torch.Tensor, ...]]:
         """Given a distribution, returns a function to be 
         applied to every parameter of the distribution to match 
         the expected parametrization of scoringrules.
@@ -133,12 +137,12 @@ class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
             tp.Callable[..., tp.Tuple[torch.Tensor, ...]]: a tuple with the reparametrized parameters. 
         """
         try:
-            return SR_REPARAM[dist.__class__.__name__]
+            return SR_REPARAM[dist.name]
         except KeyError:
             raise ValueError(
                 f"The reparametrization function for the distribution parameters \
                 passed to scoringrules must be specified. None found for \
-                {dist.__class__.__name__}. If the parameters are the same,\
+                {dist.name}. If the parameters are the same,\
                 use the identity function.")
     
 # Mapping between distribution cls and parameter

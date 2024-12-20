@@ -99,7 +99,7 @@ class TruncatedNormalDistribution(Distribution):
     def has_rsample(self):
         return True
          
-class CensoredNormalDistribution(torch.distributions.Distribution):
+class CensoredNormalDistribution(Distribution):
     r"""Implements a censored Normal distribution. 
     Values of the underlying normal that lie outside the range [a,b] 
     are assigned to a and b respectively. 
