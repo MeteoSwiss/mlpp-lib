@@ -6,7 +6,7 @@ authors = ["Daniele Nerini <daniele.nerini@meteoswiss.ch>"]
 include = ["LICENSE", "README.md"]
 
 [tool.poetry.dependencies]
-python = ">=3.10, <3.11"
+python = ">=3.10, <3.13"
 numpy = "*"
 keras = "^3.0.0"
 torch = "~2.5.0"
