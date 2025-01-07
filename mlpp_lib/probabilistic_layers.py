@@ -421,7 +421,8 @@ class BaseDistributionLayer(Layer):
         
       
     
-    
+all_distribution_modules = [obj[1] for obj in getmembers(sys.modules[__name__], isclass) 
+                            if issubclass(obj[1], BaseParametricDistributionModule) and obj[0] != 'BaseParametricDistributionModule']
     
 distribution_to_layer = {obj[1]._name: obj[1] for obj in getmembers(sys.modules[__name__], isclass) 
                  if issubclass(obj[1], BaseParametricDistributionModule) and obj[0] != 'BaseParametricDistributionModule'}

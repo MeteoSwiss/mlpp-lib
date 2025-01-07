@@ -84,7 +84,7 @@ class TruncatedNormalDistribution(Distribution):
     
     def rsample(self, shape):
         # get some random probability [0,1]
-        p = torch.distributions.Uniform(0,1).sample(shape)
+        p = torch.distributions.Uniform(torch.zeros_like(self.mu_bar), torch.ones_like(self.sigma_bar)).sample(shape)
         # apply the inverse cdf on p 
         return self.icdf(p)
     

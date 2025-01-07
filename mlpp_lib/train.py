@@ -2,7 +2,6 @@ import logging
 from pprint import pformat
 from typing import Optional
 
-# import tensorflow as tf
 import keras
 
 from mlpp_lib.callbacks import TimeHistory, EnsembleMetrics

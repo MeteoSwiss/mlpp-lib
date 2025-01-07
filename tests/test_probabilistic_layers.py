@@ -5,9 +5,10 @@ from mlpp_lib.probabilistic_layers import (
     BaseDistributionLayer, 
     MultivariateGaussianTriLModule,
     UnivariateCensoredGaussianModule,
+    UnivariateTruncatedGaussianModule,
     UniveriateGaussianModule
 )
-from mlpp_lib.probabilistic_layers import MissingReparameterizationError
+from mlpp_lib.probabilistic_layers import MissingReparameterizationError, all_distribution_modules
 
 
 def test_multivariate_gaussian():
@@ -42,6 +43,30 @@ def test_sampling_patterns(pattern):
         assert output.shape == (batch_dim, samples, 1)
     else:
         assert output.shape == (samples, batch_dim, 1)
+        
+@pytest.mark.parametrize('prob_module_cls', all_distribution_modules)
+def test_input_shapes(prob_module_cls):
+    if prob_module_cls is UnivariateCensoredGaussianModule or prob_module_cls is UnivariateTruncatedGaussianModule:
+        module = prob_module_cls(a=0,b=1)
+    elif prob_module_cls is MultivariateGaussianTriLModule:
+        module = prob_module_cls(dim=4)
+    else:
+        module = prob_module_cls()
+    
+    num_params = module.num_parameters
+    if isinstance(num_params, int):
+        data = torch.randn(12, num_params) # get random input
+        distr = module(data) # get a distribution
+        distr.sample(6) # sample something from it
+    else:
+        if prob_module_cls is MultivariateGaussianTriLModule:
+            # need mean and cov as a lower triangular
+            dim = num_params[0]
+            data = (torch.zeros(12,dim), torch.tril(torch.randn(12, dim,dim))) 
+            distr = module(data)
+            distr.sample(6)
+        else:
+            pytest.skip(f"Test skipped: non-covered case for '{prob_module_cls}'")
     
 # from inspect import getmembers, isclass
 
