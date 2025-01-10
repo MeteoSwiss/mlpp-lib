@@ -67,26 +67,33 @@ def get_loss(loss: Union[str, dict]) -> Callable:
     """Get the loss function, either keras built-in or mlpp custom."""
 
     if isinstance(loss, dict):
-        wrapper = list(loss.keys())[0]
-        fn_ = loss[wrapper]
-        if isinstance(fn_, dict):
-            fn = list(fn_.keys())[0]
-            fn_args = fn_[fn]
-            
-            module_name, fn_name = fn.rsplit(".", 1)
-            
+        name = list(loss.keys())[0]
+        if 'Wrapper' in name:
+            # If the loss is a wrapper for another score, such as 
+            # one coming from scoringrules
+            fn_ = loss[name]
+            if isinstance(fn_, dict):
+                # if there are extra arguments
+                fn = list(fn_.keys())[0]
+                fn_args = fn_[fn]
+                module_name, fn_name = fn.rsplit(".", 1)
+            else:
+                module_name, fn_name = fn_.rsplit(".", 1)
+                fn_args = {}
+            module = importlib.import_module(module_name)
+            loss_fn = getattr(module, fn_name)
+            LOGGER.info(f"Using {fn_name} loss from {module_name}")
+            return getattr(losses, name)(fn=loss_fn, **fn_args)
         else:
-            module_name, fn_name = fn_.rsplit(".", 1)
-            fn_args = {}
-            
-        module = importlib.import_module(module_name)
-        loss_fn = getattr(module, fn_name)
-        LOGGER.info(f"Using {fn_name} loss from {module_name}")
-        return getattr(losses, wrapper)(fn=loss_fn, **fn_args)
-    
+            # If the loss is a pre-defined loss in mlpp with arguments
+            fn_args = loss[name]
+            loss_fn = getattr(losses, name)
+            LOGGER.info(f"Using {name} loss.")
+            return loss_fn(**fn_args)
     else:
-        # TODO decide what to do
-        pass
+        # If the loss is a pre-defined loss in mlpp without arguments
+        loss_fn = getattr(losses, loss)
+        return loss_fn()
 
 
 

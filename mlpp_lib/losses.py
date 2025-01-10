@@ -194,8 +194,31 @@ class SampleLossWrapper(DistributionLoss, LossFunctionWrapper):
             warnings.warn(
                     f"The number of elements in the losses tensor (shape {losses.shape}) is not as expected. There probably is an error.",
                     UserWarning,)
-        return losses     
+        return losses
     
+class CRPSNormal(DistributionLossWrapper):
+    def __init__(self):
+        super().__init__(fn=sr.crps_normal)
+        
+class CRPSExponential(DistributionLossWrapper):
+    def __init__(self):
+        super().__init__(fn=sr.crps_exponential)
+        
+class CRPSBeta(DistributionLossWrapper):
+    def __init__(self):
+        super().__init__(fn=sr.crps_beta)
+        
+class CRPSGamma(DistributionLossWrapper):
+    def __init__(self):
+        super().__init__(fn=sr.crps_gamma)
+
+class CRPSLogNormal(DistributionLossWrapper):
+    def __init__(self):
+        super().__init__(fn=sr.crps_lognormal)
+class CRPSEnsemble(SampleLossWrapper):
+    def __init__(self, num_samples):
+        super().__init__(fn=sr.crps_ensemble, num_samples=num_samples)
+   
 # from typing import Literal, Optional, Union
 
 # import numpy as np

@@ -57,7 +57,7 @@ def test_train_noisy_polynomial(loss_type):
 
 
 RUNS = [
-    # minimal set of parameters
+    # minimal set of parameters using scoringrules
     {
         "features": ["coe:x1"],
         "targets": ["obs:y1"],
@@ -82,6 +82,28 @@ RUNS = [
             {"EarlyStopping": {"patience": 10, "restore_best_weights": True}}
         ],
     },
+    # minimal set of parameters using named loss from mlpp
+    {
+        "features": ["coe:x1"],
+        "targets": ["obs:y1"],
+        "normalizer": {"default": "MinMaxScaler"},
+        "model": {
+            "fully_connected_network": {
+                "hidden_layers": [10],
+                "probabilistic_layer": "IndependentNormal",
+            }
+        },
+        'loss': {
+            'CRPSEnsemble':
+                {
+                    'num_samples': 100,
+                }
+        },
+        "optimizer": "RMSprop",
+        "callbacks": [
+            {"EarlyStopping": {"patience": 10, "restore_best_weights": True}}
+        ],
+    },
 #     # use a more complicated loss function
 #     {
 #         "features": ["coe:x1"],
@@ -98,34 +120,34 @@ RUNS = [
 #         "metrics": ["bias", "mean_absolute_error", {"MAEBusts": {"threshold": 0.5}}],
 #     },
 #     # use a learning rate scheduler
-#     {
-#         "features": ["coe:x1"],
-#         "targets": ["obs:y1"],
-#         "normalizer": {"default": "MinMaxScaler"},
-#         "model": {
-#             "fully_connected_network": {
-#                 "hidden_layers": [10],
-#                 "probabilistic_layer": "IndependentNormal",
-#             }
-#         },
-#         "loss": "crps_energy",
-#         "optimizer": {
-#             "Adam": {
-#                 "learning_rate": {
-#                     "CosineDecayRestarts": {
-#                         "initial_learning_rate": 0.001,
-#                         "first_decay_steps": 20,
-#                         "t_mul": 1.5,
-#                         "m_mul": 1.1,
-#                         "alpha": 0,
-#                     }
-#                 }
-#             }
-#         },
-#         "callbacks": [
-#             {"EarlyStopping": {"patience": 10, "restore_best_weights": True}}
-#         ],
-#     },
+    {
+        "features": ["coe:x1"],
+        "targets": ["obs:y1"],
+        "normalizer": {"default": "MinMaxScaler"},
+        "model": {
+            "fully_connected_network": {
+                "hidden_layers": [10],
+                "probabilistic_layer": "IndependentNormal",
+            }
+        },
+        "loss": "CRPSNormal",
+        "optimizer": {
+            "Adam": {
+                "learning_rate": {
+                    "CosineDecayRestarts": {
+                        "initial_learning_rate": 0.001,
+                        "first_decay_steps": 20,
+                        "t_mul": 1.5,
+                        "m_mul": 1.1,
+                        "alpha": 0,
+                    }
+                }
+            }
+        },
+        "callbacks": [
+            {"EarlyStopping": {"patience": 10, "restore_best_weights": True}}
+        ],
+    },
 #     #
 #     {
 #         "features": ["coe:x1"],
