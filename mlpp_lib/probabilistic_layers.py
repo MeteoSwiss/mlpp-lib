@@ -301,7 +301,7 @@ class ExponentialModule(BaseParametricDistributionModule):
         return self._name
     
 class BetaModule(BaseParametricDistributionModule):
-    _name = 'beta'
+    _name = 'IndependentBeta'
     _distribution = torch.distributions.Beta
     
     def __init__(self, **kwargs):

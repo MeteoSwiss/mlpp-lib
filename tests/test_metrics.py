@@ -7,10 +7,17 @@ from mlpp_lib import metrics
 def test_bias():
     y_true = ops.convert_to_tensor([1, 2, 3, 4, 5])
     y_pred = ops.convert_to_tensor([0.8, 2.2, 2.9, 4.1, 5.5])
-    result = metrics.bias(y_true, y_pred)
+    result = metrics.expected_bias(y_true, y_pred)
     expected_result = (-0.2 + 0.2 - 0.1 + 0.1 + 0.5) / 5
     assert result.numpy() == pytest.approx(expected_result)
 
+def test_mae():
+    y_true = ops.convert_to_tensor([1, 2, 3, 4, 5])
+    y_pred = ops.convert_to_tensor([0.8, 2.2, 2.9, 4.1, 5.5])
+    result = metrics.expected_mean_absolute_error(y_true, y_pred)
+    
+    expected_result = (0.2 + 0.2 + 0.1 + 0.1 + 0.5) / 5
+    assert result.numpy() == pytest.approx(expected_result)
 
 class TestMAEBusts:
     @pytest.fixture
