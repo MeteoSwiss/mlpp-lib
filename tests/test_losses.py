@@ -25,7 +25,7 @@ def test_scoringrules_crps_ensamble_normal():
     
     mu, sigma = torch.randn(32,1), torch.ones(32,1)
     
-    crps_ens = SampleLossWrapper(fn=sr.crps_ensemble, num_samples=1000, estimator='nrg')
+    crps_ens = SampleLossWrapper(fn=sr.crps_ensemble, num_samples=2000, estimator='nrg')
     
     normal = UniveriateGaussianModule()
     dist = normal.process_params(moments=torch.cat([mu, sigma], dim=-1))
