@@ -2,7 +2,7 @@ import keras
 import keras.ops as ops
 
 def bias(y_true, y_pred):
-    return tf.reduce_mean(y_pred - y_true, axis=-1)
+    return ops.mean(y_pred - y_true, axis=-1)
 
 
 class MAEBusts(keras.metrics.Metric):
