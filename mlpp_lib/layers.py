@@ -17,7 +17,7 @@ class MonteCarloDropout(Dropout):
         return super().call(inputs, training=True)
 
 @keras.saving.register_keras_serializable()
-class FullyConnectedLayer(Layer):
+class MultilayerPerceptron(Layer):
     """ A fully connected layer composed of a sequence 
         of linear layers interleaved by optional 
         batch norms, and dropouts/MC dropouts.

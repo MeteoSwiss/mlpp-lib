@@ -2,11 +2,8 @@ import torch
 from inspect import getmembers, isclass
 import pytest
 
-from mlpp_lib.layers import FullyConnectedLayer
 from mlpp_lib.probabilistic_layers import (
-    BaseDistributionLayer, 
     BaseParametricDistributionModule, 
-    UniveriateGaussianModule,
     distribution_to_layer
 )
 from mlpp_lib.models import (

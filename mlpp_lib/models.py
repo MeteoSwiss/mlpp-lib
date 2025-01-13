@@ -16,8 +16,8 @@ from keras import Model, initializers
 
 from mlpp_lib.physical_layers import *
 # from mlpp_lib import probabilistic_layers
-from mlpp_lib.probabilistic_layers import BaseDistributionLayer, BaseParametricDistributionModule, distribution_to_layer
-from mlpp_lib.layers import FullyConnectedLayer, MultibranchLayer, CrossNetLayer, ParallelConcatenateLayer
+from mlpp_lib.probabilistic_layers import DistributionLayer, BaseParametricDistributionModule, distribution_to_layer
+from mlpp_lib.layers import MultilayerPerceptron, MultibranchLayer, CrossNetLayer, ParallelConcatenateLayer
 
 try:
     import tcn  # type: ignore
@@ -33,30 +33,33 @@ class ProbabilisticModel(keras.Model):
     """ A probabilistic model composed of an encoder layer 
     and a probabilistic layer predicting the output's distribution.
     """
-    def __init__(self, encoder_layer: keras.Layer, probabilistic_layer: BaseDistributionLayer, default_output_type: Literal["distribution", "samples"] = "distribution"):
+    def __init__(self, encoder: keras.Layer, output_distribution: DistributionLayer, default_output_type: Literal["distribution", "samples", "expected"] = "distribution"):
         """_summary_
 
         Args:
             encoder_layer (keras.Layer): The encoder layer, transforming the inputs into 
             some latent dimension.
-            probabilistic_layer (BaseDistributionLayer): the output layer predicting the distribution.
-            default_output_type (Literal[distribution, samples], optional): Defines the defult behaviour of self.call(), where the model can either output a parametric 
-            distribution, or samples obtained from it. This is important to when fitting the model, as the type of output defines what loss functions are suitable. 
+            probabilistic_layer (DistributionLayer): the output layer predicting the distribution.
+            default_output_type (Literal[distribution, samples, expected], optional): Defines the defult behaviour of self.call(), where the model can either output a parametric 
+            distribution, samples obtained from it, or the expected value. This is important to when fitting the model, as the type of output defines what loss functions are suitable. 
             Defaults to "distribution".
         """
         super().__init__()
         
-        self.encoder_layer = encoder_layer
-        self.probabilistic_layer = probabilistic_layer
+        self.encoder = encoder
+        self.output_distribution = output_distribution
         self.default_output_type = default_output_type
         
         
-    def call(self, inputs, output_type: Optional[Literal["distribution", "samples"]] = None):
+    def call(self, inputs, output_type: Optional[Literal["distribution", "samples", "expected"]] = None):
         if output_type is None:
             output_type = self.default_output_type
             
-        enc = self.encoder_layer(inputs)
-        return self.probabilistic_layer(enc, output_type=output_type)
+        enc = self.encoder(inputs)
+        if output_type == "expected":
+            output = self.output_distribution(enc, output_type="distribution")
+            return output.mean
+        return self.output_distribution(enc, output_type=output_type)
     
 
 
@@ -68,7 +71,7 @@ class MonteCarloDropout(Dropout):
 
 def get_probabilistic_layer(distribution: str, bias_init, distribution_kwargs={},num_samples=21):
     probabilistic_layer = distribution_to_layer[distribution](**distribution_kwargs)
-    return BaseDistributionLayer(distribution=probabilistic_layer,
+    return DistributionLayer(distribution=probabilistic_layer,
                             num_samples=num_samples,
                             bias_init=bias_init)
 
@@ -191,7 +194,7 @@ def fully_connected_network(
         The built (but not yet compiled) model.
     """
     
-    ffnn = FullyConnectedLayer(hidden_layers=hidden_layers,
+    ffnn = MultilayerPerceptron(hidden_layers=hidden_layers,
                                batchnorm=batchnorm,
                                activations=activations,
                                dropout=dropout,
@@ -205,8 +208,8 @@ def fully_connected_network(
     if probabilistic_layer is None:
         return keras.models.Sequential([ffnn, output_layer])
     
-    return ProbabilisticModel(encoder_layer=ffnn,
-                               probabilistic_layer=output_layer)
+    return ProbabilisticModel(encoder=ffnn,
+                               output_distribution=output_layer)
 
 
 
@@ -271,7 +274,7 @@ def fully_connected_multibranch_network(
     branch_layers = []
 
     for idx in range(n_branches):
-        branch_layers.append(FullyConnectedLayer(
+        branch_layers.append(MultilayerPerceptron(
             hidden_layers=hidden_layers,
             batchnorm=batchnorm,
             activations=activations,
@@ -290,8 +293,8 @@ def fully_connected_multibranch_network(
     if probabilistic_layer is None:
         return keras.models.Sequential([mb_ffnn, output_layer])
     
-    return ProbabilisticModel(encoder_layer=mb_ffnn,
-                               probabilistic_layer=output_layer)
+    return ProbabilisticModel(encoder=mb_ffnn,
+                               output_distribution=output_layer)
 
 
 def deep_cross_network(
@@ -356,7 +359,7 @@ def deep_cross_network(
     
     # deep part
     
-    deep_layer = FullyConnectedLayer(hidden_layers=hidden_layers,
+    deep_layer = MultilayerPerceptron(hidden_layers=hidden_layers,
                                      batchnorm=batchnorm,
                                      activations=activations,
                                      dropout=dropout,
@@ -372,8 +375,8 @@ def deep_cross_network(
     if probabilistic_layer is None:
         return keras.models.Sequential([encoder, output_layer])
     
-    return ProbabilisticModel(encoder_layer=encoder,
-                               probabilistic_layer=output_layer)
+    return ProbabilisticModel(encoder=encoder,
+                               output_distribution=output_layer)
 
 
 def temporal_convolutional_network(

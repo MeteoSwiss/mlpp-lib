@@ -13,10 +13,10 @@ import xarray as xr
 from mlpp_lib import train
 from mlpp_lib.normalizers import DataTransformer
 from mlpp_lib.datasets import DataModule, DataSplitter
-from mlpp_lib.layers import FullyConnectedLayer
+from mlpp_lib.layers import MultilayerPerceptron
 from mlpp_lib.losses import DistributionLossWrapper, SampleLossWrapper
 from mlpp_lib.models import ProbabilisticModel
-from mlpp_lib.probabilistic_layers import BaseDistributionLayer, UniveriateGaussianModule
+from mlpp_lib.probabilistic_layers import DistributionLayer, UniveriateGaussianModule
 
 from .test_model_selection import ValidDataSplitterOptions
 
@@ -38,13 +38,13 @@ def test_train_noisy_polynomial(loss_type):
     else:
         crps_normal = SampleLossWrapper(fn=sr.crps_ensemble, num_samples=100)
     
-    prob_layer = BaseDistributionLayer(distribution=UniveriateGaussianModule(), num_samples=21)
-    encoder = FullyConnectedLayer(hidden_layers=[16,8], 
+    prob_layer = DistributionLayer(distribution=UniveriateGaussianModule(), num_samples=21)
+    encoder = MultilayerPerceptron(hidden_layers=[16,8], 
                                   batchnorm=False, 
                                   skip_connection=False,
                                   activations='sigmoid')
     
-    model = ProbabilisticModel(encoder_layer=encoder, probabilistic_layer=prob_layer)
+    model = ProbabilisticModel(encoder=encoder, output_distribution=prob_layer)
     
     model(x_values[:100]) # infer shapes
     model.compile(loss=crps_normal, optimizer=keras.optimizers.Adam(learning_rate=0.1))

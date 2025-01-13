@@ -90,6 +90,10 @@ class WrappingTorchDist():
     @property
     def has_rsample(self):
         return self._distribution.has_rsample
+    
+    @property
+    def mean(self):
+        return self._distribution.mean
         
 class UniveriateGaussianModule(BaseParametricDistributionModule):
     '''
@@ -351,7 +355,7 @@ class GammaModule(BaseParametricDistributionModule):
         return self._name
 
 @keras.saving.register_keras_serializable()
-class BaseDistributionLayer(Layer):
+class DistributionLayer(Layer):
     '''
     Keras layer implementing a sampling layer with reparametrization
     trick, based on an underlying parametric distribution.
@@ -364,7 +368,7 @@ class BaseDistributionLayer(Layer):
                  num_samples: int=21, 
                  bias_init = 'zeros',
                  **kwargs):
-        super(BaseDistributionLayer, self).__init__(**kwargs)
+        super(DistributionLayer, self).__init__(**kwargs)
 
         self.prob_layer = TorchModuleWrapper(distribution, name=distribution.name)
         self.num_dist_params = distribution.num_parameters
@@ -401,7 +405,7 @@ class BaseDistributionLayer(Layer):
         return (input_shape[0], self.num_samples, 1)
 
     def get_config(self):
-        config = super(BaseDistributionLayer, self).get_config()
+        config = super(DistributionLayer, self).get_config()
         return config
 
     @classmethod

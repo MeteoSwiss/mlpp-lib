@@ -2,7 +2,7 @@ import torch
 import pytest
 
 from mlpp_lib.probabilistic_layers import (
-    BaseDistributionLayer, 
+    DistributionLayer, 
     MultivariateGaussianTriLModule,
     UnivariateCensoredGaussianModule,
     UnivariateTruncatedGaussianModule,
@@ -13,7 +13,7 @@ from mlpp_lib.probabilistic_layers import MissingReparameterizationError, all_di
 
 def test_multivariate_gaussian():
     distr = MultivariateGaussianTriLModule(dim=4)
-    multivariate_gaussian_layer = BaseDistributionLayer(distribution=distr, num_samples=21)
+    multivariate_gaussian_layer = DistributionLayer(distribution=distr, num_samples=21)
 
     inputs = torch.randn(16,8)
     
@@ -24,7 +24,7 @@ def test_multivariate_gaussian():
 def test_defense_missing_rsample():
     # censored normal does not have rsample so far
     distr = UnivariateCensoredGaussianModule(a=-1., b=1.)
-    censored_gaussian_layer = BaseDistributionLayer(distribution=distr, num_samples=21)
+    censored_gaussian_layer = DistributionLayer(distribution=distr, num_samples=21)
     # ensure that trying to call the layer in training mode requiring samples raises an error 
     with pytest.raises(MissingReparameterizationError):
         censored_gaussian_layer(torch.randn(32,4), output_type='samples', training=True)
@@ -33,7 +33,7 @@ def test_defense_missing_rsample():
 def test_sampling_patterns(pattern):
     distr = UniveriateGaussianModule()
     
-    distr_layer = BaseDistributionLayer(distribution=distr)
+    distr_layer = DistributionLayer(distribution=distr)
     batch_dim, samples, data_dim = 32,12,7
     inputs = torch.randn(batch_dim, data_dim)
     
