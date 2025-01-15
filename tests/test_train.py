@@ -65,7 +65,7 @@ RUNS = [
         "model": {
             "fully_connected_network": {
                 "hidden_layers": [10],
-                "probabilistic_layer": "IndependentNormal",
+                "probabilistic_layer": "Normal",
             }
         },
         'loss': {
@@ -90,7 +90,7 @@ RUNS = [
         "model": {
             "fully_connected_network": {
                 "hidden_layers": [10],
-                "probabilistic_layer": "IndependentNormal",
+                "probabilistic_layer": "Normal",
             }
         },
         'loss': {
@@ -132,7 +132,7 @@ RUNS = [
         "model": {
             "fully_connected_network": {
                 "hidden_layers": [10],
-                "probabilistic_layer": "IndependentNormal",
+                "probabilistic_layer": "Normal",
             }
         },
         "loss": "CRPSNormal",
@@ -161,7 +161,7 @@ RUNS = [
         "model": {
             "fully_connected_network": {
                 "hidden_layers": [10],
-                "probabilistic_layer": "IndependentNormal",
+                "probabilistic_layer": "Normal",
                 "skip_connection": True,
             }
         },

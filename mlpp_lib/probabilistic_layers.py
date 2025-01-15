@@ -101,7 +101,7 @@ class UniveriateGaussianModule(BaseParametricDistributionModule):
     values of shape [None, 2]. This layer uses the reparametrization trick
     to allow the flow of gradients.
     '''
-    _name = 'IndependentNormal'
+    _name = 'Normal'
     _distribution = torch.distributions.Normal # WrappingTorchDist(base_dist=torch.distributions.Normal).sample(2)
     def __init__(self, **kwargs):
         super(UniveriateGaussianModule, self).__init__()

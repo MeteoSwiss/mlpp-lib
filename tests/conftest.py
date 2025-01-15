@@ -167,7 +167,7 @@ def get_prob_model() -> keras.Model:
         model_config = {
             "fully_connected_network": {
                 "hidden_layers": [1],
-                "probabilistic_layer": "IndependentNormal",
+                "probabilistic_layer": "Normal",
             }
         }
         model = get_model(n_inputs, n_outputs, model_config)

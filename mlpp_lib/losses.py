@@ -150,7 +150,10 @@ class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
 SR_PARAM_ORDER = {
     "Normal": ["loc", "scale"],
     "Exponential": ["rate"],
-    "Weibull": ["concentration", "scale"]
+    "Beta": ["concentration1", "concentration0"],
+    "Gamma": ["concentration", "rate"],
+    "LogNormal": ["loc", "scale"],
+    "CensoredNormalDistribution": ["mu_bar", "sigma_bar", "a", "b"]
 }
 
 # Mapping between distribution cls and a reparametrization,
@@ -159,7 +162,10 @@ SR_PARAM_ORDER = {
 SR_REPARAM = {
     "Normal": lambda loc, scale: (loc, scale),
     "Exponential": lambda x: (x,),
-    "Weibull": lambda x: (x,)
+    "Beta": lambda c1, c0: (c1, c0),
+    "Gamma": lambda c, r: (c, r),
+    "LogNormal": lambda loc, scale: (loc, scale),
+    "CensoredNormalDistribution": lambda loc, scale, a,b: (loc, scale, a,b)
 }    
 
 
@@ -215,6 +221,16 @@ class CRPSGamma(DistributionLossWrapper):
 class CRPSLogNormal(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_lognormal)
+        
+        
+class CRPSCensoredNormal(DistributionLossWrapper):
+    def __init__(self):
+        super().__init__(fn=sr.crps_cnormal)
+        
+class CRPSTruncatedNormal(DistributionLossWrapper):
+    def __init__(self):
+        super().__init__(fn=sr.crps_tnormal)
+
 class CRPSEnsemble(SampleLossWrapper):
     def __init__(self, num_samples):
         super().__init__(fn=sr.crps_ensemble, num_samples=num_samples)
