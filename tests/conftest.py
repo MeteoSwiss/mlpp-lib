@@ -1,9 +1,8 @@
 import numpy as np
 import pandas as pd
 import pytest
-import tensorflow as tf
 import xarray as xr
-from tensorflow import keras
+import keras
 
 from mlpp_lib.utils import get_loss, get_model
 
@@ -146,12 +145,12 @@ def splits_train_val() -> dict:
 
 
 @pytest.fixture
-def get_dummy_keras_model() -> tf.keras.Model:
+def get_dummy_keras_model() -> keras.Model:
     def _model(n_inputs, n_outpus):
-        inputs = tf.keras.Input(shape=(n_inputs,))
-        x = tf.keras.layers.Dense(4, activation=tf.nn.relu)(inputs)
-        outputs = tf.keras.layers.Dense(n_outpus, activation=tf.nn.softmax)(x)
-        model = tf.keras.Model(inputs=inputs, outputs=outputs)
+        inputs = keras.Input(shape=(n_inputs,))
+        x = keras.layers.Dense(4, activation=keras.ops.relu)(inputs)
+        outputs = keras.layers.Dense(n_outpus, activation=keras.ops.softmax)(x)
+        model = keras.Model(inputs=inputs, outputs=outputs)
         model.compile(
             optimizer=keras.optimizers.RMSprop(learning_rate=1e-3),
             loss=keras.losses.CategoricalCrossentropy(),
@@ -163,16 +162,16 @@ def get_dummy_keras_model() -> tf.keras.Model:
 
 
 @pytest.fixture
-def get_prob_model() -> tf.keras.Model:
+def get_prob_model() -> keras.Model:
     def _model(n_inputs, n_outputs):
         model_config = {
             "fully_connected_network": {
                 "hidden_layers": [1],
-                "probabilistic_layer": "IndependentNormal",
+                "probabilistic_layer": "Normal",
             }
         }
         model = get_model(n_inputs, n_outputs, model_config)
-        loss = get_loss("crps_energy")
+        loss = get_loss({'DistributionLossWrapper': 'scoringrules.crps_normal'})
         model.compile(
             optimizer=keras.optimizers.RMSprop(learning_rate=0.1),
             loss=loss,

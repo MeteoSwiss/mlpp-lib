@@ -1,19 +1,23 @@
 import logging
-from typing import Optional, Union, Any, Callable
+from typing import Optional, Union, Any, Literal
 
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.layers import (
+# import tensorflow as tf
+import keras
+from keras.src.layers import (
     Add,
     Dense,
     Dropout,
     BatchNormalization,
     Activation,
+    Concatenate
 )
-from tensorflow.keras import Model, initializers
+from keras import Model, initializers
 
 from mlpp_lib.physical_layers import *
-from mlpp_lib import probabilistic_layers
+# from mlpp_lib import probabilistic_layers
+from mlpp_lib.probabilistic_layers import DistributionLayer, BaseParametricDistributionModule, distribution_to_layer
+from mlpp_lib.layers import MultilayerPerceptron, MultibranchLayer, CrossNetLayer, ParallelConcatenateLayer
 
 try:
     import tcn  # type: ignore
@@ -25,38 +29,77 @@ else:
 
 _LOGGER = logging.getLogger(__name__)
 
+class ProbabilisticModel(keras.Model):
+    """ A probabilistic model composed of an encoder layer 
+    and a probabilistic layer predicting the output's distribution.
+    """
+    def __init__(self, encoder: keras.Layer, output_distribution: DistributionLayer, default_output_type: Literal["distribution", "samples", "expected"] = "distribution"):
+        """_summary_
 
-@tf.keras.saving.register_keras_serializable()
+        Args:
+            encoder_layer (keras.Layer): The encoder layer, transforming the inputs into 
+            some latent dimension.
+            probabilistic_layer (DistributionLayer): the output layer predicting the distribution.
+            default_output_type (Literal[distribution, samples, expected], optional): Defines the defult behaviour of self.call(), where the model can either output a parametric 
+            distribution, samples obtained from it, or the expected value. This is important to when fitting the model, as the type of output defines what loss functions are suitable. 
+            Defaults to "distribution".
+        """
+        super().__init__()
+        
+        self.encoder = encoder
+        self.output_distribution = output_distribution
+        self.default_output_type = default_output_type
+        
+        
+    def call(self, inputs, output_type: Optional[Literal["distribution", "samples", "expected"]] = None):
+        if output_type is None:
+            output_type = self.default_output_type
+            
+        enc = self.encoder(inputs)
+        if output_type == "expected":
+            output = self.output_distribution(enc, output_type="distribution")
+            return output.mean
+        return self.output_distribution(enc, output_type=output_type)
+    
+
+
+
+@keras.saving.register_keras_serializable()
 class MonteCarloDropout(Dropout):
     def call(self, inputs):
         return super().call(inputs, training=True)
 
+def get_probabilistic_layer(distribution: str, bias_init, distribution_kwargs={},num_samples=21):
+    probabilistic_layer = distribution_to_layer[distribution](**distribution_kwargs)
+    return DistributionLayer(distribution=probabilistic_layer,
+                            num_samples=num_samples,
+                            bias_init=bias_init)
 
-def get_probabilistic_layer(
-    output_size,
-    probabilistic_layer: Union[str, dict]
-) -> Callable:
-    """Get the probabilistic layer."""
+# def get_probabilistic_layer(
+#     output_size,
+#     probabilistic_layer: Union[str, dict]
+# ) -> Callable:
+#     """Get the probabilistic layer."""
 
-    if isinstance(probabilistic_layer, dict):
-        probabilistic_layer_name = list(probabilistic_layer.keys())[0]
-        probabilistic_layer_options = probabilistic_layer[probabilistic_layer_name]
-    else:
-        probabilistic_layer_name = probabilistic_layer
-        probabilistic_layer_options = {}
+#     if isinstance(probabilistic_layer, dict):
+#         probabilistic_layer_name = list(probabilistic_layer.keys())[0]
+#         probabilistic_layer_options = probabilistic_layer[probabilistic_layer_name]
+#     else:
+#         probabilistic_layer_name = probabilistic_layer
+#         probabilistic_layer_options = {}
 
-    if hasattr(probabilistic_layers, probabilistic_layer_name):
-        _LOGGER.info(f"Using custom probabilistic layer: {probabilistic_layer_name}")
-        probabilistic_layer_obj = getattr(probabilistic_layers, probabilistic_layer_name)
-        n_params = getattr(probabilistic_layers, probabilistic_layer_name).params_size(output_size)
-        probabilistic_layer = (
-            probabilistic_layer_obj(output_size, name="output", **probabilistic_layer_options) if isinstance(probabilistic_layer_obj, type) 
-            else probabilistic_layer_obj(output_size, name="output")
-        )
-    else:
-        raise KeyError(f"The probabilistic layer {probabilistic_layer_name} is not available.")
+#     if hasattr(probabilistic_layers, probabilistic_layer_name):
+#         _LOGGER.info(f"Using custom probabilistic layer: {probabilistic_layer_name}")
+#         probabilistic_layer_obj = getattr(probabilistic_layers, probabilistic_layer_name)
+#         n_params = getattr(probabilistic_layers, probabilistic_layer_name).params_size(output_size)
+#         probabilistic_layer = (
+#             probabilistic_layer_obj(output_size, name="output", **probabilistic_layer_options) if isinstance(probabilistic_layer_obj, type) 
+#             else probabilistic_layer_obj(output_size, name="output")
+#         )
+#     else:
+#         raise KeyError(f"The probabilistic layer {probabilistic_layer_name} is not available.")
 
-    return probabilistic_layer, n_params
+#     return probabilistic_layer, n_params
 
 
 def _build_fcn_block(
@@ -91,31 +134,17 @@ def _build_fcn_block(
     return x
 
 
-def _build_fcn_output(x, output_size, probabilistic_layer, out_bias_init):
-    # probabilistic prediction
-    if probabilistic_layer:
-        probabilistic_layer, n_params = get_probabilistic_layer(output_size, probabilistic_layer)
-        if isinstance(out_bias_init, np.ndarray):
-            out_bias_init = np.hstack(
-                [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
-            )
-            out_bias_init = initializers.Constant(out_bias_init)
-
-        x = Dense(n_params, bias_initializer=out_bias_init, name="dist_params")(x)
-        outputs = probabilistic_layer(x)
-
-    # deterministic prediction
-    else:
+def _build_fcn_output(output_size, out_bias_init, probabilistic_layer=None, **distribution_kwargs):
+    if probabilistic_layer is None:
         if isinstance(out_bias_init, np.ndarray):
             out_bias_init = initializers.Constant(out_bias_init)
-
-        outputs = Dense(output_size, bias_initializer=out_bias_init, name="output")(x)
-
-    return outputs
-
-
+        return Dense(output_size, name='output', bias_initializer=out_bias_init)
+    
+    
+    prob_layer = get_probabilistic_layer(distribution=probabilistic_layer, bias_init=out_bias_init,distribution_kwargs=distribution_kwargs)
+    return prob_layer
+ 
 def fully_connected_network(
-    input_shape: tuple[int],
     output_size: int,
     hidden_layers: list,
     batchnorm: bool = False,
@@ -125,14 +154,13 @@ def fully_connected_network(
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
     skip_connection: bool = False,
+    prob_layer_kwargs: dict = {}
 ) -> Model:
     """
-    Build a Fully Connected Neural Network.
+    Get an unbuilt Fully Connected Neural Network.
 
     Parameters
     ----------
-    input_shape: tuple[int]
-        Shape of the input samples (not including batch size)
     output_size: int
         Number of target predictants.
     hidden_layers: list[int]
@@ -165,46 +193,30 @@ def fully_connected_network(
     model: keras model
         The built (but not yet compiled) model.
     """
+    
+    ffnn = MultilayerPerceptron(hidden_layers=hidden_layers,
+                               batchnorm=batchnorm,
+                               activations=activations,
+                               dropout=dropout,
+                               mc_dropout=mc_dropout,
+                               skip_connection=skip_connection)
+    
+    output_layer = _build_fcn_output(out_bias_init=out_bias_init,
+                                     output_size=output_size,
+                                     probabilistic_layer=probabilistic_layer, **prob_layer_kwargs)
+    
+    if probabilistic_layer is None:
+        return keras.models.Sequential([ffnn, output_layer])
+    
+    return ProbabilisticModel(encoder=ffnn,
+                               output_distribution=output_layer)
 
-    if isinstance(dropout, list):
-        assert len(dropout) == len(hidden_layers)
-    elif isinstance(dropout, float):
-        dropout = [dropout] * (len(hidden_layers) - 1)
-    else:
-        dropout = []
-
-    if isinstance(activations, list):
-        assert len(activations) == len(hidden_layers)
-    elif isinstance(activations, str):
-        activations = [activations] * len(hidden_layers)
-
-    if isinstance(out_bias_init, np.ndarray):
-        out_bias_init_shape = out_bias_init.shape[-1]
-        assert out_bias_init.shape[-1] == output_size, (
-            f"Bias initialization array is shape {out_bias_init_shape}"
-            f"but output size is {output_size}"
-        )
-
-    inputs = tf.keras.Input(shape=input_shape)
-    x = _build_fcn_block(
-        inputs,
-        hidden_layers,
-        batchnorm,
-        activations,
-        dropout,
-        mc_dropout,
-        skip_connection,
-    )
-    outputs = _build_fcn_output(x, output_size, probabilistic_layer, out_bias_init)
-    model = Model(inputs=inputs, outputs=outputs)
-
-    return model
 
 
 def fully_connected_multibranch_network(
-    input_shape: tuple[int],
     output_size: int,
     hidden_layers: list,
+    n_branches,
     batchnorm: bool = False,
     activations: Optional[Union[str, list[str]]] = "relu",
     dropout: Optional[Union[float, list[float]]] = None,
@@ -212,9 +224,11 @@ def fully_connected_multibranch_network(
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
     skip_connection: bool = False,
+    aggregation: Literal['sum', 'concat']='concat',
+    prob_layer_kwargs: dict = {}
 ) -> Model:
     """
-    Build a multi-branch Fully Connected Neural Network.
+    Returns an unbuilt a multi-branch Fully Connected Neural Network.
 
     Parameters
     ----------
@@ -225,6 +239,8 @@ def fully_connected_multibranch_network(
     hidden_layers: list[int]
         List that is used to define the fully connected block. Each element creates
         a Dense layer with the corresponding units.
+    n_branches: int
+        The number of branches.
     batchnorm: bool
         Use batch normalization. Default is False.
     activations: str or list[str]
@@ -246,74 +262,53 @@ def fully_connected_multibranch_network(
         used as output layer of the keras `Model`. Default is None.
     skip_connection: bool
         Include a skip connection to the MLP architecture. Default is False.
+    aggregation: Literal['sum', 'concat']
+        The aggregation strategy to combine the branches' outputs.
 
     Return
     ------
     model: keras model
-        The built (but not yet compiled) model.
+        The unbuilt and uncompiled model.
     """
-
-    if isinstance(dropout, list):
-        assert len(dropout) == len(hidden_layers)
-    elif isinstance(dropout, float):
-        dropout = [dropout] * (len(hidden_layers) - 1)
-    else:
-        dropout = []
-
-    if isinstance(activations, list):
-        assert len(activations) == len(hidden_layers)
-    elif isinstance(activations, str):
-        activations = [activations] * len(hidden_layers)
-
-    if isinstance(out_bias_init, np.ndarray):
-        out_bias_init_shape = out_bias_init.shape[-1]
-        assert out_bias_init.shape[-1] == output_size, (
-            f"Bias initialization array is shape {out_bias_init_shape}"
-            f"but output size is {output_size}"
-        )
-
-    if probabilistic_layer:
-        _, n_params = get_probabilistic_layer(output_size, probabilistic_layer)
-        n_branches = n_params
-    else:
-        n_branches = output_size
-
-    inputs = tf.keras.Input(shape=input_shape)
-    all_branch_outputs = []
+    
+    branch_layers = []
 
     for idx in range(n_branches):
-        x = _build_fcn_block(
-            inputs,
-            hidden_layers,
-            batchnorm,
-            activations,
-            dropout,
-            mc_dropout,
-            skip_connection,
-            idx,
-        )
-        all_branch_outputs.append(x)
-
-    concatenated_x = tf.keras.layers.Concatenate()(all_branch_outputs)
-    outputs = _build_fcn_output(
-        concatenated_x, output_size, probabilistic_layer, out_bias_init
-    )
-    model = Model(inputs=inputs, outputs=outputs)
-
-    return model
+        branch_layers.append(MultilayerPerceptron(
+            hidden_layers=hidden_layers,
+            batchnorm=batchnorm,
+            activations=activations,
+            dropout=dropout,
+            mc_dropout=mc_dropout,
+            skip_connection=skip_connection,
+            indx=idx
+        ))
+        
+    mb_ffnn = MultibranchLayer(branches=branch_layers, aggregation=aggregation)
+    
+    output_layer = _build_fcn_output(out_bias_init=out_bias_init,
+                                     output_size=output_size,
+                                     probabilistic_layer=probabilistic_layer, **prob_layer_kwargs)
+    
+    if probabilistic_layer is None:
+        return keras.models.Sequential([mb_ffnn, output_layer])
+    
+    return ProbabilisticModel(encoder=mb_ffnn,
+                               output_distribution=output_layer)
 
 
 def deep_cross_network(
-    input_shape: tuple[int],
     output_size: int,
     hidden_layers: list,
+    n_cross_layers: int,
+    cross_layers_hiddensize: int,
     batchnorm: bool = True,
     activations: Optional[Union[str, list[str]]] = "relu",
     dropout: Optional[Union[float, list[float]]] = None,
     mc_dropout: bool = False,
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
-    skip_connection: bool = False,
+    prob_layer_kwargs: dict = {}
 ):
     """
     Build a Deep and Cross Network (see https://arxiv.org/abs/1708.05123).
@@ -327,6 +322,10 @@ def deep_cross_network(
     hidden_layers: list[int]
         List that is used to define the fully connected block. Each element creates
         a Dense layer with the corresponding units.
+    n_cross_layers: int
+        The number of cross layers
+    cross_layers_hiddensize: int
+        The hidden size to be used in the cross layers
     batchnorm: bool
         Use batch normalization. Default is True.
     activations: str or list[str]
@@ -346,86 +345,38 @@ def deep_cross_network(
     probabilistic_layer: str
         (Optional) Name of a probabilistic layer defined in `mlpp_lib.probabilistic_layers`, which is
         used as output layer of the keras `Model`. Default is None.
-    skip_connection: bool
-        Include a skip connection to the MLP architecture. Default is False.
 
     Return
     ------
     model: keras model
         The built (but not yet compiled) model.
     """
-    if isinstance(dropout, list):
-        assert len(dropout) == len(hidden_layers)
-    elif isinstance(dropout, float):
-        dropout = [dropout] * (len(hidden_layers))
-    else:
-        dropout = []
 
-    if isinstance(activations, list):
-        assert len(activations) == len(hidden_layers)
-    elif isinstance(activations, str):
-        activations = [activations] * len(hidden_layers)
-
-    if isinstance(out_bias_init, np.ndarray):
-        out_bias_init_shape = out_bias_init.shape[-1]
-        assert out_bias_init.shape[-1] == output_size, (
-            f"Bias initialization array is shape {out_bias_init_shape}"
-            f"but output size is {output_size}"
-        )
 
     # cross part
-    inputs = tf.keras.layers.Input(shape=input_shape)
-    cross = inputs
-    for _ in hidden_layers:
-        units_ = cross.shape[-1]
-        x = Dense(units_)(cross)
-        cross = inputs * x + cross
-    cross = BatchNormalization()(cross)
-    # cross = tf.keras.Model(inputs=inputs, outputs=cross, name="crossblock")
-
+    cross_layer = CrossNetLayer(hidden_size=cross_layers_hiddensize,
+                                depth=n_cross_layers)
+    
     # deep part
-    deep = inputs
-    deep = _build_fcn_block(
-        deep,
-        hidden_layers,
-        batchnorm,
-        activations,
-        dropout,
-        mc_dropout,
-        skip_connection=False,
-    )
+    
+    deep_layer = MultilayerPerceptron(hidden_layers=hidden_layers,
+                                     batchnorm=batchnorm,
+                                     activations=activations,
+                                     dropout=dropout,
+                                     mc_dropout=mc_dropout)
 
-    # merge
-    merge = tf.keras.layers.Concatenate()([cross, deep])
+    
+    encoder = ParallelConcatenateLayer([cross_layer, deep_layer])
 
-    if skip_connection:
-        merge = Dense(input_shape[0])(merge)
-        merge = Add()([merge, inputs])
-        merge = Activation(activation=activations[-1])(merge)
+    output_layer = _build_fcn_output(out_bias_init=out_bias_init,
+                                     output_size=output_size,
+                                     probabilistic_layer=probabilistic_layer, **prob_layer_kwargs)
 
-    # probabilistic prediction
-    if probabilistic_layer:
-        probabilistic_layer, n_params = get_probabilistic_layer(output_size, probabilistic_layer)
-        if isinstance(out_bias_init, np.ndarray):
-            out_bias_init = np.hstack(
-                [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
-            )
-            out_bias_init = initializers.Constant(out_bias_init)
-
-        x = Dense(n_params, bias_initializer=out_bias_init, name="dist_params")(merge)
-        outputs = probabilistic_layer(x)
-
-    # deterministic prediction
-    else:
-        if isinstance(out_bias_init, np.ndarray):
-            out_bias_init = initializers.Constant(out_bias_init)
-
-        outputs = Dense(output_size, bias_initializer=out_bias_init, name="output")(
-            merge
-        )
-
-    model = Model(inputs=inputs, outputs=outputs, name="deep_cross_network")
-    return model
+    if probabilistic_layer is None:
+        return keras.models.Sequential([encoder, output_layer])
+    
+    return ProbabilisticModel(encoder=encoder,
+                               output_distribution=output_layer)
 
 
 def temporal_convolutional_network(
@@ -450,7 +401,7 @@ def temporal_convolutional_network(
     if isinstance(out_bias_init, np.ndarray):
         out_bias_init = initializers.Constant(out_bias_init)
 
-    inputs = tf.keras.Input(shape=input_shape, name="input")
+    inputs = keras.Input(shape=input_shape, name="input")
     x_tcn = tcn.TCN(
         nb_filters=nb_filters,
         kernel_size=kernel_size,

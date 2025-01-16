@@ -3,8 +3,8 @@ from typing import Any, Callable, Union, Optional
 
 import numpy as np
 import xarray as xr
-import tensorflow as tf
-
+import keras
+import importlib
 from mlpp_lib import callbacks, losses, metrics, models
 
 
@@ -29,9 +29,9 @@ def get_callback(callback: Union[str, dict]) -> Callable:
             if isinstance(callback_obj, type)
             else callback_obj
         )
-    elif hasattr(tf.keras.callbacks, callback_name):
+    elif hasattr(keras.callbacks, callback_name):
         LOGGER.info(f"Using keras built-in callback: {callback_name}")
-        callback_obj = getattr(tf.keras.callbacks, callback_name)
+        callback_obj = getattr(keras.callbacks, callback_name)
         callback = (
             callback_obj(**callback_options)
             if isinstance(callback_obj, type)
@@ -47,7 +47,7 @@ def get_model(
     input_shape: tuple[int],
     output_shape: Union[int, tuple[int]],
     model_config: dict[str, Any],
-) -> tf.keras.Model:
+) -> keras.Model:
     """Get the keras model."""
 
     model_name = list(model_config.keys())[0]
@@ -58,7 +58,7 @@ def get_model(
     LOGGER.debug(model_options)
     if isinstance(output_shape, int):
         output_shape = (output_shape,)
-    model = getattr(models, model_name)(input_shape, output_shape[-1], **model_options)
+    model = getattr(models, model_name)(output_shape[-1], **model_options)
 
     return model
 
@@ -67,24 +67,34 @@ def get_loss(loss: Union[str, dict]) -> Callable:
     """Get the loss function, either keras built-in or mlpp custom."""
 
     if isinstance(loss, dict):
-        loss_name = list(loss.keys())[0]
-        loss_options = loss[loss_name]
+        name = list(loss.keys())[0]
+        if 'Wrapper' in name:
+            # If the loss is a wrapper for another score, such as 
+            # one coming from scoringrules
+            fn_ = loss[name]
+            if isinstance(fn_, dict):
+                # if there are extra arguments
+                fn = list(fn_.keys())[0]
+                fn_args = fn_[fn]
+                module_name, fn_name = fn.rsplit(".", 1)
+            else:
+                module_name, fn_name = fn_.rsplit(".", 1)
+                fn_args = {}
+            module = importlib.import_module(module_name)
+            loss_fn = getattr(module, fn_name)
+            LOGGER.info(f"Using {fn_name} loss from {module_name}")
+            return getattr(losses, name)(fn=loss_fn, **fn_args)
+        else:
+            # If the loss is a pre-defined loss in mlpp with arguments
+            fn_args = loss[name]
+            loss_fn = getattr(losses, name)
+            LOGGER.info(f"Using {name} loss.")
+            return loss_fn(**fn_args)
     else:
-        loss_name = loss
-        loss_options = {}
+        # If the loss is a pre-defined loss in mlpp without arguments
+        loss_fn = getattr(losses, loss)
+        return loss_fn()
 
-    if hasattr(losses, loss_name):
-        LOGGER.info(f"Using custom mlpp loss: {loss_name}")
-        loss_obj = getattr(losses, loss_name)
-        loss = loss_obj(**loss_options) if isinstance(loss_obj, type) else loss_obj
-    elif hasattr(tf.keras.losses, loss_name):
-        LOGGER.info(f"Using keras built-in loss: {loss_name}")
-        loss_obj = getattr(tf.keras.losses, loss_name)
-        loss = loss_obj(**loss_options) if isinstance(loss_obj, type) else loss_obj
-    else:
-        raise KeyError(f"The loss {loss_name} is not available.")
-
-    return loss
 
 
 def get_metric(metric: Union[str, dict]) -> Callable:
@@ -103,9 +113,9 @@ def get_metric(metric: Union[str, dict]) -> Callable:
         metric = (
             metric_obj(**metric_options) if isinstance(metric_obj, type) else metric_obj
         )
-    elif hasattr(tf.keras.metrics, metric_name):
+    elif hasattr(keras.metrics, metric_name):
         LOGGER.info(f"Using keras built-in metric: {metric_name}")
-        metric_obj = getattr(tf.keras.metrics, metric_name)
+        metric_obj = getattr(keras.metrics, metric_name)
         metric = (
             metric_obj(**metric_options) if isinstance(metric_obj, type) else metric_obj
         )
@@ -117,7 +127,7 @@ def get_metric(metric: Union[str, dict]) -> Callable:
 
 def get_scheduler(
     scheduler_config: Union[dict, None]
-) -> Optional[tf.keras.optimizers.schedules.LearningRateSchedule]:
+) -> Optional[keras.optimizers.schedules.LearningRateSchedule]:
     """Create a learning rate scheduler from a config dictionary."""
 
     if not isinstance(scheduler_config, dict):
@@ -139,13 +149,13 @@ def get_scheduler(
             f"Scheduler options for '{scheduler_name}' should be a dictionary."
         )
 
-    if hasattr(tf.keras.optimizers.schedules, scheduler_name):
+    if hasattr(keras.optimizers.schedules, scheduler_name):
         LOGGER.info(f"Using keras built-in learning rate scheduler: {scheduler_name}")
-        scheduler_cls = getattr(tf.keras.optimizers.schedules, scheduler_name)
+        scheduler_cls = getattr(keras.optimizers.schedules, scheduler_name)
         scheduler = scheduler_cls(**scheduler_options)
     else:
         raise KeyError(
-            f"The scheduler '{scheduler_name}' is not available in tf.keras.optimizers.schedules."
+            f"The scheduler '{scheduler_name}' is not available in keras.optimizers.schedules."
         )
 
     return scheduler
@@ -163,9 +173,9 @@ def get_optimizer(optimizer: Union[str, dict]) -> Callable:
         optimizer_name = optimizer
         optimizer_options = {}
 
-    if hasattr(tf.keras.optimizers, optimizer_name):
+    if hasattr(keras.optimizers, optimizer_name):
         LOGGER.info(f"Using keras built-in optimizer: {optimizer_name}")
-        optimizer_obj = getattr(tf.keras.optimizers, optimizer_name)
+        optimizer_obj = getattr(keras.optimizers, optimizer_name)
         optimizer = (
             optimizer_obj(**optimizer_options)
             if isinstance(optimizer_obj, type)
