@@ -33,8 +33,7 @@ class MonteCarloDropout(Dropout):
 
 
 def get_probabilistic_layer(
-    output_size,
-    probabilistic_layer: Union[str, dict]
+    output_size, probabilistic_layer: Union[str, dict]
 ) -> Callable:
     """Get the probabilistic layer."""
 
@@ -47,14 +46,23 @@ def get_probabilistic_layer(
 
     if hasattr(probabilistic_layers, probabilistic_layer_name):
         _LOGGER.info(f"Using custom probabilistic layer: {probabilistic_layer_name}")
-        probabilistic_layer_obj = getattr(probabilistic_layers, probabilistic_layer_name)
-        n_params = getattr(probabilistic_layers, probabilistic_layer_name).params_size(output_size)
+        probabilistic_layer_obj = getattr(
+            probabilistic_layers, probabilistic_layer_name
+        )
+        n_params = getattr(probabilistic_layers, probabilistic_layer_name).params_size(
+            output_size
+        )
         probabilistic_layer = (
-            probabilistic_layer_obj(output_size, name="output", **probabilistic_layer_options) if isinstance(probabilistic_layer_obj, type) 
+            probabilistic_layer_obj(
+                output_size, name="output", **probabilistic_layer_options
+            )
+            if isinstance(probabilistic_layer_obj, type)
             else probabilistic_layer_obj(output_size, name="output")
         )
     else:
-        raise KeyError(f"The probabilistic layer {probabilistic_layer_name} is not available.")
+        raise KeyError(
+            f"The probabilistic layer {probabilistic_layer_name} is not available."
+        )
 
     return probabilistic_layer, n_params
 
@@ -94,7 +102,9 @@ def _build_fcn_block(
 def _build_fcn_output(x, output_size, probabilistic_layer, out_bias_init):
     # probabilistic prediction
     if probabilistic_layer:
-        probabilistic_layer, n_params = get_probabilistic_layer(output_size, probabilistic_layer)
+        probabilistic_layer, n_params = get_probabilistic_layer(
+            output_size, probabilistic_layer
+        )
         if isinstance(out_bias_init, np.ndarray):
             out_bias_init = np.hstack(
                 [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
@@ -405,7 +415,9 @@ def deep_cross_network(
 
     # probabilistic prediction
     if probabilistic_layer:
-        probabilistic_layer, n_params = get_probabilistic_layer(output_size, probabilistic_layer)
+        probabilistic_layer, n_params = get_probabilistic_layer(
+            output_size, probabilistic_layer
+        )
         if isinstance(out_bias_init, np.ndarray):
             out_bias_init = np.hstack(
                 [out_bias_init, [0.0] * (n_params - out_bias_init.shape[0])]
