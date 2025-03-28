@@ -15,7 +15,6 @@ from .normalizers import DataTransformer
 
 LOGGER = logging.getLogger(__name__)
 
-
 class DataModule:
     """A class to encapsulate everything involved in mlpp data processing.
 
