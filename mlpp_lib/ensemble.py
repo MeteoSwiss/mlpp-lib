@@ -162,7 +162,7 @@ def compute_ecc(
     -------
     output_dataset: xr.Dataset
     """
-    align_dims = [dim for dim in input_dataset.dims.keys() if dim in ecc_ranks.dims]
+    align_dims = [dim for dim in input_dataset.sizes.keys() if dim in ecc_ranks.sizes]
     align_dims.remove("realization")
     ecc_ranks = ecc_ranks.sel({dim: input_dataset[dim] for dim in align_dims})
 
@@ -181,6 +181,6 @@ def compute_ecc(
             data_array, dim="realization", loop_dim=loop_dim, circular=circular, b=b
         )
         # reorder predictions accordingly
-        output[name] = da_sorted.sel(rank=ecc_ranks, method="nearest").drop("rank")
+        output[name] = da_sorted.sel(rank=ecc_ranks, method="nearest").drop_vars("rank")
 
     return output

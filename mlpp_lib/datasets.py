@@ -402,7 +402,7 @@ class Dataset:
             coords = {dim: x[dim].values for dim in dims if dim != "v"}
             return dims, coords
 
-        if x.dims != y.dims:
+        if x.sizes != y.sizes:
             raise ValueError(
                 "x and y do not have the same dimensions! "
                 f"x has dimensions {x.dims} and y has {y.dims}"
@@ -449,9 +449,11 @@ class Dataset:
         x, y, w = self._get_copies()
 
         event_axes = [self.dims.index(dim) for dim in self.dims if dim != "s"]
-        mask = da.any(da.isnan(da.from_array(x, name="x")), axis=event_axes)
+        mask = da.any(~da.isfinite(da.from_array(x, name="x")), axis=event_axes)
         if y is not None:
-            mask = mask | da.any(da.isnan(da.from_array(y, name="y")), axis=event_axes)
+            mask = mask | da.any(
+                ~da.isfinite(da.from_array(y, name="y")), axis=event_axes
+            )
         mask = (~mask).compute()
 
         # with grouped samples, nans have to be removed in blocks:
@@ -596,9 +598,7 @@ class DataLoader(tf.keras.utils.Sequence):
         self.shuffle = shuffle
         self.block_size = block_size
         self.num_samples = len(self.dataset.x)
-        self.num_batches = (
-            self.num_samples // batch_size if batch_size <= self.num_samples else 1
-        )
+        self.num_batches = int(np.ceil(self.num_samples / batch_size))
         self._indices = tf.range(self.num_samples)
         self._seed = 0
         self._reset()

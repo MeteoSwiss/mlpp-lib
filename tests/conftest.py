@@ -9,7 +9,7 @@ from mlpp_lib.utils import get_loss, get_model
 
 
 LEADTIMES = np.arange(24)
-REFTIMES = pd.date_range("2018-01-01", "2018-03-31", freq="24H")
+REFTIMES = pd.date_range("2018-01-01", "2018-03-31", freq="24h")
 STATIONS = [chr(i) * 3 for i in range(ord("A"), ord("Z"))]
 SHAPE = (len(REFTIMES), len(LEADTIMES), len(STATIONS))
 DIMS = ["forecast_reference_time", "t", "station"]
@@ -76,7 +76,9 @@ def datatransformations() -> list:
     import mlpp_lib.normalizers as no
 
     datatransformations = [
-        no.create_transformation_from_str(n.name, inputs={"fillvalue": -5} if n.name == "Identity" else {}) # temporary fix, do we want to let the user define different fillvalue for each transformation ?
+        no.create_transformation_from_str(
+            n.name, inputs={"fillvalue": -5} if n.name == "Identity" else {}
+        )  # temporary fix, do we want to let the user define different fillvalue for each transformation ?
         for n in no.DataTransformation.__subclasses__()
     ]
 
@@ -96,7 +98,11 @@ def data_transformer() -> xr.Dataset:
         for i, transformation in enumerate(transformations_list)
     }
     data_transformer = no.DataTransformer(method_var_dict)
-    data_transformer.transformers['Identity'][0].fillvalue = -5 # temporary fix, do we want to let the user define different fillvalue for each transformation ?
+    data_transformer.transformers["Identity"][
+        0
+    ].fillvalue = (
+        -5
+    )  # temporary fix, do we want to let the user define different fillvalue for each transformation ?
 
     return data_transformer
 

@@ -116,7 +116,7 @@ def get_metric(metric: Union[str, dict]) -> Callable:
 
 
 def get_scheduler(
-    scheduler_config: Union[dict, None]
+    scheduler_config: Union[dict, None],
 ) -> Optional[tf.keras.optimizers.schedules.LearningRateSchedule]:
     """Create a learning rate scheduler from a config dictionary."""
 

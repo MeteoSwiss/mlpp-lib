@@ -39,8 +39,10 @@ def get_log_params(param_run: dict) -> dict:
 
 def get_lr(optimizer: tf.keras.optimizers.Optimizer) -> float:
     """Get the learning rate of the optimizer"""
+
     def lr(y_true, y_pred):
         return optimizer.lr
+
     return lr
 
 
@@ -119,7 +121,7 @@ def train(
         steps_per_epoch=cfg.get("steps_per_epoch", None),
         verbose=2,
     )
-    LOGGER.info("Done! \U0001F40D")
+    LOGGER.info("Done! \U0001f40d")
 
     # we don't need to export loss and metric functions for deployments
     model.compile(optimizer=optimizer, loss=None, metrics=None)
