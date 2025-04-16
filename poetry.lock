@@ -5250,9 +5250,9 @@ type = ["pytest-mypy"]
 [extras]
 tensorflow = ["tensorflow"]
 tensorflow-cpu = ["tensorflow-cpu"]
-train = ["numba", "scikit-learn", "tensorflow", "zarr"]
+train = ["numba", "tensorflow", "zarr"]
 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9, <3.11"
-content-hash = "332cb96d8d60aa86b3c2d004180eaf4ffd5bc4cc321f97eb4d3d0d4eb97ac4c1"
+content-hash = "4011e5b44501ba2c74cb52bc5135e96268932c3f376fe84ce498305dac331353"
