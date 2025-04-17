@@ -16,7 +16,7 @@ def test_regression_resampler_bins(make_dataset):
 
     ds = make_dataset
 
-    resampled_data = RegressionResampler.fit_resample(ds.x, ds.y, n_bins=5)
+    resampled_data = RegressionResampler.fit_resample(ds.x, y=ds.y, n_bins=5)
 
     assert resampled_data[0].shape[0] == ds.x.shape[0]
     assert resampled_data[1].shape[0] == ds.y.shape[0]
