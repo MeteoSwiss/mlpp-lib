@@ -12,6 +12,7 @@ from typing_extensions import Self
 
 from .model_selection import DataSplitter
 from .normalizers import DataTransformer
+from .resamplers import RegressionResampler
 
 LOGGER = logging.getLogger(__name__)
 
@@ -602,6 +603,12 @@ class DataLoader(tf.keras.utils.Sequence):
         self._indices = tf.range(self.num_samples)
         self._seed = 0
         self._reset()
+
+    def resample(self, n_bins: int = None, random_seed: int = None) -> None:
+        y = np.array(self.dataset.y)
+        resampler = RegressionResampler.fit(y, n_bins=n_bins)
+        indices = resampler.sample_indices(random_seed=random_seed)
+        self._indices = tf.constant(indices)
 
     def __len__(self) -> int:
         return self.num_batches

@@ -110,6 +110,10 @@ def train(
         block_size=block_size,
     )
 
+    if "resample" in cfg:
+        LOGGER.info("Resample training data")
+        train_dataloader.resample(**cfg["resample"])
+
     LOGGER.info("Start training.")
     LOGGER.debug(f"Length train data: {len(train_dataloader)}")
     LOGGER.debug(f"Length val data: {len(val_dataloader)}")
