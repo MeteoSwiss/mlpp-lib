@@ -85,8 +85,6 @@ class RegressionResampler:
             If `y` is not 1-dimensional.
         """
         y = y.squeeze()
-        if y.ndim > 1:
-            raise ValueError("Only 1D arrays are supported.")
         if n_bins:
             bins = pd.cut(y, bins=n_bins, precision=1)
             if bins.isna().any():
@@ -96,10 +94,36 @@ class RegressionResampler:
             labels = bins.codes
         else:
             labels = y
-        labels_freq = 1 / pd.Series(labels).value_counts() 
+        labels_freq = 1 / pd.Series(labels).value_counts()
         prob = np.vectorize(labels_freq.to_dict().get)(labels)
         prob /= prob.sum()
         return cls(prob)
+
+    def sample_indices(
+        self,
+        size: Optional[int] = None,
+        random_seed: Optional[int] = None,
+    ) -> np.ndarray:
+        """
+        Generate sample indices using the computed resampling probabilities.
+
+        Parameters
+        ----------
+        size : int, optional
+            Number of indices to sample. If None, defaults to the original data size.
+        random_seed : int, optional
+            Random seed for reproducibility.
+
+        Returns
+        -------
+        np.ndarray
+            Array of sampled indices.
+        """
+        size = size or len(self.prob)
+        np.random.seed(random_seed)
+        return np.random.choice(
+            range(len(self.prob)), size=size, p=self.prob, replace=True
+        )
 
     def resample(
         self,
@@ -135,9 +159,5 @@ class RegressionResampler:
                 self.prob
             ), "All input arrays must align with prob length."
 
-        size = size or len(self.prob)
-        np.random.seed(random_seed)
-        new_indices = np.random.choice(
-            range(len(self.prob)), size=size, p=self.prob, replace=True
-        )
-        return tuple(array[new_indices] for array in arrays)
+        indices = self.sample_indices(size=size, random_seed=random_seed)
+        return tuple(array[indices] for array in arrays)
