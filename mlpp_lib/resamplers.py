@@ -28,7 +28,7 @@ class RegressionResampler:
     @classmethod
     def fit_resample(
         cls: Self,
-        x: np.ndarray,
+        *arrays: np.ndarray,
         y: np.ndarray,
         n_bins: Optional[int] = None,
         size: Optional[int] = None,
@@ -39,8 +39,8 @@ class RegressionResampler:
 
         Parameters
         ----------
-        x : np.ndarray
-            Input features, shape (n_samples, ...).
+        *arrays : np.ndarray
+            Input arrays to be resampled (e.g., x, z, etc.), each with shape (n_samples, ...).
         y : np.ndarray
             Target values, shape (n_samples,).
         n_bins : int, optional
@@ -53,11 +53,14 @@ class RegressionResampler:
         Returns
         -------
         tuple of np.ndarray
-            Resampled (x, y) arrays.
+            Tuple of resampled arrays in the same order as provided (including `y`).
         """
+        if n_bins is not None and n_bins <= 0:
+            raise ValueError("Resample n_bins must be a positive integer.")
         if size is not None and size <= 0:
             raise ValueError("Resample size must be a positive integer.")
-        return cls.fit(y, n_bins).resample(x, y, size, random_seed)
+        resampler = cls.fit(y, n_bins)
+        return resampler.resample(*arrays, y, size=size, random_seed=random_seed)
 
     @classmethod
     def fit(cls: Self, y: np.ndarray, n_bins: Optional[int] = None) -> Self:
@@ -100,8 +103,7 @@ class RegressionResampler:
 
     def resample(
         self,
-        x: np.ndarray,
-        y: np.ndarray,
+        *arrays: np.ndarray,
         size: Optional[int] = None,
         random_seed: Optional[int] = None,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -110,10 +112,8 @@ class RegressionResampler:
 
         Parameters
         ----------
-        x : np.ndarray
-            Input features, shape (n_samples, ...).
-        y : np.ndarray
-            Target values, shape (n_samples,).
+        *arrays : np.ndarray
+            Input arrays to resample. Each array must have the same first dimension length.
         size : int, optional
             Number of samples to draw. If None, the original number of samples is used.
         random_seed : int, optional
@@ -122,13 +122,22 @@ class RegressionResampler:
         Returns
         -------
         tuple of np.ndarray
-            Resampled (x, y) arrays.
+            Tuple of resampled arrays, in the same order as given.
+
+        Raises
+        ------
+        AssertionError
+            If any input array does not match the length of the sampling probabilities.
+
         """
-        assert x.shape[0] == len(self.prob)
-        assert y.shape[0] == len(self.prob)
-        size = size or x.shape[0]
+        for array in arrays:
+            assert array.shape[0] == len(
+                self.prob
+            ), "All input arrays must align with prob length."
+
+        size = size or len(self.prob)
         np.random.seed(random_seed)
         new_indices = np.random.choice(
-            range(len(y)), size=size, p=self.prob, replace=True
+            range(len(self.prob)), size=size, p=self.prob, replace=True
         )
-        return x[new_indices], y[new_indices]
+        return tuple(array[new_indices] for array in arrays)
