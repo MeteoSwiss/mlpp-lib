@@ -96,7 +96,7 @@ class RegressionResampler:
             labels = bins.codes
         else:
             labels = y
-        labels_freq = 1 / pd.value_counts(labels)
+        labels_freq = 1 / pd.Series(labels).value_counts() 
         prob = np.vectorize(labels_freq.to_dict().get)(labels)
         prob /= prob.sum()
         return cls(prob)
