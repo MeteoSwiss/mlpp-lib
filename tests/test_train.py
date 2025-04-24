@@ -138,6 +138,21 @@ RUNS = [
             }
         },
     },
+    # resampling
+    {
+        "features": ["coe:x1"],
+        "targets": ["obs:y1"],
+        "normalizer": {"default": "MinMaxScaler"},
+        "model": {
+            "fully_connected_network": {
+                "hidden_layers": [10],
+                "probabilistic_layer": "IndependentNormal",
+            }
+        },
+        "loss": "crps_energy",
+        "optimizer": "RMSprop",
+        "resample": {"size": 10, "n_bins": 5, "random_seed": 0},
+    },
 ]
 
 
