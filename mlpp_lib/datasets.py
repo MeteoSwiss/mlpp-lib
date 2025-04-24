@@ -604,11 +604,18 @@ class DataLoader(tf.keras.utils.Sequence):
         self._seed = 0
         self._reset()
 
-    def resample(self, n_bins: int = None, random_seed: int = None) -> None:
+    def resample(
+        self, n_bins: int = None, size: int = None, random_seed: int = None
+    ) -> None:
         y = np.array(self.dataset.y)
         resampler = RegressionResampler.fit(y, n_bins=n_bins)
-        indices = resampler.sample_indices(random_seed=random_seed)
-        self._indices = tf.constant(indices)
+        indices = resampler.sample_indices(size=size, random_seed=random_seed)
+        self.dataset.x = tf.gather(self.dataset.x, indices)
+        self.dataset.y = tf.gather(self.dataset.y, indices)
+        if self.dataset.w is not None:
+            self.dataset.w = tf.gather(self.dataset.w, indices)
+        self.num_samples = len(self.dataset.x)
+        self._indices = tf.range(self.num_samples)
 
     def __len__(self) -> int:
         return self.num_batches

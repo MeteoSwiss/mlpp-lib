@@ -151,7 +151,7 @@ RUNS = [
         },
         "loss": "crps_energy",
         "optimizer": "RMSprop",
-        "resample": {"n_bins": 5, "random_seed": 0},
+        "resample": {"size": 10, "n_bins": 5, "random_seed": 0},
     },
 ]
 
