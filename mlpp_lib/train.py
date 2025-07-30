@@ -121,7 +121,7 @@ def train(
         steps_per_epoch=cfg.get("steps_per_epoch", None),
         verbose=2,
     )
-    LOGGER.info("Done! \U0001F40D")
+    LOGGER.info("Done! \U0001f40d")
 
     # we don't need to export loss and metric functions for deployments
     model.compile(optimizer=optimizer, loss=None, metrics=None)
