@@ -189,7 +189,7 @@ class SampleLossWrapper(DistributionLoss, LossFunctionWrapper):
             # obtain num_samples samples from the distribution y_pred
             y_pred_samples = y_pred.rsample(self.num_samples) # [Samples, Batch, Dim]
             y_pred_samples = y_pred_samples.permute(1,0,2) # [Batch, Samples, Dim]
-            return fn(y_true, y_pred_samples, axis=1, estimator=estimator, **kwargs)
+            return fn(y_true, y_pred_samples, m_axis=1, estimator=estimator, **kwargs)
         
         super().__init__(_extract_wrapper, **kwargs)
         self.num_samples = (num_samples,)
