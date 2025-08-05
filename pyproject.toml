@@ -15,7 +15,6 @@ pandas = "*"
 scipy = "*"
 xarray = "*"
 dask = "*"
-properscoring = "^0.1"
 numba = {version = "*", optional = true}
 zarr = {version = "*", optional = true}
 

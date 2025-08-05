@@ -3905,22 +3905,6 @@ files = [
 wcwidth = "*"
 
 [[package]]
-name = "properscoring"
-version = "0.1"
-description = "Proper scoring rules in Python"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "properscoring-0.1-py2.py3-none-any.whl", hash = "sha256:f84d5b06c13549d0171ce52ad7b45c6f5726ac44b733d24af5c60654cbb821dc"},
-    {file = "properscoring-0.1.tar.gz", hash = "sha256:b0cc4963cc218b728d6c5f77b3259c8f835ae00e32e82678cdf6936049b93961"},
-]
-
-[package.dependencies]
-numpy = "*"
-scipy = "*"
-
-[[package]]
 name = "protobuf"
 version = "6.31.1"
 description = ""
@@ -5838,4 +5822,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10, <3.13"
-content-hash = "7842aa490492761421a4fca6fad4a574274d4c8c78b44540802ece0644aa927b"
+content-hash = "458d1713ad5ef830c5268b1e93028691bde406c543f37c0895775cadcd0afb68"
