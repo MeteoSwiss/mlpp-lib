@@ -116,7 +116,8 @@ class MultilayerPerceptron(Layer):
     #     return cls(**config)
     
     
-    
+
+@keras.saving.register_keras_serializable()
 class MultibranchLayer(Layer):
     def __init__(self, branches: list[Layer], aggregation:  Literal['sum', 'concat']='concat', **kwargs):
         super().__init__(**kwargs)
@@ -143,7 +144,9 @@ class MultibranchLayer(Layer):
         """Recreates the layer from its config."""
         branches = [keras.layers.deserialize(branch_config) for branch_config in config.pop('branches')]
         return cls(branches=branches, **config)
-    
+
+
+@keras.saving.register_keras_serializable()
 class CrossNetLayer(keras.layers.Layer):
     def __init__(self, hidden_size, depth=1, **kwargs):
         super().__init__(**kwargs)
@@ -187,8 +190,9 @@ class CrossNetLayer(keras.layers.Layer):
             
     def compute_output_shape(self, input_shape, *args, **kwargs):
         return (input_shape[0], self.hidden_size)
-                        
-                        
+
+
+@keras.saving.register_keras_serializable()
 class ParallelConcatenateLayer(Layer):
     """Feeds the same input to all given layers 
     and concatenates their outputs along the last dimension.
@@ -216,7 +220,8 @@ class ParallelConcatenateLayer(Layer):
         layers = [keras.layers.deserialize(layer_config) for layer_config in config.pop('layers')]
         return cls(layers=layers, **config)
     
-    
+
+@keras.saving.register_keras_serializable()
 class MeanAndTriLCovLayer(Layer):
     """ Layer that learns to output the mean of a distribution and 
     a lower triangular matrix which could be interpreted 
