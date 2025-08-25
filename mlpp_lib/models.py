@@ -29,11 +29,15 @@ else:
 
 _LOGGER = logging.getLogger(__name__)
 
+@keras.saving.register_keras_serializable()
 class ProbabilisticModel(keras.Model):
     """ A probabilistic model composed of an encoder layer 
     and a probabilistic layer predicting the output's distribution.
     """
-    def __init__(self, encoder: keras.Layer, output_distribution: DistributionLayer, default_output_type: Literal["distribution", "samples", "expected"] = "distribution"):
+    def __init__(self, encoder: keras.Layer, output_distribution: DistributionLayer, 
+                 default_output_type: Literal["distribution", "samples", "expected"] = "distribution",
+                 name: str | None = None,
+                **kwargs):
         """_summary_
 
         Args:
@@ -44,14 +48,14 @@ class ProbabilisticModel(keras.Model):
             distribution, samples obtained from it, or the expected value. This is important to when fitting the model, as the type of output defines what loss functions are suitable. 
             Defaults to "distribution".
         """
-        super().__init__()
+        super().__init__(name=name, **kwargs)
         
         self.encoder = encoder
         self.output_distribution = output_distribution
         self.default_output_type = default_output_type
         
         
-    def call(self, inputs, output_type: Optional[Literal["distribution", "samples", "expected"]] = None):
+    def call(self, inputs, output_type: Optional[Literal["distribution", "samples", "expected"]] = None, num_samples=Optional[int]):
         if output_type is None:
             output_type = self.default_output_type
             
@@ -59,8 +63,23 @@ class ProbabilisticModel(keras.Model):
         if output_type == "expected":
             output = self.output_distribution(enc, output_type="distribution")
             return output.mean
-        return self.output_distribution(enc, output_type=output_type)
+        return self.output_distribution(enc, output_type=output_type, num_samples=num_samples)
     
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "encoder": keras.layers.serialize(self.encoder),
+            "output_distribution": keras.saving.serialize_keras_object(self.output_distribution),
+            "default_output_type": self.default_output_type,
+        })
+        return config
+    
+    @classmethod
+    def from_config(cls, config):
+        """Creates an instance of the model from its config."""
+        encoder = keras.layers.deserialize(config.pop("encoder"))
+        output_distribution = keras.layers.deserialize(config.pop("output_distribution"))
+        return cls(encoder=encoder, output_distribution=output_distribution, **config)
 
 
 

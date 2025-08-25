@@ -6,7 +6,7 @@ from keras import Layer
 from abc import ABC, abstractmethod
 import numpy as np
 from keras import initializers
-from typing import Literal
+from typing import Literal, Union
 from inspect import getmembers, isclass
 import sys
 
@@ -364,13 +364,18 @@ class DistributionLayer(Layer):
     it merely applies a linear layer. The underlying probabilistic layer needs to take care 
     of parameter constraints, e.g, the positiveness of the parameters.
     '''
-    def __init__(self, distribution: BaseParametricDistributionModule, 
+    def __init__(self, distribution: Union[BaseParametricDistributionModule, TorchModuleWrapper], 
                  num_samples: int=21, 
                  bias_init = 'zeros',
                  **kwargs):
         super(DistributionLayer, self).__init__(**kwargs)
 
-        self.prob_layer = TorchModuleWrapper(distribution, name=distribution.name)
+        if isinstance(distribution, BaseParametricDistributionModule):
+            self.prob_layer = TorchModuleWrapper(distribution, name=distribution.name)
+        else:
+            self.prob_layer = distribution
+            distribution = distribution.module
+            
         self.num_dist_params = distribution.num_parameters
         
         if isinstance(bias_init, np.ndarray):
@@ -406,10 +411,40 @@ class DistributionLayer(Layer):
 
     def get_config(self):
         config = super(DistributionLayer, self).get_config()
+        
+        config.update(
+            {
+                "bias_init": self.bias_init,
+                "distribution": keras.saving.serialize_keras_object(self.prob_layer),
+                "num_samples": self.num_samples
+            }
+        )
         return config
 
+    # @classmethod
+    # def from_config(cls, config):
+    #     return cls(**config)
+    
     @classmethod
     def from_config(cls, config):
+        distribution_config = config.get("distribution")
+
+        if distribution_config is not None:
+            try:
+                config["distribution"] = keras.saving.deserialize_keras_object(distribution_config)
+            except ValueError as e:
+                if "torch.nn.Module" in str(e):
+                    print(
+                        "⚠️ Warning: Unsafe deserialization required for a torch.nn.Module. "
+                        "This will proceed but only do this if the model is trusted!"
+                    )
+                    # keras.config.enable_unsafe_deserialization()
+                    # config["distribution"] = keras.saving.deserialize_keras_object(distribution_config)
+                    keras.config.enable_unsafe_deserialization()
+                    config["distribution"] = keras.saving.deserialize_keras_object(distribution_config)
+                else:
+                    raise e
+
         return cls(**config)
     
     # @property

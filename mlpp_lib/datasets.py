@@ -217,7 +217,7 @@ class DataModule:
             self.train,
             batch_size=batch_size,
             shuffle=True,
-            device=self.device,
+
         )
 
     def val_dataloader(self, batch_size):
@@ -225,7 +225,7 @@ class DataModule:
             self.val,
             batch_size=batch_size,
             shuffle=False,
-            device=self.device,
+
         )
 
     def test_dataloader(self, batch_size):
@@ -233,7 +233,7 @@ class DataModule:
             self.test,
             batch_size=batch_size,
             shuffle=False,
-            device=self.device,
+
         )
 
     def _check_args(self):

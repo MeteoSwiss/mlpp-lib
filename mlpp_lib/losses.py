@@ -12,6 +12,7 @@ from keras import tree
 from keras.src.losses.loss import reduce_weighted_values
 from keras.src.losses.losses import LossFunctionWrapper
 from keras.src import backend
+from keras.saving import register_keras_serializable
 import warnings
 
 class DistributionLoss(keras.Loss):
@@ -60,7 +61,8 @@ class DistributionLoss(keras.Loss):
 # class CRPSNormal(DistributionLossWrapper):
 #     def __init__(self):
 #         super(scoringrule...)
-            
+
+@register_keras_serializable(package="mlpp_lib.losses")       
 class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
     '''
     Wraps a scoringrules score function with analytical fomulation into a keras loss function,
@@ -169,7 +171,7 @@ SR_REPARAM = {
 }    
 
 
-
+@register_keras_serializable(package="mlpp_lib.losses")
 class SampleLossWrapper(DistributionLoss, LossFunctionWrapper):
     """
     Wraps a scoringrules ensamble-based estimation of a score function into a keras loss function,
@@ -202,35 +204,42 @@ class SampleLossWrapper(DistributionLoss, LossFunctionWrapper):
                     UserWarning,)
         return losses
     
+@register_keras_serializable(package="mlpp_lib.losses")
 class CRPSNormal(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_normal)
-        
+
+@register_keras_serializable(package="mlpp_lib.losses")
 class CRPSExponential(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_exponential)
-        
+
+@register_keras_serializable(package="mlpp_lib.losses") 
 class CRPSBeta(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_beta)
-        
+
+@register_keras_serializable(package="mlpp_lib.losses")
 class CRPSGamma(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_gamma)
-
+ 
+@register_keras_serializable(package="mlpp_lib.losses")
 class CRPSLogNormal(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_lognormal)
         
-        
+@register_keras_serializable(package="mlpp_lib.losses")        
 class CRPSCensoredNormal(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_cnormal)
-        
+  
+@register_keras_serializable(package="mlpp_lib.losses")      
 class CRPSTruncatedNormal(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_tnormal)
 
+@register_keras_serializable(package="mlpp_lib.losses")
 class CRPSEnsemble(SampleLossWrapper):
     def __init__(self, num_samples):
         super().__init__(fn=sr.crps_ensemble, num_samples=num_samples)
