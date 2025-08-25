@@ -2,6 +2,8 @@ import pytest
 import torch 
 
 from mlpp_lib.custom_distributions import TruncatedNormalDistribution, CensoredNormalDistribution
+from mlpp_lib.losses import CRPSTruncatedNormal, CRPSCensoredNormal
+from mlpp_lib.probabilistic_layers import WrappingTorchDist
 
 @pytest.mark.parametrize("ab", [(4.8, 6.2), (4.0, 5.5), (4.2, 5.8)], ids=['left capped', 'right capped', 'centered'])
 def test_truncated_normal(ab):
@@ -51,3 +53,20 @@ def test_censored_normal(ab):
     assert  torch.allclose(empirical_mean, cn.mean(), atol=tolerance)
     assert  torch.allclose(empirical_var, cn.variance(), atol=tolerance)
     
+
+def test_crps():
+    mu, sigma = torch.zeros(32,1), torch.ones(32,1) 
+    a, b = torch.ones(32,1)*-.5, torch.ones(32,1)*.5
+    cnormal = WrappingTorchDist(
+        CensoredNormalDistribution(mu_bar=mu, 
+                                         sigma_bar=sigma, 
+                                         a=a, 
+                                         b=b)
+    )
+    
+    samples = cnormal.sample(256)
+    
+    loss = CRPSCensoredNormal()
+
+
+    loss(y_true=samples, y_pred=cnormal)
