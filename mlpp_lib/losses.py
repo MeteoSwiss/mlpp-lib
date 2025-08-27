@@ -243,6 +243,19 @@ class CRPSTruncatedNormal(DistributionLossWrapper):
 class CRPSEnsemble(SampleLossWrapper):
     def __init__(self, num_samples):
         super().__init__(fn=sr.crps_ensemble, num_samples=num_samples)
+        self.num_samples = num_samples
+
+    def get_config(self):
+        config = super().get_config()
+        # remove the non-serializable fn
+        config.pop("fn", None)
+        config.update({"num_samples": self.num_samples})
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(num_samples=config["num_samples"])
+
    
 # from typing import Literal, Optional, Union
 

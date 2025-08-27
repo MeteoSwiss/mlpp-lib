@@ -166,6 +166,15 @@ class MultivariateGaussianTriLModule(BaseParametricDistributionModule):
     def name(self):
         return self._name
     
+    def get_config(self):
+        config = super().get_config() if hasattr(super(), "get_config") else {}
+        config.update({"dim": self.dim})
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+    
 class UnivariateTruncatedGaussianModule(BaseParametricDistributionModule):
     _name = 'truncated_gaussian'
     _distribution = TruncatedNormalDistribution

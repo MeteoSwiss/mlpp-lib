@@ -32,6 +32,7 @@ class TruncatedNormalDistribution(Distribution):
         p_ = self._n.cdf(self.a) + p * (self._n.cdf(self.b) - self._n.cdf(self.a))
         return self._n.icdf(p_)
     
+    @property
     def mean(self) -> torch.Tensor:
         """
         Returns:
@@ -46,6 +47,7 @@ class TruncatedNormalDistribution(Distribution):
         
         return self.mu_bar - self.sigma_bar * scale 
     
+    @property
     def variance(self) -> torch.Tensor:
         """
         Returns:
@@ -133,20 +135,20 @@ class CensoredNormalDistribution(Distribution):
         self.a = a 
         self.b = b
         
-
+    @property
     def mean(self):
         alpha = (self.a - self.mu_bar) / self.sigma_bar
         beta = (self.b - self.mu_bar) / self.sigma_bar
         
         sn = torch.distributions.Normal(torch.zeros_like(self.mu_bar), torch.ones_like(self.mu_bar))
-        E_z = TruncatedNormalDistribution(self.mu_bar, self.sigma_bar, self.a, self.b).mean()
+        E_z = TruncatedNormalDistribution(self.mu_bar, self.sigma_bar, self.a, self.b).mean
         return (
             self.b * (1-sn.cdf(beta))
             + self.a * sn.cdf(alpha)
             + E_z * (sn.cdf(beta) - sn.cdf(alpha))
         )
         
-        
+    @property 
     def variance(self):
         # Variance := Var(Y) = E(Y^2) - E(Y)^2
         alpha = (self.a - self.mu_bar) / self.sigma_bar
@@ -161,7 +163,7 @@ class CensoredNormalDistribution(Distribution):
         E_z2 = tn.moment(2) # E(Z^2)
         E_y2 =  self.b**2 * (1-sn.cdf(beta)) + self.a**2 * sn.cdf(alpha) + E_z2 * (sn.cdf(beta) - sn.cdf(alpha)) # E(Y^2)
         
-        return E_y2 - self.mean()**2 # Var(Y)=E(Y^2)-E(Y)^2
+        return E_y2 - self.mean**2 # Var(Y)=E(Y^2)-E(Y)^2
         
 
     def sample(self, shape):

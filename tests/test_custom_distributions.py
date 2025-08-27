@@ -23,13 +23,13 @@ def test_truncated_normal(ab):
     tolerance = 10**-decimal_places
     
     # test mean and variance
-    assert  torch.allclose(empirical_mean, tn.mean(), atol=tolerance)
-    assert  torch.allclose(empirical_var, tn.variance(), atol=tolerance)
+    assert  torch.allclose(empirical_mean, tn.mean, atol=tolerance)
+    assert  torch.allclose(empirical_var, tn.variance, atol=tolerance)
     
     # test first moment
     decimal_places = 8
     tolerance = 10**-decimal_places
-    assert torch.allclose(tn.mean(), tn.moment(1))
+    assert torch.allclose(tn.mean, tn.moment(1))
     
     
 @pytest.mark.parametrize("ab", [(4.8, 6.2), (4.0, 5.5), (4.2, 5.8)], ids=['left capped', 'right capped', 'centered'])
@@ -50,8 +50,8 @@ def test_censored_normal(ab):
     tolerance = 10**-decimal_places
     
     # test mean and variance
-    assert  torch.allclose(empirical_mean, cn.mean(), atol=tolerance)
-    assert  torch.allclose(empirical_var, cn.variance(), atol=tolerance)
+    assert  torch.allclose(empirical_mean, cn.mean, atol=tolerance)
+    assert  torch.allclose(empirical_var, cn.variance, atol=tolerance)
     
 
 def test_crps():

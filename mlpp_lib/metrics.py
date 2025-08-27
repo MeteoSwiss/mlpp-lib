@@ -3,18 +3,22 @@ import keras.ops as ops
 from torch.distributions import Distribution
 from mlpp_lib.probabilistic_layers import WrappingTorchDist
 
+
+@keras.saving.register_keras_serializable(package="mlpp_lib.metrics")
 def expected_bias(y_true, y_pred):
     if isinstance(y_pred, Distribution) or isinstance(y_pred, WrappingTorchDist):
         return ops.mean(y_pred.mean - y_true, axis=-1)
     
     return ops.mean(y_pred - y_true, axis=-1)
 
+@keras.saving.register_keras_serializable(package="mlpp_lib.metrics")
 def expected_mean_absolute_error(y_true, y_pred):
     if isinstance(y_pred, Distribution) or isinstance(y_pred, WrappingTorchDist):
         return ops.mean(ops.absolute(y_pred.mean - y_true), axis=-1)
 
     return ops.mean(ops.absolute(y_pred - y_true), axis=-1)
 
+@keras.saving.register_keras_serializable(package="mlpp_lib.metrics")
 class MAEBusts(keras.metrics.Metric):
     """Compute frequency of occurrence of absolute errors > threshold."""
 
@@ -45,3 +49,14 @@ class MAEBusts(keras.metrics.Metric):
     def reset_state(self):
         self.n_busts.assign(0)
         self.n_samples.assign(0)
+        
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            "threshold": self.threshold,
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
