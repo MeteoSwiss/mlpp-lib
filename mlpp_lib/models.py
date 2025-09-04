@@ -2,6 +2,7 @@ import logging
 from typing import Optional, Union, Any, Literal
 
 import numpy as np
+
 # import tensorflow as tf
 import keras
 from keras.src.layers import (
@@ -10,14 +11,24 @@ from keras.src.layers import (
     Dropout,
     BatchNormalization,
     Activation,
-    Concatenate
+    Concatenate,
 )
 from keras import Model, initializers
 
 from mlpp_lib.physical_layers import *
+
 # from mlpp_lib import probabilistic_layers
-from mlpp_lib.probabilistic_layers import DistributionLayer, BaseParametricDistributionModule, distribution_to_layer
-from mlpp_lib.layers import MultilayerPerceptron, MultibranchLayer, CrossNetLayer, ParallelConcatenateLayer
+from mlpp_lib.probabilistic_layers import (
+    DistributionLayer,
+    BaseParametricDistributionModule,
+    distribution_to_layer,
+)
+from mlpp_lib.layers import (
+    MultilayerPerceptron,
+    MultibranchLayer,
+    CrossNetLayer,
+    ParallelConcatenateLayer,
+)
 
 try:
     import tcn  # type: ignore
@@ -29,58 +40,77 @@ else:
 
 _LOGGER = logging.getLogger(__name__)
 
+
 @keras.saving.register_keras_serializable()
 class ProbabilisticModel(keras.Model):
-    """ A probabilistic model composed of an encoder layer 
+    """A probabilistic model composed of an encoder layer
     and a probabilistic layer predicting the output's distribution.
     """
-    def __init__(self, encoder: keras.Layer, output_distribution: DistributionLayer, 
-                 default_output_type: Literal["distribution", "samples", "expected"] = "distribution",
-                 name: str | None = None,
-                **kwargs):
+
+    def __init__(
+        self,
+        encoder: keras.Layer,
+        output_distribution: DistributionLayer,
+        default_output_type: Literal[
+            "distribution", "samples", "expected"
+        ] = "distribution",
+        name: str | None = None,
+        **kwargs,
+    ):
         """_summary_
 
         Args:
-            encoder_layer (keras.Layer): The encoder layer, transforming the inputs into 
+            encoder_layer (keras.Layer): The encoder layer, transforming the inputs into
             some latent dimension.
             probabilistic_layer (DistributionLayer): the output layer predicting the distribution.
-            default_output_type (Literal[distribution, samples, expected], optional): Defines the defult behaviour of self.call(), where the model can either output a parametric 
-            distribution, samples obtained from it, or the expected value. This is important to when fitting the model, as the type of output defines what loss functions are suitable. 
+            default_output_type (Literal[distribution, samples, expected], optional): Defines the defult behaviour of self.call(), where the model can either output a parametric
+            distribution, samples obtained from it, or the expected value. This is important to when fitting the model, as the type of output defines what loss functions are suitable.
             Defaults to "distribution".
         """
         super().__init__(name=name, **kwargs)
-        
+
         self.encoder = encoder
         self.output_distribution = output_distribution
         self.default_output_type = default_output_type
-        
-        
-    def call(self, inputs, output_type: Optional[Literal["distribution", "samples", "expected"]] = None, num_samples=Optional[int]):
+
+    def call(
+        self,
+        inputs,
+        output_type: Optional[Literal["distribution", "samples", "expected"]] = None,
+        num_samples=Optional[int],
+    ):
         if output_type is None:
             output_type = self.default_output_type
-            
+
         enc = self.encoder(inputs)
         if output_type == "expected":
             output = self.output_distribution(enc, output_type="distribution")
             return output.mean
-        return self.output_distribution(enc, output_type=output_type, num_samples=num_samples)
-    
+        return self.output_distribution(
+            enc, output_type=output_type, num_samples=num_samples
+        )
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "encoder": keras.layers.serialize(self.encoder),
-            "output_distribution": keras.saving.serialize_keras_object(self.output_distribution),
-            "default_output_type": self.default_output_type,
-        })
+        config.update(
+            {
+                "encoder": keras.layers.serialize(self.encoder),
+                "output_distribution": keras.saving.serialize_keras_object(
+                    self.output_distribution
+                ),
+                "default_output_type": self.default_output_type,
+            }
+        )
         return config
-    
+
     @classmethod
     def from_config(cls, config):
         """Creates an instance of the model from its config."""
         encoder = keras.layers.deserialize(config.pop("encoder"))
-        output_distribution = keras.layers.deserialize(config.pop("output_distribution"))
+        output_distribution = keras.layers.deserialize(
+            config.pop("output_distribution")
+        )
         return cls(encoder=encoder, output_distribution=output_distribution, **config)
-
 
 
 @keras.saving.register_keras_serializable()
@@ -88,11 +118,15 @@ class MonteCarloDropout(Dropout):
     def call(self, inputs):
         return super().call(inputs, training=True)
 
-def get_probabilistic_layer(distribution: str, bias_init, distribution_kwargs={},num_samples=21):
+
+def get_probabilistic_layer(
+    distribution: str, bias_init, distribution_kwargs={}, num_samples=21
+):
     probabilistic_layer = distribution_to_layer[distribution](**distribution_kwargs)
-    return DistributionLayer(distribution=probabilistic_layer,
-                            num_samples=num_samples,
-                            bias_init=bias_init)
+    return DistributionLayer(
+        distribution=probabilistic_layer, num_samples=num_samples, bias_init=bias_init
+    )
+
 
 # def get_probabilistic_layer(
 #     output_size,
@@ -112,7 +146,7 @@ def get_probabilistic_layer(distribution: str, bias_init, distribution_kwargs={}
 #         probabilistic_layer_obj = getattr(probabilistic_layers, probabilistic_layer_name)
 #         n_params = getattr(probabilistic_layers, probabilistic_layer_name).params_size(output_size)
 #         probabilistic_layer = (
-#             probabilistic_layer_obj(output_size, name="output", **probabilistic_layer_options) if isinstance(probabilistic_layer_obj, type) 
+#             probabilistic_layer_obj(output_size, name="output", **probabilistic_layer_options) if isinstance(probabilistic_layer_obj, type)
 #             else probabilistic_layer_obj(output_size, name="output")
 #         )
 #     else:
@@ -153,16 +187,22 @@ def _build_fcn_block(
     return x
 
 
-def _build_fcn_output(output_size, out_bias_init, probabilistic_layer=None, **distribution_kwargs):
+def _build_fcn_output(
+    output_size, out_bias_init, probabilistic_layer=None, **distribution_kwargs
+):
     if probabilistic_layer is None:
         if isinstance(out_bias_init, np.ndarray):
             out_bias_init = initializers.Constant(out_bias_init)
-        return Dense(output_size, name='output', bias_initializer=out_bias_init)
-    
-    
-    prob_layer = get_probabilistic_layer(distribution=probabilistic_layer, bias_init=out_bias_init,distribution_kwargs=distribution_kwargs)
+        return Dense(output_size, name="output", bias_initializer=out_bias_init)
+
+    prob_layer = get_probabilistic_layer(
+        distribution=probabilistic_layer,
+        bias_init=out_bias_init,
+        distribution_kwargs=distribution_kwargs,
+    )
     return prob_layer
- 
+
+
 def fully_connected_network(
     output_size: int,
     hidden_layers: list,
@@ -173,7 +213,7 @@ def fully_connected_network(
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
     skip_connection: bool = False,
-    prob_layer_kwargs: dict = {}
+    prob_layer_kwargs: dict = {},
 ) -> Model:
     """
     Get an unbuilt Fully Connected Neural Network.
@@ -212,24 +252,27 @@ def fully_connected_network(
     model: keras model
         The built (but not yet compiled) model.
     """
-    
-    ffnn = MultilayerPerceptron(hidden_layers=hidden_layers,
-                               batchnorm=batchnorm,
-                               activations=activations,
-                               dropout=dropout,
-                               mc_dropout=mc_dropout,
-                               skip_connection=skip_connection)
-    
-    output_layer = _build_fcn_output(out_bias_init=out_bias_init,
-                                     output_size=output_size,
-                                     probabilistic_layer=probabilistic_layer, **prob_layer_kwargs)
-    
+
+    ffnn = MultilayerPerceptron(
+        hidden_layers=hidden_layers,
+        batchnorm=batchnorm,
+        activations=activations,
+        dropout=dropout,
+        mc_dropout=mc_dropout,
+        skip_connection=skip_connection,
+    )
+
+    output_layer = _build_fcn_output(
+        out_bias_init=out_bias_init,
+        output_size=output_size,
+        probabilistic_layer=probabilistic_layer,
+        **prob_layer_kwargs,
+    )
+
     if probabilistic_layer is None:
         return keras.models.Sequential([ffnn, output_layer])
-    
-    return ProbabilisticModel(encoder=ffnn,
-                               output_distribution=output_layer)
 
+    return ProbabilisticModel(encoder=ffnn, output_distribution=output_layer)
 
 
 def fully_connected_multibranch_network(
@@ -243,8 +286,8 @@ def fully_connected_multibranch_network(
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
     skip_connection: bool = False,
-    aggregation: Literal['sum', 'concat']='concat',
-    prob_layer_kwargs: dict = {}
+    aggregation: Literal["sum", "concat"] = "concat",
+    prob_layer_kwargs: dict = {},
 ) -> Model:
     """
     Returns an unbuilt a multi-branch Fully Connected Neural Network.
@@ -289,31 +332,35 @@ def fully_connected_multibranch_network(
     model: keras model
         The unbuilt and uncompiled model.
     """
-    
+
     branch_layers = []
 
     for idx in range(n_branches):
-        branch_layers.append(MultilayerPerceptron(
-            hidden_layers=hidden_layers,
-            batchnorm=batchnorm,
-            activations=activations,
-            dropout=dropout,
-            mc_dropout=mc_dropout,
-            skip_connection=skip_connection,
-            indx=idx
-        ))
-        
+        branch_layers.append(
+            MultilayerPerceptron(
+                hidden_layers=hidden_layers,
+                batchnorm=batchnorm,
+                activations=activations,
+                dropout=dropout,
+                mc_dropout=mc_dropout,
+                skip_connection=skip_connection,
+                indx=idx,
+            )
+        )
+
     mb_ffnn = MultibranchLayer(branches=branch_layers, aggregation=aggregation)
-    
-    output_layer = _build_fcn_output(out_bias_init=out_bias_init,
-                                     output_size=output_size,
-                                     probabilistic_layer=probabilistic_layer, **prob_layer_kwargs)
-    
+
+    output_layer = _build_fcn_output(
+        out_bias_init=out_bias_init,
+        output_size=output_size,
+        probabilistic_layer=probabilistic_layer,
+        **prob_layer_kwargs,
+    )
+
     if probabilistic_layer is None:
         return keras.models.Sequential([mb_ffnn, output_layer])
-    
-    return ProbabilisticModel(encoder=mb_ffnn,
-                               output_distribution=output_layer)
+
+    return ProbabilisticModel(encoder=mb_ffnn, output_distribution=output_layer)
 
 
 def deep_cross_network(
@@ -327,7 +374,7 @@ def deep_cross_network(
     mc_dropout: bool = False,
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]] = "zeros",
     probabilistic_layer: Optional[str] = None,
-    prob_layer_kwargs: dict = {}
+    prob_layer_kwargs: dict = {},
 ):
     """
     Build a Deep and Cross Network (see https://arxiv.org/abs/1708.05123).
@@ -371,31 +418,34 @@ def deep_cross_network(
         The built (but not yet compiled) model.
     """
 
-
     # cross part
-    cross_layer = CrossNetLayer(hidden_size=cross_layers_hiddensize,
-                                depth=n_cross_layers)
-    
-    # deep part
-    
-    deep_layer = MultilayerPerceptron(hidden_layers=hidden_layers,
-                                     batchnorm=batchnorm,
-                                     activations=activations,
-                                     dropout=dropout,
-                                     mc_dropout=mc_dropout)
+    cross_layer = CrossNetLayer(
+        hidden_size=cross_layers_hiddensize, depth=n_cross_layers
+    )
 
-    
+    # deep part
+
+    deep_layer = MultilayerPerceptron(
+        hidden_layers=hidden_layers,
+        batchnorm=batchnorm,
+        activations=activations,
+        dropout=dropout,
+        mc_dropout=mc_dropout,
+    )
+
     encoder = ParallelConcatenateLayer([cross_layer, deep_layer])
 
-    output_layer = _build_fcn_output(out_bias_init=out_bias_init,
-                                     output_size=output_size,
-                                     probabilistic_layer=probabilistic_layer, **prob_layer_kwargs)
+    output_layer = _build_fcn_output(
+        out_bias_init=out_bias_init,
+        output_size=output_size,
+        probabilistic_layer=probabilistic_layer,
+        **prob_layer_kwargs,
+    )
 
     if probabilistic_layer is None:
         return keras.models.Sequential([encoder, output_layer])
-    
-    return ProbabilisticModel(encoder=encoder,
-                               output_distribution=output_layer)
+
+    return ProbabilisticModel(encoder=encoder, output_distribution=output_layer)
 
 
 def temporal_convolutional_network(

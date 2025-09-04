@@ -2,72 +2,87 @@ import torch
 import pytest
 
 from mlpp_lib.probabilistic_layers import (
-    DistributionLayer, 
+    DistributionLayer,
     MultivariateGaussianTriLModule,
     UnivariateCensoredGaussianModule,
     UnivariateTruncatedGaussianModule,
-    UnivariateGaussianModule
+    UnivariateGaussianModule,
 )
-from mlpp_lib.probabilistic_layers import MissingReparameterizationError, all_distribution_modules
+from mlpp_lib.probabilistic_layers import (
+    MissingReparameterizationError,
+    all_distribution_modules,
+)
 
 
 def test_multivariate_gaussian():
     distr = MultivariateGaussianTriLModule(dim=4)
     multivariate_gaussian_layer = DistributionLayer(distribution=distr, num_samples=21)
 
-    inputs = torch.randn(16,8)
-    
+    inputs = torch.randn(16, 8)
+
     # ensure you can sample, ie the generated matrix L is a valid Cholesky lower triangular
-    multivariate_gaussian_layer(inputs, output_type='samples')
-    
-    
+    multivariate_gaussian_layer(inputs, output_type="samples")
+
+
 def test_defense_missing_rsample():
     # censored normal does not have rsample so far
-    distr = UnivariateCensoredGaussianModule(a=-1., b=1.)
+    distr = UnivariateCensoredGaussianModule(a=-1.0, b=1.0)
     censored_gaussian_layer = DistributionLayer(distribution=distr, num_samples=21)
-    # ensure that trying to call the layer in training mode requiring samples raises an error 
+    # ensure that trying to call the layer in training mode requiring samples raises an error
     with pytest.raises(MissingReparameterizationError):
-        censored_gaussian_layer(torch.randn(32,4), output_type='samples', training=True)
+        censored_gaussian_layer(
+            torch.randn(32, 4), output_type="samples", training=True
+        )
 
-@pytest.mark.parametrize("pattern", ['bsd', 'sbd'], ids=['batch first', 'samples first'])
+
+@pytest.mark.parametrize(
+    "pattern", ["bsd", "sbd"], ids=["batch first", "samples first"]
+)
 def test_sampling_patterns(pattern):
     distr = UnivariateGaussianModule()
-    
+
     distr_layer = DistributionLayer(distribution=distr)
-    batch_dim, samples, data_dim = 32,12,7
+    batch_dim, samples, data_dim = 32, 12, 7
     inputs = torch.randn(batch_dim, data_dim)
-    
-    output = distr_layer(inputs, pattern=pattern, output_type='samples', num_samples=samples)
-    
-    if pattern == 'bsd':
+
+    output = distr_layer(
+        inputs, pattern=pattern, output_type="samples", num_samples=samples
+    )
+
+    if pattern == "bsd":
         assert output.shape == (batch_dim, samples, 1)
     else:
         assert output.shape == (samples, batch_dim, 1)
-        
-@pytest.mark.parametrize('prob_module_cls', all_distribution_modules)
+
+
+@pytest.mark.parametrize("prob_module_cls", all_distribution_modules)
 def test_input_shapes(prob_module_cls):
-    if prob_module_cls is UnivariateCensoredGaussianModule or prob_module_cls is UnivariateTruncatedGaussianModule:
-        module = prob_module_cls(a=0,b=1)
+    if (
+        prob_module_cls is UnivariateCensoredGaussianModule
+        or prob_module_cls is UnivariateTruncatedGaussianModule
+    ):
+        module = prob_module_cls(a=0, b=1)
     elif prob_module_cls is MultivariateGaussianTriLModule:
         module = prob_module_cls(dim=4)
     else:
         module = prob_module_cls()
-    
+
     num_params = module.num_parameters
     if isinstance(num_params, int):
-        data = torch.randn(12, num_params) # get random input
-        distr = module(data) # get a distribution
-        distr.sample(6) # sample something from it
+        data = torch.randn(12, num_params)  # get random input
+        distr = module(data)  # get a distribution
+        distr.sample(6)  # sample something from it
     else:
         if prob_module_cls is MultivariateGaussianTriLModule:
             # need mean and cov as a lower triangular
             dim = num_params[0]
-            data = (torch.zeros(12,dim), torch.tril(torch.randn(12, dim,dim))) 
+            data = (torch.zeros(12, dim), torch.tril(torch.randn(12, dim, dim)))
             distr = module(data)
             distr.sample(6)
         else:
             pytest.skip(f"Test skipped: non-covered case for '{prob_module_cls}'")
-    
+
+
 # from inspect import getmembers, isclass
 
 # import numpy as np

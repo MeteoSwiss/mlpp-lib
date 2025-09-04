@@ -15,6 +15,7 @@ from mlpp_lib.utils import get_loss, get_metric, get_optimizer
 def _belongs_here(obj, module):
     return obj[1].__module__ == module.__name__
 
+
 from mlpp_lib.probabilistic_layers import distribution_to_layer
 
 ALL_PROB_LAYERS = list(distribution_to_layer.keys())
@@ -42,35 +43,35 @@ TEST_METRICS = [
     {"MAEBusts": {"threshold": 0.5}},
 ]
 
+
 @pytest.mark.parametrize("loss", TEST_LOSSES)
 @pytest.mark.parametrize("prob_layer", ALL_PROB_LAYERS)
 def test_save_model(loss, prob_layer, tmp_path):
     """Test model save/load"""
 
-    
     tmp_path = f"{tmp_path}.keras"
 
     prob_layer_kwargs = {}
-    if prob_layer == 'multivariate_tril_gaussian':
-        prob_layer_kwargs['dim'] = 3
-    elif prob_layer == 'censored_gaussian':
-        prob_layer_kwargs['a'] = 0.0
-        prob_layer_kwargs['b'] = 10.0
-    elif prob_layer == 'truncated_gaussian':
-        prob_layer_kwargs['a'] = 0.0
-        prob_layer_kwargs['b'] = 10.0
-        
+    if prob_layer == "multivariate_tril_gaussian":
+        prob_layer_kwargs["dim"] = 3
+    elif prob_layer == "censored_gaussian":
+        prob_layer_kwargs["a"] = 0.0
+        prob_layer_kwargs["b"] = 10.0
+    elif prob_layer == "truncated_gaussian":
+        prob_layer_kwargs["a"] = 0.0
+        prob_layer_kwargs["b"] = 10.0
+
     model = models.fully_connected_network(
         2,
         hidden_layers=[3],
         probabilistic_layer=prob_layer,
         mc_dropout=False,
-        prob_layer_kwargs=prob_layer_kwargs
+        prob_layer_kwargs=prob_layer_kwargs,
     )
-    
-    input_data = keras.random.normal((32,5))
+
+    input_data = keras.random.normal((32, 5))
     output_data = model(input_data).mean
-    
+
     # The assertion below fails because of safety mechanism in keras against
     # the deserialization of Lambda layers that we cannot switch off
     # assert isinstance(model.from_config(model.get_config()), Model)
@@ -79,9 +80,9 @@ def test_save_model(loss, prob_layer, tmp_path):
     model.compile(loss=loss, metrics=metrics)
 
     model.save(tmp_path)
-    
+
     loaded_model = keras.saving.load_model(tmp_path)
-    
+
     # Check all weights are the same
     w1 = model.trainable_weights
     w2 = loaded_model.trainable_weights
@@ -91,10 +92,10 @@ def test_save_model(loss, prob_layer, tmp_path):
     for a, b in zip(w1, w2):
         assert a.shape == b.shape
         assert np.allclose(a.numpy(), b.numpy(), rtol=1e-5, atol=1e-8)
-    
+
     # check output mean matches between the two models
     assert torch.allclose(model(input_data).mean, loaded_model(input_data).mean)
-    
+
     # test trying to load the model from a new process
     # this is a bit slow, since each process needs to reload all the dependencies ...
 

@@ -217,7 +217,6 @@ class DataModule:
             self.train,
             batch_size=batch_size,
             shuffle=True,
-
         )
 
     def val_dataloader(self, batch_size):
@@ -225,7 +224,6 @@ class DataModule:
             self.val,
             batch_size=batch_size,
             shuffle=False,
-
         )
 
     def test_dataloader(self, batch_size):
@@ -233,7 +231,6 @@ class DataModule:
             self.test,
             batch_size=batch_size,
             shuffle=False,
-
         )
 
     def _check_args(self):
@@ -638,8 +635,11 @@ class DataLoader(keras.utils.Sequence):
         # Append any remaining elements if the number of indices isn't a multiple of the block size
         if shuffled_indices.shape[0] % self.block_size:
             remainder = self._indices[num_blocks * self.block_size :]
-            shuffled_indices = keras.ops.concatenate([shuffled_indices, remainder], axis=0)
+            shuffled_indices = keras.ops.concatenate(
+                [shuffled_indices, remainder], axis=0
+            )
         self._indices = shuffled_indices
+
     def _reset(self) -> None:
         """Reset iterator and shuffles data if needed"""
         self.index = 0

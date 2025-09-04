@@ -68,8 +68,8 @@ def get_loss(loss: Union[str, dict]) -> Callable:
 
     if isinstance(loss, dict):
         name = list(loss.keys())[0]
-        if 'Wrapper' in name:
-            # If the loss is a wrapper for another score, such as 
+        if "Wrapper" in name:
+            # If the loss is a wrapper for another score, such as
             # one coming from scoringrules
             fn_ = loss[name]
             if isinstance(fn_, dict):
@@ -94,7 +94,6 @@ def get_loss(loss: Union[str, dict]) -> Callable:
         # If the loss is a pre-defined loss in mlpp without arguments
         loss_fn = getattr(losses, loss)
         return loss_fn()
-
 
 
 def get_metric(metric: Union[str, dict]) -> Callable:
@@ -126,7 +125,7 @@ def get_metric(metric: Union[str, dict]) -> Callable:
 
 
 def get_scheduler(
-    scheduler_config: Union[dict, None]
+    scheduler_config: Union[dict, None],
 ) -> Optional[keras.optimizers.schedules.LearningRateSchedule]:
     """Create a learning rate scheduler from a config dictionary."""
 

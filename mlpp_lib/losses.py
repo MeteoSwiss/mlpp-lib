@@ -2,6 +2,7 @@ import os
 
 from mlpp_lib.exceptions import MissingReparameterizationError
 from mlpp_lib.probabilistic_layers import WrappingTorchDist
+
 os.environ["KERAS_BACKEND"] = "torch"
 import torch
 import keras
@@ -15,6 +16,7 @@ from keras.src import backend
 from keras.saving import register_keras_serializable
 import warnings
 
+
 class DistributionLoss(keras.Loss):
     """Loss base class allowing for non-tensor (distributions) inputs.
 
@@ -22,13 +24,16 @@ class DistributionLoss(keras.Loss):
     on `Distribution` objects, which would raise an error.
 
     """
+
     def __call__(self, y_true, y_pred, sample_weight=None):
         in_mask = backend.get_keras_mask(y_pred)
 
         with ops.name_scope(self.name):
             # added to avoid convert_to_tensor when y_pred is a distribution
             def _maybe_convert_to_tensor(x):
-                if isinstance(x, torch.distributions.Distribution) or isinstance(x, WrappingTorchDist):
+                if isinstance(x, torch.distributions.Distribution) or isinstance(
+                    x, WrappingTorchDist
+                ):
                     return x
                 return ops.convert_to_tensor(x, dtype=self.dtype)
 
@@ -58,51 +63,60 @@ class DistributionLoss(keras.Loss):
                 dtype=self.dtype,
             )
 
+
 # class CRPSNormal(DistributionLossWrapper):
 #     def __init__(self):
 #         super(scoringrule...)
 
-@register_keras_serializable(package="mlpp_lib.losses")       
+
+@register_keras_serializable(package="mlpp_lib.losses")
 class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
-    '''
+    """
     Wraps a scoringrules score function with analytical fomulation into a keras loss function,
-    such that it can be used with y_true being a tensor and y_pred 
-    being a torch.distributions.Distribution. This means that the loss value is computed 
+    such that it can be used with y_true being a tensor and y_pred
+    being a torch.distributions.Distribution. This means that the loss value is computed
     directly from the parameters of the distribution rather than samples.
-    '''
-    def __init__(self, fn: tp.Callable[[torch.Tensor], torch.Tensor],**kwargs):
+    """
+
+    def __init__(self, fn: tp.Callable[[torch.Tensor], torch.Tensor], **kwargs):
         """_summary_
 
         Args:
             fn (tp.Callable[[torch.Tensor], torch.Tensor]): the scoringrules function
         """
-        kwargs = {'backend': backend.backend(), **kwargs}
-        
-        def _extract_wrapper(y_true, y_pred: torch.distributions.Distribution | WrappingTorchDist, **kwargs):
+        kwargs = {"backend": backend.backend(), **kwargs}
+
+        def _extract_wrapper(
+            y_true,
+            y_pred: torch.distributions.Distribution | WrappingTorchDist,
+            **kwargs,
+        ):
             if isinstance(y_pred, torch.distributions.Distribution):
                 params = [getattr(y_pred, p) for p in self._sr_param_order(y_pred)]
-            else: 
-                params = [getattr(y_pred._distribution, p) for p in self._sr_param_order(y_pred)]
+            else:
+                params = [
+                    getattr(y_pred._distribution, p)
+                    for p in self._sr_param_order(y_pred)
+                ]
             params = self._sr_reparametrization(y_pred)(*params)
-            
+
             return fn(y_true, *params, **kwargs)
-        
+
         super().__init__(_extract_wrapper, **kwargs)
-        
+
     def call(self, y_true, y_pred):
         losses = self.fn(y_true, y_pred, **self._fn_kwargs)
         if losses.numel() != y_true.shape[0]:
             warnings.warn(
-                    f"The number of elements in the losses tensor (shape {losses.shape}) is not as expected. There probably is an error.",
-                    UserWarning,)
+                f"The number of elements in the losses tensor (shape {losses.shape}) is not as expected. There probably is an error.",
+                UserWarning,
+            )
         return losses
-    
-
 
     @staticmethod
     def _sr_param_order(dist: WrappingTorchDist) -> list[str]:
-        """Given a distribution, returns a list 
-        of strings representing the attribute names of the 
+        """Given a distribution, returns a list
+        of strings representing the attribute names of the
         distribution in the order expected by scoringrules.
 
         Args:
@@ -120,23 +134,26 @@ class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
         except KeyError:
             raise ValueError(
                 "The order of the distribution parameters passed to scoringrules"
-                f"must be specified. Not found for {dist.name}")
-    
+                f"must be specified. Not found for {dist.name}"
+            )
+
     @staticmethod
-    def _sr_reparametrization(dist: WrappingTorchDist)-> tp.Callable[..., tp.Tuple[torch.Tensor, ...]]:
-        """Given a distribution, returns a function to be 
-        applied to every parameter of the distribution to match 
+    def _sr_reparametrization(
+        dist: WrappingTorchDist,
+    ) -> tp.Callable[..., tp.Tuple[torch.Tensor, ...]]:
+        """Given a distribution, returns a function to be
+        applied to every parameter of the distribution to match
         the expected parametrization of scoringrules.
 
         Args:
             dist (torch.distributions.Distribution): the distribution
 
         Raises:
-            ValueError: when the reparametrization function is not specified in 
+            ValueError: when the reparametrization function is not specified in
             the SR_REPARAM mapping.
 
         Returns:
-            tp.Callable[..., tp.Tuple[torch.Tensor, ...]]: a tuple with the reparametrized parameters. 
+            tp.Callable[..., tp.Tuple[torch.Tensor, ...]]: a tuple with the reparametrized parameters.
         """
         try:
             return SR_REPARAM[dist.name]
@@ -145,8 +162,10 @@ class DistributionLossWrapper(DistributionLoss, LossFunctionWrapper):
                 f"The reparametrization function for the distribution parameters \
                 passed to scoringrules must be specified. None found for \
                 {dist.name}. If the parameters are the same,\
-                use the identity function.")
-    
+                use the identity function."
+            )
+
+
 # Mapping between distribution cls and parameter
 # order expected by scoringrules
 SR_PARAM_ORDER = {
@@ -155,7 +174,7 @@ SR_PARAM_ORDER = {
     "Beta": ["concentration1", "concentration0"],
     "Gamma": ["concentration", "rate"],
     "LogNormal": ["loc", "scale"],
-    "CensoredNormalDistribution": ["mu_bar", "sigma_bar", "a", "b"]
+    "CensoredNormalDistribution": ["mu_bar", "sigma_bar", "a", "b"],
 }
 
 # Mapping between distribution cls and a reparametrization,
@@ -167,77 +186,95 @@ SR_REPARAM = {
     "Beta": lambda c1, c0: (c1, c0),
     "Gamma": lambda c, r: (c, r),
     "LogNormal": lambda loc, scale: (loc, scale),
-    "CensoredNormalDistribution": lambda loc, scale, a,b: (loc, scale, a,b)
-}    
+    "CensoredNormalDistribution": lambda loc, scale, a, b: (loc, scale, a, b),
+}
 
 
 @register_keras_serializable(package="mlpp_lib.losses")
 class SampleLossWrapper(DistributionLoss, LossFunctionWrapper):
     """
     Wraps a scoringrules ensamble-based estimation of a score function into a keras loss function,
-    such that it can be used with with y_true being a tensor and y_pred 
-    being a torch.distributions.Distribution. Internally, num_samples samples will be sampled from 
-    the predicted distribution and the loss value is computed with a MC approach. 
-    For gradient-based optimization, this only makes sense if the underlying 
-    torch.distributions.Distribution implements rsample(), ie the reparametrization of the sampling function. 
+    such that it can be used with with y_true being a tensor and y_pred
+    being a torch.distributions.Distribution. Internally, num_samples samples will be sampled from
+    the predicted distribution and the loss value is computed with a MC approach.
+    For gradient-based optimization, this only makes sense if the underlying
+    torch.distributions.Distribution implements rsample(), ie the reparametrization of the sampling function.
     """
-    def __init__(self, fn: tp.Callable[[torch.Tensor], torch.Tensor], num_samples: int=21, estimator: str = 'pwm', **kwargs):
-    
-        kwargs = {'backend': backend.backend(), **kwargs}
-        
+
+    def __init__(
+        self,
+        fn: tp.Callable[[torch.Tensor], torch.Tensor],
+        num_samples: int = 21,
+        estimator: str = "pwm",
+        **kwargs,
+    ):
+
+        kwargs = {"backend": backend.backend(), **kwargs}
+
         def _extract_wrapper(y_true: torch.Tensor, y_pred: torch.Tensor, **kwargs):
             if not y_pred.has_rsample:
-                raise MissingReparameterizationError(f"Gradient-based optimization will not work. {y_pred.__name__} does not implement rsample().")
+                raise MissingReparameterizationError(
+                    f"Gradient-based optimization will not work. {y_pred.__name__} does not implement rsample()."
+                )
             # obtain num_samples samples from the distribution y_pred
-            y_pred_samples = y_pred.rsample(self.num_samples) # [Samples, Batch, Dim]
-            y_pred_samples = y_pred_samples.permute(1,0,2) # [Batch, Samples, Dim]
+            y_pred_samples = y_pred.rsample(self.num_samples)  # [Samples, Batch, Dim]
+            y_pred_samples = y_pred_samples.permute(1, 0, 2)  # [Batch, Samples, Dim]
             return fn(y_true, y_pred_samples, m_axis=1, estimator=estimator, **kwargs)
-        
+
         super().__init__(_extract_wrapper, **kwargs)
         self.num_samples = (num_samples,)
-        
+
     def call(self, y_true, y_pred):
         losses = self.fn(y_true, y_pred, **self._fn_kwargs)
         if losses.numel() != y_true.shape[0]:
             warnings.warn(
-                    f"The number of elements in the losses tensor (shape {losses.shape}) is not as expected. There probably is an error.",
-                    UserWarning,)
+                f"The number of elements in the losses tensor (shape {losses.shape}) is not as expected. There probably is an error.",
+                UserWarning,
+            )
         return losses
-    
+
+
 @register_keras_serializable(package="mlpp_lib.losses")
 class CRPSNormal(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_normal)
+
 
 @register_keras_serializable(package="mlpp_lib.losses")
 class CRPSExponential(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_exponential)
 
-@register_keras_serializable(package="mlpp_lib.losses") 
+
+@register_keras_serializable(package="mlpp_lib.losses")
 class CRPSBeta(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_beta)
+
 
 @register_keras_serializable(package="mlpp_lib.losses")
 class CRPSGamma(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_gamma)
- 
+
+
 @register_keras_serializable(package="mlpp_lib.losses")
 class CRPSLogNormal(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_lognormal)
-        
-@register_keras_serializable(package="mlpp_lib.losses")        
+
+
+@register_keras_serializable(package="mlpp_lib.losses")
 class CRPSCensoredNormal(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_cnormal)
-  
-@register_keras_serializable(package="mlpp_lib.losses")      
+
+
+@register_keras_serializable(package="mlpp_lib.losses")
 class CRPSTruncatedNormal(DistributionLossWrapper):
     def __init__(self):
         super().__init__(fn=sr.crps_tnormal)
+
 
 @register_keras_serializable(package="mlpp_lib.losses")
 class CRPSEnsemble(SampleLossWrapper):
@@ -256,7 +293,7 @@ class CRPSEnsemble(SampleLossWrapper):
     def from_config(cls, config):
         return cls(num_samples=config["num_samples"])
 
-   
+
 # from typing import Literal, Optional, Union
 
 # import numpy as np

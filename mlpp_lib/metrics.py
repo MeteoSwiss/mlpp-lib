@@ -8,8 +8,9 @@ from mlpp_lib.probabilistic_layers import WrappingTorchDist
 def expected_bias(y_true, y_pred):
     if isinstance(y_pred, Distribution) or isinstance(y_pred, WrappingTorchDist):
         return ops.mean(y_pred.mean - y_true, axis=-1)
-    
+
     return ops.mean(y_pred - y_true, axis=-1)
+
 
 @keras.saving.register_keras_serializable(package="mlpp_lib.metrics")
 def expected_mean_absolute_error(y_true, y_pred):
@@ -17,6 +18,7 @@ def expected_mean_absolute_error(y_true, y_pred):
         return ops.mean(ops.absolute(y_pred.mean - y_true), axis=-1)
 
     return ops.mean(ops.absolute(y_pred - y_true), axis=-1)
+
 
 @keras.saving.register_keras_serializable(package="mlpp_lib.metrics")
 class MAEBusts(keras.metrics.Metric):
@@ -27,7 +29,6 @@ class MAEBusts(keras.metrics.Metric):
         self.threshold = threshold
         self.n_busts = self.add_weight(name="nb", initializer="zeros")
         self.n_samples = self.add_weight(name="ns", initializer="zeros")
-        
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         if isinstance(y_pred, Distribution) or isinstance(y_pred, WrappingTorchDist):
@@ -49,12 +50,14 @@ class MAEBusts(keras.metrics.Metric):
     def reset_state(self):
         self.n_busts.assign(0)
         self.n_samples.assign(0)
-        
+
     def get_config(self):
         config = super().get_config()
-        config.update({
-            "threshold": self.threshold,
-        })
+        config.update(
+            {
+                "threshold": self.threshold,
+            }
+        )
         return config
 
     @classmethod
