@@ -2,4 +2,4 @@ __version__ = "0.1.0"
 
 import os
 
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
+os.environ["KERAS_BACKEND"] = "torch"
