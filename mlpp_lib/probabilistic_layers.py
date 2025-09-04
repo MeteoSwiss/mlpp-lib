@@ -95,7 +95,7 @@ class WrappingTorchDist():
     def mean(self):
         return self._distribution.mean
         
-class UniveriateGaussianModule(BaseParametricDistributionModule):
+class UnivariateGaussianModule(BaseParametricDistributionModule):
     '''
     Torch implementation of a Gaussian sampling layer given mean and covariance
     values of shape [None, 2]. This layer uses the reparametrization trick
@@ -104,7 +104,7 @@ class UniveriateGaussianModule(BaseParametricDistributionModule):
     _name = 'Normal'
     _distribution = torch.distributions.Normal # WrappingTorchDist(base_dist=torch.distributions.Normal).sample(2)
     def __init__(self, **kwargs):
-        super(UniveriateGaussianModule, self).__init__()
+        super(UnivariateGaussianModule, self).__init__()
         self.get_positive_std = torch.nn.Softplus()
 
     def process_params(self, moments):

@@ -16,7 +16,7 @@ from mlpp_lib.datasets import DataModule, DataSplitter
 from mlpp_lib.layers import MultilayerPerceptron
 from mlpp_lib.losses import DistributionLossWrapper, SampleLossWrapper
 from mlpp_lib.models import ProbabilisticModel
-from mlpp_lib.probabilistic_layers import DistributionLayer, UniveriateGaussianModule
+from mlpp_lib.probabilistic_layers import DistributionLayer, UnivariateGaussianModule
 
 from .test_model_selection import ValidDataSplitterOptions
 
@@ -38,7 +38,7 @@ def test_train_noisy_polynomial(loss_type):
     else:
         crps_normal = SampleLossWrapper(fn=sr.crps_ensemble, num_samples=100)
     
-    prob_layer = DistributionLayer(distribution=UniveriateGaussianModule(), num_samples=21)
+    prob_layer = DistributionLayer(distribution=UnivariateGaussianModule(), num_samples=21)
     encoder = MultilayerPerceptron(hidden_layers=[16,8], 
                                   batchnorm=False, 
                                   skip_connection=False,

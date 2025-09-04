@@ -6,7 +6,7 @@ from mlpp_lib.probabilistic_layers import (
     MultivariateGaussianTriLModule,
     UnivariateCensoredGaussianModule,
     UnivariateTruncatedGaussianModule,
-    UniveriateGaussianModule
+    UnivariateGaussianModule
 )
 from mlpp_lib.probabilistic_layers import MissingReparameterizationError, all_distribution_modules
 
@@ -31,7 +31,7 @@ def test_defense_missing_rsample():
 
 @pytest.mark.parametrize("pattern", ['bsd', 'sbd'], ids=['batch first', 'samples first'])
 def test_sampling_patterns(pattern):
-    distr = UniveriateGaussianModule()
+    distr = UnivariateGaussianModule()
     
     distr_layer = DistributionLayer(distribution=distr)
     batch_dim, samples, data_dim = 32,12,7

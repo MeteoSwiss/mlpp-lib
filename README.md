@@ -150,7 +150,7 @@ For sample-based losses, the underlying distribution needs to have a reparametri
 from mlpp_lib.layers import FullyConnectedLayer
 from mlpp_lib.models import ProbabilisticModel
 from mlpp_lib.losses import DistributionLossWrapper, SampleLossWrapper
-from mlpp_lib.probabilistic_layers import BaseDistributionLayer, UniveriateGaussianModule
+from mlpp_lib.probabilistic_layers import BaseDistributionLayer, UnivariateGaussianModule
 import scoringrules as sr
 import keras
 
@@ -161,7 +161,7 @@ encoder = FullyConnectedLayer(hidden_layers=[16,8],
                                 dropout=0.1,
                                 mc_dropout=False,
                                 activations='sigmoid')
-prob_layer = BaseDistributionLayer(distribution=UniveriateGaussianModule())
+prob_layer = BaseDistributionLayer(distribution=UnivariateGaussianModule())
 
 model = ProbabilisticModel(encoder_layer=encoder, probabilistic_layer=prob_layer)
 
