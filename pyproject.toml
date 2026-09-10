@@ -1,12 +1,12 @@
 [tool.poetry]
 name = "mlpp-lib"
-version = "0.15.0"
+version = "0.16.0"
 description = "Collection of methods for ML-based postprocessing of weather forecasts."
 authors = ["Daniele Nerini <daniele.nerini@meteoswiss.ch>"]
 include = ["LICENSE", "README.md"]
 
 [tool.poetry.dependencies]
-python = ">=3.9, <3.11"
+python = ">=3.9, <3.13"
 numpy = "*"
 tensorflow = {version = "~2.16.1", optional = true}
 tensorflow-cpu = {version = "~2.16.1", optional = true}
