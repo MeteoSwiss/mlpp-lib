@@ -4,7 +4,6 @@ from typing import Any, Callable, Union, Optional
 import numpy as np
 import xarray as xr
 import keras
-import inspect
 import warnings
 from mlpp_lib import callbacks, losses, metrics, models
 
@@ -66,11 +65,7 @@ def get_model(
         input_shape = (input_shape,)
     if not hasattr(models, model_name):
         raise KeyError(f"The model {model_name} is not available.")
-    model_fn = getattr(models, model_name)
-    if "input_shape" in inspect.signature(model_fn).parameters:
-        model = model_fn(input_shape, output_shape[-1], **model_options)
-    else:
-        model = model_fn(output_shape[-1], **model_options)
+    model = getattr(models, model_name)(output_shape[-1], **model_options)
 
     if input_shape is not None and not model.built:
         # run a forward pass to build all layers (e.g. to use `summary()`)

@@ -180,28 +180,3 @@ def test_get_model_builds_the_model():
     assert model.built
     # (4 + 1) * 5 + (2 * 2) * (4 + 1)
     assert model.count_params() == 4 * N_INPUTS + 4 + 4 * 4 + 4
-
-
-def test_architecture_constrained_fcn():
-    model = get_model(
-        (N_INPUTS,),
-        3,
-        {"architecture_constrained_fcn": {"hidden_layers": [8]}},
-    )
-    inputs = torch.randn(BATCH, N_INPUTS)
-    outputs = model(inputs)
-    assert outputs.shape == (BATCH, 5)
-    # dew point temperature is lower than or equal to air temperature
-    assert (outputs[:, 1] <= outputs[:, 0]).all()
-
-    with pytest.raises(NotImplementedError):
-        models.architecture_constrained_fcn(
-            None, 3, hidden_layers=[8], probabilistic_layer="Normal"
-        )
-
-
-def test_tcn_not_supported():
-    with pytest.raises(NotImplementedError):
-        models.temporal_convolutional_network((5, 3), 1, nb_filters=4)
-    with pytest.raises(NotImplementedError):
-        models.architecture_constrained_tcn((5, 3), 3, nb_filters=4)

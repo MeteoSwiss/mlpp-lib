@@ -102,9 +102,9 @@ All losses now ignore missing (NaN) targets. mlpp-lib 0.x raised an error instea
   x_{l+1} = x_0 (x_l^T w_l) + b_l + x_l, and `skip_connection` now applies to the deep part.
 - `skip_connection` in the fully connected networks now adds a linear projection of the
   inputs to the output of the last hidden layer.
-- `temporal_convolutional_network` and `architecture_constrained_tcn` are not available
-  (keras-tcn requires TensorFlow). `architecture_constrained_fcn` only supports deterministic
-  networks.
+- The temporal convolutional network (`temporal_convolutional_network`), the physical layers
+  (`mlpp_lib.physical_layers`, `ThermodynamicLayer`) and the models using them
+  (`architecture_constrained_fcn`, `architecture_constrained_tcn`) have been removed.
 
 ### Training
 

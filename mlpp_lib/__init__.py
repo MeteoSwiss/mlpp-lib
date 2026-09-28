@@ -16,5 +16,5 @@ if keras.backend.backend() != "torch":
 
 # import the modules defining serializable keras objects, so that saved models
 # can be loaded after `import mlpp_lib`
-from mlpp_lib import layers, losses, metrics, models, physical_layers  # noqa: E402,F401
+from mlpp_lib import layers, losses, metrics, models  # noqa: E402,F401
 from mlpp_lib import probabilistic_layers  # noqa: E402,F401

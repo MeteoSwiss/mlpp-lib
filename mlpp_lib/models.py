@@ -7,7 +7,6 @@ import numpy as np
 from keras import Model, initializers
 from keras.layers import Dense
 
-from mlpp_lib import physical_layers
 from mlpp_lib.layers import (
     CrossNetLayer,
     MonteCarloDropout,  # noqa: F401 (kept importable from here)
@@ -454,58 +453,3 @@ def deep_cross_network(
     )
 
     return _assemble(encoder, output_layer, name="deep_cross_network")
-
-
-def temporal_convolutional_network(*args, **kwargs) -> Model:
-    """
-    Build a Temporal Convolutional Network.
-
-    Not available since mlpp-lib 1.0, as the keras-tcn package requires tensorflow.
-    """
-    raise NotImplementedError(
-        "temporal_convolutional_network is not supported since mlpp-lib 1.0 "
-        "(keras-tcn requires tensorflow). Use mlpp-lib<1.0 if you need it."
-    )
-
-
-def architecture_constrained_fcn(
-    input_shape: Optional[tuple[int]],
-    direct_output_size: int,
-    physical_layer: str = "ThermodynamicLayer",
-    **kwargs,
-) -> Model:
-    """
-    Build a Fully Connected Neural Network with a physical layer.
-
-    The fully connected network predicts `direct_output_size` values, which are then
-    transformed by the physical layer (e.g. `ThermodynamicLayer`).
-    Only deterministic networks are supported.
-    """
-
-    if kwargs.get("probabilistic_layer") is not None:
-        raise NotImplementedError(
-            "Physical layers are only supported for deterministic networks."
-        )
-
-    fully_connected_block = fully_connected_network(
-        output_size=direct_output_size, **kwargs
-    )
-    model = keras.models.Sequential(
-        [
-            *fully_connected_block.layers,
-            getattr(physical_layers, physical_layer)(name="physical_layer"),
-        ],
-        name="architecture_constrained_fcn",
-    )
-    if input_shape is not None:
-        model.build((None, *input_shape))
-    return model
-
-
-def architecture_constrained_tcn(*args, **kwargs) -> Model:
-    """
-    Build a Temporal Convolutional Network with a physical layer.
-
-    Not available since mlpp-lib 1.0, as the keras-tcn package requires tensorflow.
-    """
-    return temporal_convolutional_network(*args, **kwargs)
