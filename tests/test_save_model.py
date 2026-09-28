@@ -138,7 +138,7 @@ def test_save_model_mlflow(tmp_path):
 
     import mlflow
 
-    mlflow_uri = f"file://{tmp_path.absolute()}/mlruns"
+    mlflow_uri = f"sqlite:///{tmp_path.absolute()}/mlflow.db"
     mlflow.set_tracking_uri(mlflow_uri)
 
     model = models.fully_connected_network(
