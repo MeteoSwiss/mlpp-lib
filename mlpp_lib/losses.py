@@ -65,7 +65,8 @@ def _path_to_fn(path: str) -> tp.Callable:
 @contextmanager
 def _scoringrules_backend(backend: str):
     """Temporarily set the active scoringrules backend. Some scoringrules functions
-    use the active backend internally instead of the `backend` argument."""
+    use the active backend internally instead of the `backend` argument, see
+    https://github.com/frazane/scoringrules/issues/138."""
     previous = getattr(sr.backends, "_active", None)
     sr.backends.set_active(backend)
     try:
@@ -126,7 +127,8 @@ class DistributionLoss(keras.Loss):
             y_true = torch.where(mask, y_true, fill)
 
             # scoringrules creates some tensors without specifying the device,
-            # so we set the default device to the one of the data
+            # so we set the default device to the one of the data, see
+            # https://github.com/frazane/scoringrules/issues/139
             with _scoringrules_backend(keras.backend.backend()), torch.device(
                 y_true.device
             ):
