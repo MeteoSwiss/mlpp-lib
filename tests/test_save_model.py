@@ -162,13 +162,10 @@ def test_save_model_mlflow(tmp_path):
 
     tf.keras.backend.clear_session()
 
-    # this raises a ValueError because of the risk of deserializing Lambda layers
-    with pytest.raises(ValueError):
-        model = mlflow.tensorflow.load_model(model_info.model_uri)
-
-    # this should work
-    model: tf.tensorflow.Model = mlflow.tensorflow.load_model(
-        model_info.model_uri, keras_model_kwargs={"safe_mode": False}
-    )
+    # Thanks to the custom `from_config` on each probabilistic layer (which
+    # reconstructs the layer from its own parameters instead of
+    # deserializing Lambda's bytecode-serialized function), loading no
+    # longer requires `safe_mode=False`.
+    model: tf.tensorflow.Model = mlflow.tensorflow.load_model(model_info.model_uri)
 
     assert isinstance(model, Model)
