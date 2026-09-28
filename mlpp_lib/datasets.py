@@ -6,9 +6,9 @@ from typing import Hashable, Mapping, Optional, Sequence, Callable
 import dask.array as da
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 import xarray as xr
 from typing_extensions import Self
+import keras
 
 from .model_selection import DataSplitter
 from .normalizers import DataTransformer
@@ -216,7 +216,6 @@ class DataModule:
             self.train,
             batch_size=batch_size,
             shuffle=True,
-            device=self.device,
         )
 
     def val_dataloader(self, batch_size):
@@ -224,7 +223,6 @@ class DataModule:
             self.val,
             batch_size=batch_size,
             shuffle=False,
-            device=self.device,
         )
 
     def test_dataloader(self, batch_size):
@@ -232,7 +230,6 @@ class DataModule:
             self.test,
             batch_size=batch_size,
             shuffle=False,
-            device=self.device,
         )
 
     def _check_args(self):
@@ -556,7 +553,7 @@ class Dataset:
         return out
 
 
-class DataLoader(tf.keras.utils.Sequence):
+class DataLoader(keras.utils.Sequence):
     """A dataloader for mlpp.
 
     Parameters
@@ -591,30 +588,35 @@ class DataLoader(tf.keras.utils.Sequence):
         batch_size: int,
         shuffle: bool = True,
         block_size: int = 1,
+        seed: Optional[int] = 0,
+        **kwargs,
     ):
-
+        super().__init__(**kwargs)
         self.dataset = dataset
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.block_size = block_size
         self.num_samples = len(self.dataset.x)
-        self.num_batches = int(np.ceil(self.num_samples / batch_size))
-        self._indices = tf.range(self.num_samples)
-        self._seed = 0
+        self._num_batches = int(np.ceil(self.num_samples / batch_size))
+        self._indices = np.arange(self.num_samples)
+        self._rng = np.random.default_rng(seed)
         self._reset()
 
-    def __len__(self) -> int:
-        return self.num_batches
+    @property
+    def num_batches(self) -> int:
+        return self._num_batches
 
-    def __getitem__(self, index) -> tuple[tf.Tensor, ...]:
-        if index >= self.num_batches:
+    def __len__(self) -> int:
+        return self._num_batches
+
+    def __getitem__(self, index) -> tuple[np.ndarray, ...]:
+        if index >= self._num_batches:
             self._reset()
             raise IndexError
-        start = index * self.batch_size
-        end = index * self.batch_size + self.batch_size
-        output = [self.dataset.x[start:end], self.dataset.y[start:end]]
+        indices = self._indices[index * self.batch_size : (index + 1) * self.batch_size]
+        output = [self.dataset.x[indices], self.dataset.y[indices]]
         if self.dataset.w is not None:
-            output.append(self.dataset.w[start:end])
+            output.append(self.dataset.w[indices])
         return tuple(output)
 
     def on_epoch_end(self) -> None:
@@ -626,38 +628,22 @@ class DataLoader(tf.keras.utils.Sequence):
         each block stay in their original order, but the blocks themselves are shuffled.
         """
         if self.block_size == 1:
-            self._indices = tf.random.shuffle(self._indices, seed=self._seed)
+            self._indices = self._rng.permutation(self.num_samples)
             return
-        num_blocks = self._indices.shape[0] // self.block_size
-        reshaped_indices = tf.reshape(
-            self._indices[: num_blocks * self.block_size], (num_blocks, self.block_size)
-        )
-        shuffled_blocks = tf.random.shuffle(reshaped_indices, seed=self._seed)
-        shuffled_indices = tf.reshape(shuffled_blocks, [-1])
+        num_blocks = self.num_samples // self.block_size
+        blocks = self._rng.permutation(num_blocks)
+        indices = (
+            blocks[:, None] * self.block_size + np.arange(self.block_size)[None, :]
+        ).ravel()
         # Append any remaining elements if the number of indices isn't a multiple of the block size
-        if shuffled_indices.shape[0] % self.block_size:
-            remainder = self._indices[num_blocks * self.block_size :]
-            shuffled_indices = tf.concat([shuffled_indices, remainder], axis=0)
-        self._indices = shuffled_indices
+        remainder = np.arange(num_blocks * self.block_size, self.num_samples)
+        self._indices = np.concatenate([indices, remainder])
 
     def _reset(self) -> None:
         """Reset iterator and shuffles data if needed"""
         self.index = 0
         if self.shuffle:
             self._shuffle_indices()
-            self.dataset.x = tf.gather(self.dataset.x, self._indices)
-            self.dataset.y = tf.gather(self.dataset.y, self._indices)
-            if self.dataset.w is not None:
-                self.dataset.w = tf.gather(self.dataset.w, self._indices)
-            self._seed += 1
-
-    def _to_device(self, device) -> None:
-        """Transfer data to a device"""
-        with tf.device(device):
-            self.dataset.x = tf.constant(self.dataset.x)
-            self.dataset.y = tf.constant(self.dataset.y)
-            if self.dataset.w is not None:
-                self.dataset.w = tf.constant(self.dataset.w)
 
 
 class DataFilter:

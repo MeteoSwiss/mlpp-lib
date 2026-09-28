@@ -1,1562 +1,606 @@
-"""In this module, any custom built keras layers are included."""
+"""Probabilistic output layers based on `torch.distributions`.
 
+A `DistributionLayer` maps its inputs (e.g. the output of an encoder) to the
+parameters of a parametric distribution, and returns the distribution itself
+(wrapped in a `WrappingTorchDist`), samples from it, or its expected value.
+
+The parametric distributions are defined as subclasses of
+`BaseParametricDistribution`, which are responsible for mapping the raw
+(unconstrained) parameters to a valid `torch.distributions.Distribution`
+(e.g. ensuring positive scales). They are referred to by name, see
+`DISTRIBUTIONS` for a list of the available ones.
+"""
+
+import math
+import warnings
+from abc import ABC, abstractmethod
+from typing import Any, Literal, Optional, Union
+
+import keras
 import numpy as np
-import tensorflow as tf
-import tensorflow_probability.python.layers as tfpl
-from tensorflow_probability.python import bijectors as tfb
-from tensorflow_probability.python import distributions as tfd
-from tensorflow_probability.python.layers.distribution_layer import (
-    _event_size,
-    _get_convert_to_tensor_fn,
-    _serialize,
-    dist_util,
-    independent_lib,
+import torch
+import torch.nn.functional as F
+from keras import initializers
+from torch.distributions import Distribution, Independent
+from torch.distributions.utils import vec_to_tril_matrix
+
+from mlpp_lib.custom_distributions import (
+    CensoredNormalDistribution,
+    LogisticDistribution,
+    TruncatedNormalDistribution,
 )
+from mlpp_lib.exceptions import MissingReparameterizationError
+
+# Floor added to positive parameters (scales, rates, concentrations) for
+# numerical stability, as in mlpp-lib < 1.0.
+POSITIVE_EPS = 1e-3
 
 
-# these almost work out of the box
-from tensorflow_probability.python.layers import (
-    IndependentNormal,
-    IndependentLogistic,
-    IndependentBernoulli,
-    IndependentPoisson,
-)
+def _positive(x: torch.Tensor) -> torch.Tensor:
+    return F.softplus(x) + POSITIVE_EPS
 
 
-# Keys that Lambda/DistributionLambda's own `get_config()` serializes the
-# wrapped function as: Python-version-specific marshalled bytecode, not
-# accepted by any of these layers' `__init__`. Every layer below reconstructs
-# its distribution function purely from `event_shape`/`event_size`,
-# `convert_to_tensor_fn` and `validate_args`, so these keys are unnecessary
-# and are dropped rather than deserialized.
-_LEGACY_LAMBDA_CONFIG_KEYS = (
-    "function",
-    "function_type",
-    "module",
-    "arguments",
-    "output_shape",
-    "output_shape_type",
-    "output_shape_module",
-    "mask",
-    "mask_module",
-    "mask_type",
-    "make_distribution_fn",
-)
+def _as_tensor_like(value, reference: torch.Tensor) -> torch.Tensor:
+    return torch.as_tensor(value, dtype=reference.dtype, device=reference.device)
 
 
-def _distribution_lambda_from_config(cls, config):
-    """Shared `from_config` body for DistributionLambda-based layers.
-
-    Strips `_LEGACY_LAMBDA_CONFIG_KEYS` from `config` before reconstructing
-    the layer, so configs saved before `@register_keras_serializable()` was
-    applied (or otherwise carrying Lambda's own bytecode-serialized function)
-    can still be loaded, without going through the unsafe bytecode
-    deserialization in `Lambda.from_config`.
+class WrappingTorchDist:
     """
-    config = dict(config)
-    for key in _LEGACY_LAMBDA_CONFIG_KEYS:
-        config.pop(key, None)
-    return cls(**config)
+    Wraps a torch.distributions.Distribution instance.
+    Unifies sample(torch.Size) and sample_n(int) in a single function and
+    allows to specify a pattern for the samples between [Samples, Batch, Dim]
+    ("sbd", the torch default) and [Batch, Samples, Dim] ("bsd").
 
+    Any other attribute (e.g. `log_prob`, `cdf`, `variance`, `batch_shape`)
+    is forwarded to the wrapped distribution.
+    """
 
-@tf.keras.saving.register_keras_serializable()
-class IndependentNormal(IndependentNormal):
+    def __init__(self, distribution: Distribution):
+        self._distribution = distribution
+
+    def __getattr__(self, name):
+        # only called when the attribute is not found on the wrapper itself
+        if name.startswith("__") or name == "_distribution":
+            raise AttributeError(name)
+        return getattr(self._distribution, name)
+
+    @staticmethod
+    def _sample_shape(n: Union[int, tuple]) -> torch.Size:
+        return torch.Size((n,)) if isinstance(n, int) else torch.Size(n)
+
+    def _get_samples(self, sampling_fn, n, pattern: Literal["sbd", "bsd"] = "sbd"):
+        sample_shape = self._sample_shape(n)
+        samples = sampling_fn(sample_shape)
+        if pattern == "sbd":
+            return samples
+        if pattern == "bsd":
+            k = len(sample_shape)
+            return samples.movedim(tuple(range(k)), tuple(range(1, k + 1)))
+        raise ValueError(f"Unknown sampling pattern '{pattern}'. Use 'sbd' or 'bsd'.")
+
+    def sample(self, n: Union[int, tuple], pattern: Literal["sbd", "bsd"] = "sbd"):
+        return self._get_samples(self._distribution.sample, n=n, pattern=pattern)
+
+    def rsample(self, n: Union[int, tuple], pattern: Literal["sbd", "bsd"] = "sbd"):
+        if not self.has_rsample:
+            raise MissingReparameterizationError(
+                f"{self.name} does not implement rsample."
+            )
+        return self._get_samples(self._distribution.rsample, n=n, pattern=pattern)
+
+    def __repr__(self):
+        return f"WrappingTorchDist({self._distribution!r})"
+
     @property
-    def output(self):  # this is necessary to use the layer within shap
-        return super().output[0]
+    def base_distribution(self) -> Distribution:
+        """The underlying distribution, unwrapping `Independent` if needed."""
+        dist = self._distribution
+        while isinstance(dist, Independent):
+            dist = dist.base_dist
+        return dist
+
+    @property
+    def name(self) -> str:
+        return type(self.base_distribution).__name__
+
+    @property
+    def has_rsample(self) -> bool:
+        return self._distribution.has_rsample
+
+    @property
+    def mean(self):
+        return self._distribution.mean
+
+
+class BaseParametricDistribution(ABC):
+    """Base class for parametric distributions.
+
+    A parametric distribution maps a tensor of raw, unconstrained parameters of
+    shape [..., num_parameters] to a `torch.distributions.Distribution` with
+    `batch_shape=[...]` and `event_shape=[event_size]`.
+
+    By default, the raw parameters are laid out as `num_params_per_event` blocks
+    of `event_size` values (e.g. `[loc_1, ..., loc_n, scale_1, ..., scale_n]`),
+    and every event dimension is modelled independently.
+    """
+
+    #: name used to refer to the distribution in configurations
+    name: str
+    #: the `torch.distributions.Distribution` class of the (base) distribution
+    distribution_cls: type
+    #: number of parameters for each (independent) event dimension
+    num_params_per_event: int
+
+    def __init__(self, event_size: int = 1):
+        self.event_size = int(event_size)
+
+    @property
+    def num_parameters(self) -> int:
+        """The number of raw parameters that describe the distribution."""
+        return self.num_params_per_event * self.event_size
+
+    @property
+    def has_rsample(self) -> bool:
+        return self.distribution_cls.has_rsample
+
+    def get_config(self) -> dict[str, Any]:
+        return {"event_size": self.event_size}
 
     @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
+    def from_config(cls, config: dict[str, Any]):
+        return cls(**config)
+
+    def _split_params(self, params: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        """[..., P * E] -> P tensors of shape [..., E]"""
+        params = params.reshape(
+            *params.shape[:-1], self.num_params_per_event, self.event_size
+        )
+        return params.unbind(-2)
+
+    @abstractmethod
+    def base_distribution(self, params: torch.Tensor) -> Distribution:
+        """Given the raw parameters, returns the distribution with
+        `batch_shape=[..., event_size]`, ensuring the parameters' constraints."""
+
+    def process_params(self, params: torch.Tensor) -> Distribution:
+        """Given the raw parameters predicted by a previous layer,
+        returns the parametric distribution."""
+        return Independent(self.base_distribution(params), 1, validate_args=False)
+
+    def __call__(self, params: torch.Tensor) -> WrappingTorchDist:
+        return WrappingTorchDist(self.process_params(params))
+
+    def __repr__(self):
+        args = ", ".join(f"{k}={v!r}" for k, v in self.get_config().items())
+        return f"{type(self).__name__}({args})"
 
 
-@tf.keras.saving.register_keras_serializable()
-class IndependentLogistic(IndependentLogistic):
-    @property
-    def output(self):
-        return super().output[0]
+class ParametricNormal(BaseParametricDistribution):
+    """Normal distribution with parameters (loc, scale)."""
 
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
+    name = "Normal"
+    distribution_cls = torch.distributions.Normal
+    num_params_per_event = 2
 
-
-@tf.keras.saving.register_keras_serializable()
-class IndependentBernoulli(IndependentBernoulli):
-    @property
-    def output(self):
-        return super().output[0]
-
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
+    def base_distribution(self, params):
+        loc, scale = self._split_params(params)
+        return self.distribution_cls(loc, _positive(scale), validate_args=False)
 
 
-@tf.keras.saving.register_keras_serializable()
-class IndependentPoisson(IndependentPoisson):
-    @property
-    def output(self):
-        return super().output[0]
+class ParametricLogistic(BaseParametricDistribution):
+    """Logistic distribution with parameters (loc, scale)."""
 
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
+    name = "Logistic"
+    distribution_cls = LogisticDistribution
+    num_params_per_event = 2
+
+    def base_distribution(self, params):
+        loc, scale = self._split_params(params)
+        return self.distribution_cls(loc, _positive(scale), validate_args=False)
 
 
-@tf.keras.saving.register_keras_serializable()
-class IndependentBeta(tfpl.DistributionLambda):
-    """An independent 2-parameter Beta Keras layer"""
+class ParametricLogNormal(BaseParametricDistribution):
+    """LogNormal distribution Y = exp(X), X ~ Normal(loc, scale)."""
+
+    name = "LogNormal"
+    distribution_cls = torch.distributions.LogNormal
+    num_params_per_event = 2
+
+    def base_distribution(self, params):
+        loc, scale = self._split_params(params)
+        return self.distribution_cls(loc, _positive(scale), validate_args=False)
+
+
+class ParametricTruncatedNormal(BaseParametricDistribution):
+    """Normal distribution with parameters (loc, scale) truncated to [low, high]."""
+
+    name = "TruncatedNormal"
+    distribution_cls = TruncatedNormalDistribution
+    num_params_per_event = 2
 
     def __init__(
-        self,
-        event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.mean,
-        validate_args=False,
-        **kwargs
+        self, event_size: int = 1, low: float = 0.0, high: float = float("inf")
     ):
-        """Initialize the `IndependentBeta` layer.
-        Args:
-        event_shape: integer vector `Tensor` representing the shape of single
-            draw from this distribution.
-        convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
-            instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.mean`.
-        validate_args: Python `bool`, default `False`. When `True` distribution
-            parameters are checked for validity despite possibly degrading runtime
-            performance. When `False` invalid inputs may silently render incorrect
-            outputs.
-            Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
-        """
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
-
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
-
-        def new_from_t(t):
-            return IndependentBeta.new(t, event_shape, validate_args)
-
-        super(IndependentBeta, self).__init__(
-            new_from_t, convert_to_tensor_fn, **kwargs
-        )
-
-        self._event_shape = event_shape
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
-
-    @staticmethod
-    def new(params, event_shape=(), validate_args=False, name=None):
-        """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "IndependentBeta"):
-            params = tf.convert_to_tensor(params, name="params")
-            event_shape = dist_util.expand_to_vector(
-                tf.convert_to_tensor(
-                    event_shape, name="event_shape", dtype_hint=tf.int32
-                ),
-                tensor_name="event_shape",
-            )
-            output_shape = tf.concat(
-                [
-                    tf.shape(params)[:-1],
-                    event_shape,
-                ],
-                axis=0,
-            )
-            alpha, beta = tf.split(params, 2, axis=-1)
-
-            alpha = tf.math.softplus(tf.reshape(alpha, output_shape)) + 1e-3
-            beta = tf.math.softplus(tf.reshape(beta, output_shape)) + 1e-3
-            betad = tfd.Beta(alpha, beta, validate_args=validate_args)
-
-            return independent_lib.Independent(
-                betad,
-                reinterpreted_batch_ndims=tf.size(event_shape),
-                validate_args=validate_args,
-            )
-
-    @staticmethod
-    def params_size(event_shape=(), name=None):
-        """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "IndependentBeta_params_size"):
-            event_shape = tf.convert_to_tensor(
-                event_shape, name="event_shape", dtype_hint=tf.int32
-            )
-            return np.int32(2) * _event_size(
-                event_shape, name=name or "IndependentBeta_params_size"
-            )
+        super().__init__(event_size)
+        if not low < high:
+            raise ValueError(f"Expected low < high, got low={low}, high={high}.")
+        self.low, self.high = float(low), float(high)
 
     def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_shape": self._event_shape,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(IndependentBeta, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+        return {**super().get_config(), "low": self.low, "high": self.high}
 
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
-
-    @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(IndependentBeta, self).output[0]
-
-
-@tf.keras.saving.register_keras_serializable()
-class Independent4ParamsBeta(tfpl.DistributionLambda):
-    """An independent 4-parameter Beta Keras layer allowing control over scale as well as a 'shift' parameter."""
-
-    def __init__(
-        self,
-        event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.mean,
-        validate_args=False,
-        **kwargs
-    ):
-        """Initialize the `Independent4ParamsBeta` layer.
-        Args:
-        event_shape: integer vector `Tensor` representing the shape of single
-            draw from this distribution.
-        convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
-            instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.mean`.
-        validate_args: Python `bool`, default `False`. When `True` distribution
-            parameters are checked for validity despite possibly degrading runtime
-            performance. When `False` invalid inputs may silently render incorrect
-            outputs.
-            Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
-        """
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
-
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
-
-        def new_from_t(t):
-            return Independent4ParamsBeta.new(t, event_shape, validate_args)
-
-        super(Independent4ParamsBeta, self).__init__(
-            new_from_t, convert_to_tensor_fn, **kwargs
+    def base_distribution(self, params):
+        loc, scale = self._split_params(params)
+        return self.distribution_cls(
+            loc,
+            _positive(scale),
+            low=_as_tensor_like(self.low, loc),
+            high=_as_tensor_like(self.high, loc),
+            validate_args=False,
         )
 
-        self._event_shape = event_shape
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
 
-    @staticmethod
-    def new(params, event_shape=(), validate_args=False, name=None):
-        """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "Independent4ParamsBeta"):
-            params = tf.convert_to_tensor(params, name="params")
-            event_shape = dist_util.expand_to_vector(
-                tf.convert_to_tensor(
-                    event_shape, name="event_shape", dtype_hint=tf.int32
-                ),
-                tensor_name="event_shape",
-            )
-            output_shape = tf.concat(
-                [
-                    tf.shape(params)[:-1],
-                    event_shape,
-                ],
-                axis=0,
-            )
-            alpha, beta, shift, scale = tf.split(params, 4, axis=-1)
-            # alpha > 2 and beta > 2 produce a concave downward Beta
-            alpha = tf.math.softplus(tf.reshape(alpha, output_shape)) + 1e-3
-            beta = tf.math.softplus(tf.reshape(beta, output_shape)) + 1e-3
-            shift = tf.math.softplus(tf.reshape(shift, output_shape))
-            scale = tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-3
-            betad = tfd.Beta(alpha, beta, validate_args=validate_args)
-            transf_betad = tfd.TransformedDistribution(
-                distribution=betad, bijector=tfb.Shift(shift)(tfb.Scale(scale))
-            )
-            return independent_lib.Independent(
-                transf_betad,
-                reinterpreted_batch_ndims=tf.size(event_shape),
-                validate_args=validate_args,
-            )
+class ParametricCensoredNormal(ParametricTruncatedNormal):
+    """Normal distribution with parameters (loc, scale) censored to [low, high]."""
 
-    @staticmethod
-    def params_size(event_shape=(), name=None):
-        """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "Independent4ParamsBeta_params_size"):
-            event_shape = tf.convert_to_tensor(
-                event_shape, name="event_shape", dtype_hint=tf.int32
-            )
-            return np.int32(4) * _event_size(
-                event_shape, name=name or "Independent4ParamsBeta_params_size"
-            )
-
-    def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_shape": self._event_shape,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(Independent4ParamsBeta, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
-
-    @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(Independent4ParamsBeta, self).output[0]
+    name = "CensoredNormal"
+    distribution_cls = CensoredNormalDistribution
 
 
-@tf.keras.saving.register_keras_serializable()
-class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
-    """An independent censored normal Keras layer."""
+class ParametricGamma(BaseParametricDistribution):
+    """Gamma distribution with parameters (concentration, rate)."""
 
-    def __init__(
-        self,
-        event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.mean,
-        validate_args=False,
-        **kwargs
-    ):
-        """Initialize the `IndependentDoublyCensoredNormal` layer.
-        Args:
-        event_shape: integer vector `Tensor` representing the shape of single
-            draw from this distribution.
-        convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
-            instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.mean`.
-        validate_args: Python `bool`, default `False`. When `True` distribution
-            parameters are checked for validity despite possibly degrading runtime
-            performance. When `False` invalid inputs may silently render incorrect
-            outputs.
-            Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
-        """
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
+    name = "Gamma"
+    distribution_cls = torch.distributions.Gamma
+    num_params_per_event = 2
 
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
-        # get the clipping parameters and pop them
-        _clip_low = kwargs.pop("clip_low", 0.0)
-        _clip_high = kwargs.pop("clip_high", 1.0)
-
-        def new_from_t(t):
-            return IndependentDoublyCensoredNormal.new(
-                t,
-                event_shape,
-                validate_args,
-                clip_low=_clip_low,
-                clip_high=_clip_high,
-            )
-
-        super(IndependentDoublyCensoredNormal, self).__init__(
-            new_from_t, convert_to_tensor_fn, **kwargs
+    def base_distribution(self, params):
+        concentration, rate = self._split_params(params)
+        return self.distribution_cls(
+            _positive(concentration), _positive(rate), validate_args=False
         )
 
-        self._event_shape = event_shape
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
 
-    @staticmethod
-    def new(
-        params,
-        event_shape=(),
-        validate_args=False,
-        name=None,
-        clip_low=0.0,
-        clip_high=1.0,
-    ):
-        """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "IndependentDoublyCensoredNormal"):
-            params = tf.convert_to_tensor(params, name="params")
-            event_shape = dist_util.expand_to_vector(
-                tf.convert_to_tensor(
-                    event_shape, name="event_shape", dtype_hint=tf.int32
-                ),
-                tensor_name="event_shape",
-            )
-            output_shape = tf.concat(
-                [
-                    tf.shape(params)[:-1],
-                    event_shape,
-                ],
-                axis=0,
-            )
-            loc, scale = tf.split(params, 2, axis=-1)
-            loc = tf.reshape(loc, output_shape)
-            scale = tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-3
-            normal_dist = tfd.Normal(loc=loc, scale=scale, validate_args=validate_args)
+class ParametricBeta(BaseParametricDistribution):
+    """Beta distribution with parameters (concentration1, concentration0),
+    or (alpha, beta)."""
 
-            class CustomCensored(tfd.Distribution):
-                def __init__(self, normal, clip_low=0.0, clip_high=1.0):
-                    self.normal = normal
-                    super(CustomCensored, self).__init__(
-                        dtype=normal.dtype,
-                        reparameterization_type=tfd.FULLY_REPARAMETERIZED,
-                        validate_args=validate_args,
-                        allow_nan_stats=True,
-                    )
-                    self.clip_low = clip_low
-                    self.clip_high = clip_high
+    name = "Beta"
+    distribution_cls = torch.distributions.Beta
+    num_params_per_event = 2
 
-                def _sample_n(self, n, seed=None):
-
-                    # Sample from normal distribution
-                    samples = self.normal.sample(sample_shape=(n,), seed=seed)
-
-                    # Clip values between 0 and 1
-                    chosen_samples = tf.clip_by_value(
-                        samples, self.clip_low, self.clip_high
-                    )
-
-                    return chosen_samples
-
-                def _mean(self):
-                    """
-                    Original: X ~ N(mu, sigma)
-                    Censored: Y = X if clip_low <= X <= clip_high else clip_low if X < clip_low else clip_high
-                    Phi / phi: CDF / PDF of standard normal distribution
-
-                    Law of total expectations:
-                        E[Y] = E[Y | X > c_h] * P(X > c_h) + E[Y | X < c_l] * P(X < c_l) + E[Y | c_l <= X <= c_h] * P(c_l <= X <= c_h)
-                             = c_h * P(X > c_h) + P(X < c_l) * c_l + E[Y | c_l <= X <= c_h] * P(c_l <= X <= c_h)
-                             = c_h * P(X > c_h) + P(X < c_l) * c_l + E[Z ~ TruncNormal(mu, sigma, c_l, c_h)] * (Phi((c_h - mu) / sigma) - Phi(c_l - mu / sigma))
-                             = c_h * (1 - Phi((c_h - mu) / sigma))
-                                + c_l * Phi((c_l - mu) / sigma)
-                                + mu * (Phi((c_h - mu) / sigma) - Phi(c_l - mu / sigma))
-                                + sigma * (phi(c_l - mu / sigma) - phi((c_h - mu) / sigma))
-                    Ref for TruncatedNormal mean: https://en.wikipedia.org/wiki/Truncated_normal_distribution
-                    """
-                    mu, sigma = self.normal.mean(), self.normal.stddev()
-                    low_bound_standard = (self.clip_low - mu) / sigma
-                    high_bound_standard = (self.clip_high - mu) / sigma
-
-                    cdf = lambda x: tfd.Normal(0, 1).cdf(x)
-                    pdf = lambda x: tfd.Normal(0, 1).prob(x)
-
-                    return (
-                        self.clip_high * (1 - cdf(high_bound_standard))
-                        + self.clip_low * cdf(low_bound_standard)
-                        + mu * (cdf(high_bound_standard) - cdf(low_bound_standard))
-                        + sigma * (pdf(low_bound_standard) - pdf(high_bound_standard))
-                    )
-
-                def _log_prob(self, value):
-
-                    mu, sigma = self.normal.mean(), self.normal.stddev()
-                    cdf = lambda x: tfd.Normal(0, 1).cdf(x)
-                    pdf = lambda x: tfd.Normal(0, 1).prob(x)
-
-                    logprob_left = lambda x: tf.math.log(
-                        cdf(self.clip_low - mu / sigma) + 1e-3
-                    )
-                    logprob_middle = lambda x: self.normal.log_prob(x)
-                    logprob_right = lambda x: tf.math.log(
-                        1 - cdf((self.clip_high - mu) / sigma) + 1e-3
-                    )
-
-                    return (
-                        logprob_left(value)
-                        + logprob_middle(value)
-                        + logprob_right(value)
-                    )
-
-            return independent_lib.Independent(
-                CustomCensored(normal_dist, clip_low=clip_low, clip_high=clip_high),
-                reinterpreted_batch_ndims=tf.size(event_shape),
-                validate_args=validate_args,
-            )
-
-    @staticmethod
-    def params_size(event_shape=(), name=None):
-        """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "IndependentDoublyCensoredNormal_params_size"):
-            event_shape = tf.convert_to_tensor(
-                event_shape, name="event_shape", dtype_hint=tf.int32
-            )
-            return np.int32(2) * _event_size(
-                event_shape, name=name or "IndependentDoublyCensoredNormal_params_size"
-            )
-
-    def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_shape": self._event_shape,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(IndependentDoublyCensoredNormal, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
-
-    @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(IndependentDoublyCensoredNormal, self).output[0]
+    def base_distribution(self, params):
+        c1, c0 = self._split_params(params)
+        return self.distribution_cls(_positive(c1), _positive(c0), validate_args=False)
 
 
-@tf.keras.saving.register_keras_serializable()
-class IndependentConcaveBeta(tfpl.DistributionLambda):
-    """An independent 4-parameter Beta Keras layer with enforced concavity"""
+class ParametricWeibull(BaseParametricDistribution):
+    """Weibull distribution with parameters (concentration, scale)."""
 
-    # INdependent
-    def __init__(
-        self,
-        event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.mean,
-        validate_args=False,
-        **kwargs
-    ):
-        """Initialize the `IndependentConcaveBeta` layer.
-        Args:
-        event_shape: integer vector `Tensor` representing the shape of single
-            draw from this distribution.
-        convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
-            instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.mean`.
-        validate_args: Python `bool`, default `False`. When `True` distribution
-            parameters are checked for validity despite possibly degrading runtime
-            performance. When `False` invalid inputs may silently render incorrect
-            outputs.
-            Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
-        """
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
+    name = "Weibull"
+    distribution_cls = torch.distributions.Weibull
+    num_params_per_event = 2
 
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
-
-        def new_from_t(t):
-            return IndependentConcaveBeta.new(t, event_shape, validate_args)
-
-        super(IndependentConcaveBeta, self).__init__(
-            new_from_t, convert_to_tensor_fn, **kwargs
+    def base_distribution(self, params):
+        concentration, scale = self._split_params(params)
+        return self.distribution_cls(
+            scale=_positive(scale),
+            concentration=_positive(concentration),
+            validate_args=False,
         )
 
-        self._event_shape = event_shape
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
 
-    @staticmethod
-    def new(params, event_shape=(), validate_args=False, name=None):
-        """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "IndependentConcaveBeta"):
-            params = tf.convert_to_tensor(params, name="params")
-            event_shape = dist_util.expand_to_vector(
-                tf.convert_to_tensor(
-                    event_shape, name="event_shape", dtype_hint=tf.int32
-                ),
-                tensor_name="event_shape",
-            )
-            output_shape = tf.concat(
-                [
-                    tf.shape(params)[:-1],
-                    event_shape,
-                ],
-                axis=0,
-            )
-            alpha, beta, shift, scale = tf.split(params, 4, axis=-1)
-            # alpha > 2 and beta > 2 produce a concave downward Beta
-            alpha = tf.math.softplus(tf.reshape(alpha, output_shape)) + 2.0
-            beta = tf.math.softplus(tf.reshape(beta, output_shape)) + 2.0
-            shift = tf.math.softplus(tf.reshape(shift, output_shape))
-            scale = tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-3
-            betad = tfd.Beta(alpha, beta, validate_args=validate_args)
-            transf_betad = tfd.TransformedDistribution(
-                distribution=betad, bijector=tfb.Shift(shift)(tfb.Scale(scale))
-            )
-            return independent_lib.Independent(
-                transf_betad,
-                reinterpreted_batch_ndims=tf.size(event_shape),
-                validate_args=validate_args,
-            )
+class ParametricExponential(BaseParametricDistribution):
+    """Exponential distribution with parameter (rate)."""
 
-    @staticmethod
-    def params_size(event_shape=(), name=None):
-        """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "IndependentConcaveBeta_params_size"):
-            event_shape = tf.convert_to_tensor(
-                event_shape, name="event_shape", dtype_hint=tf.int32
-            )
-            return np.int32(4) * _event_size(
-                event_shape, name=name or "IndependentConcaveBeta_params_size"
-            )
+    name = "Exponential"
+    distribution_cls = torch.distributions.Exponential
+    num_params_per_event = 1
 
-    def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_shape": self._event_shape,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(IndependentConcaveBeta, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+    def base_distribution(self, params):
+        (rate,) = self._split_params(params)
+        return self.distribution_cls(_positive(rate), validate_args=False)
 
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
+
+class ParametricPoisson(BaseParametricDistribution):
+    """Poisson distribution with parameter (rate). It does not support
+    reparametrized sampling."""
+
+    name = "Poisson"
+    distribution_cls = torch.distributions.Poisson
+    num_params_per_event = 1
+
+    def base_distribution(self, params):
+        (rate,) = self._split_params(params)
+        return self.distribution_cls(_positive(rate), validate_args=False)
+
+
+class ParametricBernoulli(BaseParametricDistribution):
+    """Bernoulli distribution with parameter (logits). It does not support
+    reparametrized sampling."""
+
+    name = "Bernoulli"
+    distribution_cls = torch.distributions.Bernoulli
+    num_params_per_event = 1
+
+    def base_distribution(self, params):
+        (logits,) = self._split_params(params)
+        return self.distribution_cls(logits=logits, validate_args=False)
+
+
+class ParametricMixtureNormal(BaseParametricDistribution):
+    """Mixture of `num_components` normal distributions, with parameters
+    (loc_k, scale_k, logits_k) for each component k. It does not support
+    reparametrized sampling."""
+
+    name = "MixtureNormal"
+    distribution_cls = torch.distributions.MixtureSameFamily
+
+    def __init__(self, event_size: int = 1, num_components: int = 2):
+        super().__init__(event_size)
+        self.num_components = int(num_components)
 
     @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(IndependentConcaveBeta, self).output[0]
+    def num_params_per_event(self):
+        return 3 * self.num_components
 
+    def get_config(self):
+        return {**super().get_config(), "num_components": self.num_components}
 
-@tf.keras.saving.register_keras_serializable()
-class IndependentGamma(tfpl.DistributionLambda):
-    """An independent gamma Keras layer."""
-
-    def __init__(
-        self,
-        event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.mean,
-        validate_args=False,
-        **kwargs
-    ):
-        """Initialize the `IndependentGamma` layer.
-        Args:
-        event_shape: integer vector `Tensor` representing the shape of single
-            draw from this distribution.
-        convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
-            instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.mean`.
-        validate_args: Python `bool`, default `False`. When `True` distribution
-            parameters are checked for validity despite possibly degrading runtime
-            performance. When `False` invalid inputs may silently render incorrect
-            outputs.
-            Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
-        """
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
-
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
-
-        def new_from_t(t):
-            return IndependentGamma.new(t, event_shape, validate_args)
-
-        super(IndependentGamma, self).__init__(
-            new_from_t, convert_to_tensor_fn, **kwargs
+    def base_distribution(self, params):
+        k, e = self.num_components, self.event_size
+        # [..., 3 * K * E] -> [..., 3, E, K]
+        params = params.reshape(*params.shape[:-1], 3, k, e).transpose(-1, -2)
+        loc, scale, logits = params.unbind(-3)
+        return self.distribution_cls(
+            torch.distributions.Categorical(logits=logits, validate_args=False),
+            torch.distributions.Normal(loc, _positive(scale), validate_args=False),
+            validate_args=False,
         )
 
-        self._event_shape = event_shape
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
 
-    @staticmethod
-    def new(params, event_shape=(), validate_args=False, name=None):
-        """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "IndependentGamma"):
-            params = tf.convert_to_tensor(params, name="params")
-            event_shape = dist_util.expand_to_vector(
-                tf.convert_to_tensor(
-                    event_shape, name="event_shape", dtype_hint=tf.int32
-                ),
-                tensor_name="event_shape",
-            )
-            output_shape = tf.concat(
-                [
-                    tf.shape(params)[:-1],
-                    event_shape,
-                ],
-                axis=0,
-            )
-            concentration, rate = tf.split(params, 2, axis=-1)
-            return independent_lib.Independent(
-                tfd.Gamma(
-                    concentration=tf.math.softplus(
-                        tf.reshape(concentration, output_shape)
-                    ),
-                    rate=tf.math.softplus(tf.reshape(rate, output_shape)),
-                    validate_args=validate_args,
-                ),
-                reinterpreted_batch_ndims=tf.size(event_shape),
-                validate_args=validate_args,
-            )
+class ParametricMultivariateNormalTriL(BaseParametricDistribution):
+    """Multivariate normal distribution ~N(loc, LL^T), parametrized by the mean vector
+    and a lower triangular matrix L (the Cholesky factor of the covariance matrix).
+    The diagonal of L is made positive with a softplus.
+    """
 
-    @staticmethod
-    def params_size(event_shape=(), name=None):
-        """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "IndependentGamma_params_size"):
-            event_shape = tf.convert_to_tensor(
-                event_shape, name="event_shape", dtype_hint=tf.int32
-            )
-            return np.int32(2) * _event_size(
-                event_shape, name=name or "IndependentGamma_params_size"
-            )
-
-    def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_shape": self._event_shape,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(IndependentGamma, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
+    name = "MultivariateNormalTriL"
+    distribution_cls = torch.distributions.MultivariateNormal
 
     @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(IndependentGamma, self).output[0]
+    def num_parameters(self):
+        return self.event_size + self.event_size * (self.event_size + 1) // 2
 
-
-@tf.keras.saving.register_keras_serializable()
-class IndependentLogNormal(tfpl.DistributionLambda):
-    """An independent LogNormal Keras layer."""
-
-    def __init__(
-        self,
-        event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.mean,
-        validate_args=False,
-        **kwargs
-    ):
-        """Initialize the `IndependentLogNormal` layer.
-        Args:
-        event_shape: integer vector `Tensor` representing the shape of single
-            draw from this distribution.
-        convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
-            instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.mean`.
-        validate_args: Python `bool`, default `False`. When `True` distribution
-            parameters are checked for validity despite possibly degrading runtime
-            performance. When `False` invalid inputs may silently render incorrect
-            outputs.
-            Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
-        """
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
-
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
-
-        def new_from_t(t):
-            return IndependentLogNormal.new(t, event_shape, validate_args)
-
-        super(IndependentLogNormal, self).__init__(
-            new_from_t, convert_to_tensor_fn, **kwargs
+    def process_params(self, params):
+        loc = params[..., : self.event_size]
+        scale_tril = vec_to_tril_matrix(params[..., self.event_size :])
+        diag = torch.diagonal(scale_tril, dim1=-2, dim2=-1)
+        scale_tril = (
+            scale_tril - torch.diag_embed(diag) + torch.diag_embed(_positive(diag))
+        )
+        return self.distribution_cls(
+            loc=loc, scale_tril=scale_tril, validate_args=False
         )
 
-        self._event_shape = event_shape
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
-
-    @staticmethod
-    def new(params, event_shape=(), validate_args=False, name=None):
-        """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "IndependentLogNormal"):
-            params = tf.convert_to_tensor(params, name="params")
-            event_shape = dist_util.expand_to_vector(
-                tf.convert_to_tensor(
-                    event_shape, name="event_shape", dtype_hint=tf.int32
-                ),
-                tensor_name="event_shape",
-            )
-            output_shape = tf.concat(
-                [
-                    tf.shape(params)[:-1],
-                    event_shape,
-                ],
-                axis=0,
-            )
-            loc, scale = tf.split(params, 2, axis=-1)
-            return independent_lib.Independent(
-                tfd.LogNormal(
-                    loc=tf.reshape(loc, output_shape),
-                    scale=tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-3,
-                    validate_args=validate_args,
-                ),
-                reinterpreted_batch_ndims=tf.size(event_shape),
-                validate_args=validate_args,
-            )
-
-    @staticmethod
-    def params_size(event_shape=(), name=None):
-        """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "IndependentLogNormal_params_size"):
-            event_shape = tf.convert_to_tensor(
-                event_shape, name="event_shape", dtype_hint=tf.int32
-            )
-            return np.int32(2) * _event_size(
-                event_shape, name=name or "IndependentLogNormal_params_size"
-            )
-
-    def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_shape": self._event_shape,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(IndependentLogNormal, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
-
-    @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(IndependentLogNormal, self).output[0]
+    def base_distribution(self, params):
+        return self.process_params(params)
 
 
-@tf.keras.saving.register_keras_serializable()
-class IndependentLogitNormal(tfpl.DistributionLambda):
-    """An independent Logit-Normal Keras layer."""
+#: all available parametric distributions, by name
+DISTRIBUTIONS: dict[str, type[BaseParametricDistribution]] = {
+    cls.name: cls
+    for cls in [
+        ParametricNormal,
+        ParametricLogistic,
+        ParametricLogNormal,
+        ParametricTruncatedNormal,
+        ParametricCensoredNormal,
+        ParametricGamma,
+        ParametricBeta,
+        ParametricWeibull,
+        ParametricExponential,
+        ParametricPoisson,
+        ParametricBernoulli,
+        ParametricMixtureNormal,
+        ParametricMultivariateNormalTriL,
+    ]
+}
 
-    def __init__(
-        self,
-        event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.sample,
-        validate_args=False,
-        **kwargs
-    ):
-        """Initialize the `IndependentLogitNormal` layer.
-        Args:
-        event_shape: integer vector `Tensor` representing the shape of single
-            draw from this distribution.
-        convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
-            instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.mean`.
-        validate_args: Python `bool`, default `False`. When `True` distribution
-            parameters are checked for validity despite possibly degrading runtime
-            performance. When `False` invalid inputs may silently render incorrect
-            outputs.
-            Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
-        """
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
+# Names used by mlpp-lib < 1.0 (tensorflow-probability layers), mapped to the
+# new names and the options that reproduce their behaviour.
+LEGACY_DISTRIBUTIONS: dict[str, tuple[str, dict[str, Any]]] = {
+    "IndependentNormal": ("Normal", {}),
+    "IndependentLogistic": ("Logistic", {}),
+    "IndependentLogNormal": ("LogNormal", {}),
+    "IndependentTruncatedNormal": ("TruncatedNormal", {"low": 0.0, "high": math.inf}),
+    "IndependentDoublyCensoredNormal": ("CensoredNormal", {"low": 0.0, "high": 1.0}),
+    "IndependentGamma": ("Gamma", {}),
+    "IndependentBeta": ("Beta", {}),
+    "IndependentWeibull": ("Weibull", {}),
+    "IndependentPoisson": ("Poisson", {}),
+    "IndependentBernoulli": ("Bernoulli", {}),
+    "IndependentMixtureNormal": ("MixtureNormal", {"num_components": 2}),
+    "MultivariateNormalDiag": ("Normal", {}),
+}
 
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
+# Options of the tensorflow-probability layers that no longer have an effect.
+_LEGACY_OPTIONS = ("event_shape", "convert_to_tensor_fn", "validate_args")
 
-        def new_from_t(t):
-            return IndependentLogitNormal.new(t, event_shape, validate_args)
 
-        super(IndependentLogitNormal, self).__init__(
-            new_from_t, convert_to_tensor_fn, **kwargs
+def get_distribution(
+    name: str, event_size: int = 1, **kwargs
+) -> BaseParametricDistribution:
+    """Get a parametric distribution by name.
+
+    Names used by mlpp-lib < 1.0 (e.g. `IndependentNormal`) are still accepted,
+    but deprecated.
+    """
+    if name in LEGACY_DISTRIBUTIONS:
+        new_name, legacy_kwargs = LEGACY_DISTRIBUTIONS[name]
+        warnings.warn(
+            f"The distribution name '{name}' is deprecated, use '{new_name}' instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        for option in _LEGACY_OPTIONS:
+            if kwargs.pop(option, None) is not None:
+                warnings.warn(
+                    f"The option '{option}' of '{name}' is ignored.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+        name, kwargs = new_name, {**legacy_kwargs, **kwargs}
 
-        self._event_shape = event_shape
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
-
-    @staticmethod
-    def new(params, event_shape=(), validate_args=False, name=None):
-        """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "IndependentLogitNormal"):
-            params = tf.convert_to_tensor(params, name="params")
-            event_shape = dist_util.expand_to_vector(
-                tf.convert_to_tensor(
-                    event_shape, name="event_shape", dtype_hint=tf.int32
-                ),
-                tensor_name="event_shape",
-            )
-            output_shape = tf.concat(
-                [
-                    tf.shape(params)[:-1],
-                    event_shape,
-                ],
-                axis=0,
-            )
-            loc, scale = tf.split(params, 2, axis=-1)
-            return independent_lib.Independent(
-                tfd.LogitNormal(
-                    loc=tf.reshape(loc, output_shape),
-                    scale=tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-3,
-                    validate_args=validate_args,
-                ),
-                reinterpreted_batch_ndims=tf.size(event_shape),
-                validate_args=validate_args,
-            )
-
-    @staticmethod
-    def params_size(event_shape=(), name=None):
-        """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "IndependentLogitNormal_params_size"):
-            event_shape = tf.convert_to_tensor(
-                event_shape, name="event_shape", dtype_hint=tf.int32
-            )
-            return np.int32(2) * _event_size(
-                event_shape, name=name or "IndependentLogitNormal_params_size"
-            )
-
-    def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_shape": self._event_shape,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(IndependentLogitNormal, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
-
-    @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(IndependentLogitNormal, self).output[0]
+    try:
+        distribution_cls = DISTRIBUTIONS[name]
+    except KeyError:
+        raise KeyError(
+            f"The distribution '{name}' is not available. "
+            f"Choose one of {sorted(DISTRIBUTIONS)}."
+        ) from None
+    return distribution_cls(event_size=event_size, **kwargs)
 
 
-@tf.keras.saving.register_keras_serializable()
-class IndependentMixtureNormal(tfpl.DistributionLambda):
-    """A mixture of two normal distributions Keras layer.
-    5-parameters distribution: loc1, scale1, loc2, scale2, weight
+def _serialize_distribution(distribution: BaseParametricDistribution) -> dict:
+    return {"name": distribution.name, "config": distribution.get_config()}
+
+
+def _deserialize_distribution(config: dict) -> BaseParametricDistribution:
+    return DISTRIBUTIONS[config["name"]].from_config(config["config"])
+
+
+@keras.saving.register_keras_serializable(package="mlpp_lib")
+class DistributionLayer(keras.Layer):
+    """
+    Keras layer mapping its inputs to a parametric distribution.
+
+    A linear layer maps the inputs into the number of (unconstrained) parameters of
+    the underlying parametric distribution, which is then responsible to ensure the
+    parameters' constraints, e.g. the positiveness of the scale.
+
+    Parameters
+    ----------
+    distribution: str or BaseParametricDistribution
+        The parametric distribution, or its name (see `DISTRIBUTIONS`).
+    event_size: int
+        The number of output dimensions (only used if `distribution` is a name).
+    distribution_kwargs: dict
+        Extra options for the distribution (only used if `distribution` is a name),
+        e.g. `{"low": 0.0}` for a `TruncatedNormal`.
+    num_samples: int
+        The default number of samples, when the layer outputs samples.
+    bias_init: str, keras initializer or array
+        Initializer for the bias of the linear layer. If an array is passed,
+        it is used for the first parameters (e.g. the `loc`) and padded with zeros.
     """
 
     def __init__(
         self,
-        event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.mean,
-        validate_args=False,
-        **kwargs
+        distribution: Union[str, BaseParametricDistribution],
+        event_size: int = 1,
+        distribution_kwargs: Optional[dict] = None,
+        num_samples: int = 21,
+        bias_init="zeros",
+        **kwargs,
     ):
-        """Initialize the `IndependentMixtureNormal` layer.
-        Args:
-            event_shape: integer vector `Tensor` representing the shape of single
-                draw from this distribution.
-            convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
-                instance and returns a `tf.Tensor`-like object.
-                Default value: `tfd.Distribution.mean`.
-            validate_args: Python `bool`, default `False`. When `True` distribution
-                parameters are checked for validity despite possibly degrading runtime
-                performance. When `False` invalid inputs may silently render incorrect
-                outputs.
-                Default value: `False`.
-            **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
-        """
+        super().__init__(**kwargs)
 
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
-
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
-
-        def new_from_t(t):
-            return IndependentMixtureNormal.new(t, event_shape, validate_args)
-
-        super(IndependentMixtureNormal, self).__init__(
-            new_from_t, convert_to_tensor_fn, **kwargs
-        )
-
-        self._event_shape = event_shape
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
-
-    @staticmethod
-    def new(params, event_shape=(), validate_args=False, name=None):
-        """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "IndependentMixtureNormal"):
-            params = tf.convert_to_tensor(params, name="params")
-
-            event_shape = dist_util.expand_to_vector(
-                tf.convert_to_tensor(
-                    event_shape, name="event_shape", dtype_hint=tf.int32
-                ),
-                tensor_name="event_shape",
+        if isinstance(distribution, str):
+            distribution = get_distribution(
+                distribution, event_size=event_size, **(distribution_kwargs or {})
             )
-
-            output_shape = tf.concat(
-                [
-                    tf.shape(params)[:-1],
-                    event_shape,
-                ],
-                axis=0,
+        elif not isinstance(distribution, BaseParametricDistribution):
+            raise TypeError(
+                "Expected a BaseParametricDistribution or the name of a distribution, "
+                f"got {type(distribution)}."
             )
+        self.distribution = distribution
+        self.num_samples = num_samples
 
-            loc1, scale1, loc2, scale2, weight = tf.split(params, 5, axis=-1)
-            loc1 = tf.reshape(loc1, output_shape)
-            scale1 = tf.math.softplus(tf.reshape(scale1, output_shape)) + 1e-3
-            loc2 = tf.reshape(loc2, output_shape)
-            scale2 = tf.math.softplus(tf.reshape(scale2, output_shape)) + 1e-3
-            weight = tf.math.sigmoid(tf.reshape(weight, output_shape))
-
-            # Create the component distributions
-            normald1 = tfd.Normal(loc=loc1, scale=scale1)
-            normald2 = tfd.Normal(loc=loc2, scale=scale2)
-
-            # Create a categorical distribution for the weights
-            cat = tfd.Categorical(
-                probs=tf.concat(
-                    [tf.expand_dims(weight, -1), tf.expand_dims(1 - weight, -1)],
-                    axis=-1,
-                )
-            )
-
-            class CustomMixture(tfd.Distribution):
-                def __init__(self, cat, normald1, normald2):
-                    self.cat = cat
-                    self.normald1 = normald1
-                    self.normald2 = normald2
-                    super(CustomMixture, self).__init__(
-                        dtype=normald1.dtype,
-                        reparameterization_type=tfd.FULLY_REPARAMETERIZED,
-                        validate_args=validate_args,
-                        allow_nan_stats=True,
-                    )
-
-                def _sample_n(self, n, seed=None):
-                    indices = self.cat.sample(sample_shape=(n,), seed=seed)
-
-                    # Sample from both truncated normal distributions
-                    samples1 = self.normald1.sample(sample_shape=(n,), seed=seed)
-                    samples2 = self.normald2.sample(sample_shape=(n,), seed=seed)
-
-                    # Stack the samples along a new axis
-                    samples = tf.stack([samples1, samples2], axis=-1)
-
-                    # Gather samples according to indices from the categorical distribution
-                    chosen_samples = tf.gather(
-                        samples,
-                        indices,
-                        batch_dims=tf.get_static_value(tf.rank(indices)),
-                    )
-
-                    return chosen_samples
-
-                def _log_prob(self, value):
-                    log_prob1 = self.normald1.log_prob(value)
-                    log_prob2 = self.normald2.log_prob(value)
-                    log_probs = tf.stack([log_prob1, log_prob2], axis=-1)
-                    weighted_log_probs = log_probs + tf.math.log(
-                        tf.concat([weight, 1 - weight], axis=-1)
-                    )
-                    return tf.reduce_logsumexp(weighted_log_probs, axis=-1)
-
-                def _mean(self):
-                    return (
-                        weight * self.normald1.mean()
-                        + (1 - weight) * self.normald2.mean()
-                    )
-
-            mixtured = CustomMixture(cat, normald1, normald2)
-
-            return independent_lib.Independent(
-                mixtured,
-                reinterpreted_batch_ndims=tf.size(event_shape),
-                validate_args=validate_args,
-            )
-
-    @staticmethod
-    def params_size(event_shape=(), name=None):
-        """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "IndependentMixtureNormal_params_size"):
-            event_shape = tf.convert_to_tensor(
-                event_shape, name="event_shape", dtype_hint=tf.int32
-            )
-            return np.int32(5) * _event_size(
-                event_shape, name=name or "IndependentMixtureNormal_params_size"
-            )
-
-    def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_shape": self._event_shape,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(IndependentMixtureNormal, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
+        if isinstance(bias_init, (list, tuple)):
+            bias_init = np.asarray(bias_init, dtype=float)
+        self.bias_init = bias_init
 
     @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(IndependentMixtureNormal, self).output[0]
+    def event_size(self) -> int:
+        return self.distribution.event_size
 
+    def _bias_initializer(self):
+        if not isinstance(self.bias_init, np.ndarray):
+            return self.bias_init
+        bias = self.bias_init.ravel()
+        num_params = self.distribution.num_parameters
+        if bias.shape[0] > num_params:
+            raise ValueError(
+                f"bias_init has {bias.shape[0]} values, but the distribution "
+                f"only has {num_params} parameters."
+            )
+        return initializers.Constant(np.pad(bias, (0, num_params - bias.shape[0])))
 
-@tf.keras.saving.register_keras_serializable()
-class IndependentTruncatedNormal(tfpl.DistributionLambda):
-    """An independent TruncatedNormal Keras layer."""
-
-    def __init__(
-        self,
-        event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.mean,
-        validate_args=False,
-        **kwargs
-    ):
-        """Initialize the `IndependentTruncatedNormal` layer.
-        Args:
-        event_shape: integer vector `Tensor` representing the shape of single
-            draw from this distribution.
-        convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
-            instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.mean`.
-        validate_args: Python `bool`, default `False`. When `True` distribution
-            parameters are checked for validity despite possibly degrading runtime
-            performance. When `False` invalid inputs may silently render incorrect
-            outputs.
-            Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
-        """
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
-
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
-
-        def new_from_t(t):
-            return IndependentTruncatedNormal.new(t, event_shape, validate_args)
-
-        super(IndependentTruncatedNormal, self).__init__(
-            new_from_t, convert_to_tensor_fn, **kwargs
+    def build(self, input_shape):
+        self.parameters_encoder = keras.layers.Dense(
+            self.distribution.num_parameters,
+            name="parameters_encoder",
+            bias_initializer=self._bias_initializer(),
         )
+        self.parameters_encoder.build(input_shape)
+        super().build(input_shape)
 
-        self._event_shape = event_shape
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
-
-    @staticmethod
-    def new(params, event_shape=(), validate_args=False, name=None):
-        """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "IndependentTruncatedNormal"):
-            params = tf.convert_to_tensor(params, name="params")
-            event_shape = dist_util.expand_to_vector(
-                tf.convert_to_tensor(
-                    event_shape, name="event_shape", dtype_hint=tf.int32
-                ),
-                tensor_name="event_shape",
-            )
-            output_shape = tf.concat(
-                [
-                    tf.shape(params)[:-1],
-                    event_shape,
-                ],
-                axis=0,
-            )
-            loc, scale = tf.split(params, 2, axis=-1)
-            return independent_lib.Independent(
-                tfd.TruncatedNormal(
-                    loc=tf.reshape(loc, output_shape),
-                    scale=tf.math.softplus(tf.reshape(scale, output_shape)) + 1e-3,
-                    low=0,
-                    high=np.inf,
-                    validate_args=validate_args,
-                ),
-                reinterpreted_batch_ndims=tf.size(event_shape),
-                validate_args=validate_args,
-            )
-
-    @staticmethod
-    def params_size(event_shape=(), name=None):
-        """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "IndependentTruncatedNormal_params_size"):
-            event_shape = tf.convert_to_tensor(
-                event_shape, name="event_shape", dtype_hint=tf.int32
-            )
-            return np.int32(2) * _event_size(
-                event_shape, name=name or "IndependentTruncatedNormal_params_size"
-            )
-
-    def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_shape": self._event_shape,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(IndependentTruncatedNormal, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
-
-    @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(IndependentTruncatedNormal, self).output[0]
-
-
-@tf.keras.saving.register_keras_serializable()
-class IndependentWeibull(tfpl.DistributionLambda):
-    """An independent Weibull Keras layer."""
-
-    def __init__(
+    def call(
         self,
-        event_shape=(),
-        convert_to_tensor_fn=tfd.Distribution.mean,
-        validate_args=False,
-        **kwargs
+        inputs,
+        output_type: Literal["distribution", "samples", "expected"] = "distribution",
+        num_samples: Optional[int] = None,
+        pattern: Literal["sbd", "bsd"] = "sbd",
+        training=None,
     ):
-        """Initialize the `IndependentWeibull` layer.
-        Args:
-        event_shape: integer vector `Tensor` representing the shape of single
-            draw from this distribution.
-        convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
-            instance and returns a `tf.Tensor`-like object.
-            Default value: `tfd.Distribution.mean`.
-        validate_args: Python `bool`, default `False`. When `True` distribution
-            parameters are checked for validity despite possibly degrading runtime
-            performance. When `False` invalid inputs may silently render incorrect
-            outputs.
-            Default value: `False`.
-        **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
-        """
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
+        dist = self.distribution(self.parameters_encoder(inputs))
 
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
-
-        def new_from_t(t):
-            return IndependentWeibull.new(t, event_shape, validate_args)
-
-        super(IndependentWeibull, self).__init__(
-            new_from_t, convert_to_tensor_fn, **kwargs
-        )
-
-        self._event_shape = event_shape
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
-
-    @staticmethod
-    def new(params, event_shape=(), validate_args=False, name=None):
-        """Create the distribution instance from a `params` vector."""
-        with tf.name_scope(name or "IndependentWeibull"):
-            params = tf.convert_to_tensor(params, name="params")
-            event_shape = dist_util.expand_to_vector(
-                tf.convert_to_tensor(
-                    event_shape, name="event_shape", dtype_hint=tf.int32
-                ),
-                tensor_name="event_shape",
-            )
-            output_shape = tf.concat(
-                [
-                    tf.shape(params)[:-1],
-                    event_shape,
-                ],
-                axis=0,
-            )
-            concentration, scale = tf.split(params, 2, axis=-1)
-            return independent_lib.Independent(
-                tfd.Weibull(
-                    concentration=tf.math.softplus(
-                        tf.reshape(concentration, output_shape)
-                    )
-                    + 1.0,
-                    scale=tf.math.softplus(tf.reshape(scale, output_shape)),
-                    validate_args=validate_args,
-                ),
-                reinterpreted_batch_ndims=tf.size(event_shape),
-                validate_args=validate_args,
-            )
-
-    @staticmethod
-    def params_size(event_shape=(), name=None):
-        """The number of `params` needed to create a single distribution."""
-        with tf.name_scope(name or "IndependentWeibull_params_size"):
-            event_shape = tf.convert_to_tensor(
-                event_shape, name="event_shape", dtype_hint=tf.int32
-            )
-            return np.int32(2) * _event_size(
-                event_shape, name=name or "IndependentWeibull_params_size"
-            )
-
-    def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_shape": self._event_shape,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(IndependentWeibull, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
-
-    @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(IndependentWeibull, self).output[0]
-
-
-@tf.keras.saving.register_keras_serializable()
-class MultivariateNormalDiag(tfpl.DistributionLambda):
-    """A `d`-variate normal Keras layer from `2* d` params,
-    with a diagonal scale matrix.
-    """
-
-    def __init__(
-        self,
-        event_size,
-        convert_to_tensor_fn=tfd.Distribution.mean,
-        validate_args=False,
-        **kwargs
-    ):
-        """Initialize the layer.
-        Args:
-            event_size: Scalar `int` representing the size of single draw from this
-              distribution.
-            convert_to_tensor_fn: Python `callable` that takes a `tfd.Distribution`
-              instance and returns a `tf.Tensor`-like object. For examples, see
-              `class` docstring.
-              Default value: `tfd.Distribution.sample`.
-            validate_args: Python `bool`, default `False`. When `True` distribution
-              parameters are checked for validity despite possibly degrading runtime
-              performance. When `False` invalid inputs may silently render incorrect
-              outputs.
-              Default value: `False`.
-            **kwargs: Additional keyword arguments passed to `tf.keras.Layer`.
-        """
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
-
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
-
-        def new_from_t(t):
-            return MultivariateNormalDiag.new(t, event_size, validate_args)
-
-        super(MultivariateNormalDiag, self).__init__(
-            new_from_t, convert_to_tensor_fn, **kwargs
-        )
-
-        self._event_size = event_size
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
-
-    @staticmethod
-    def new(params, event_size, validate_args=False, name=None):
-        """Create the distribution instance from a 'params' vector."""
-        with tf.name_scope(name or "MultivariateNormalDiag"):
-            params = tf.convert_to_tensor(params, name="params")
-            if event_size > 1:
-                dist = tfd.MultivariateNormalDiag(
-                    loc=params[..., :event_size],
-                    scale_diag=1e-5 + tf.math.softplus(params[..., event_size:]),
-                    validate_args=validate_args,
-                )
-            else:
-                dist = tfd.Normal(
-                    loc=params[..., :event_size],
-                    scale=1e-5 + tf.math.softplus(params[..., event_size:]),
-                    validate_args=validate_args,
-                )
+        if output_type == "distribution":
             return dist
+        if output_type == "expected":
+            return dist.mean
+        if output_type == "samples":
+            num_samples = num_samples or self.num_samples
+            if dist.has_rsample:
+                return dist.rsample(num_samples, pattern=pattern)
+            if training:
+                raise MissingReparameterizationError(
+                    "Gradient-based optimization will not work, as the underlying "
+                    f"{dist.name} distribution does not have a reparametrized "
+                    "sampling function."
+                )
+            return dist.sample(num_samples, pattern=pattern)
+        raise ValueError(
+            f"Unknown output_type '{output_type}'. "
+            "Use 'distribution', 'samples' or 'expected'."
+        )
 
-    @staticmethod
-    def params_size(event_size, name=None):
-        """The number of 'params' needed to create a single distribution."""
-        with tf.name_scope(name or "MultivariateNormalDiag_params_size"):
-            return 2 * event_size
+    def compute_output_shape(self, input_shape):
+        # shape of the expected value
+        return (input_shape[0], self.event_size)
 
     def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_size": self._event_size,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(MultivariateNormalDiag, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
+        config = super().get_config()
+        bias_init = self.bias_init
+        if isinstance(bias_init, np.ndarray):
+            bias_init = bias_init.tolist()
+        elif not isinstance(bias_init, str):
+            bias_init = keras.initializers.serialize(bias_init)
+        config.update(
+            {
+                "distribution": _serialize_distribution(self.distribution),
+                "num_samples": self.num_samples,
+                "bias_init": bias_init,
+            }
+        )
+        return config
 
     @classmethod
     def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
-
-    @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(MultivariateNormalDiag, self).output[0]
-
-
-@tf.keras.saving.register_keras_serializable()
-class MultivariateNormalTriL(tfpl.MultivariateNormalTriL):
-    def __init__(
-        self,
-        event_size,
-        convert_to_tensor_fn=tfd.Distribution.mean,
-        validate_args=False,
-        **kwargs
-    ):
-        convert_to_tensor_fn = _get_convert_to_tensor_fn(convert_to_tensor_fn)
-
-        # If there is a 'make_distribution_fn' keyword argument (e.g., because we
-        # are being called from a `from_config` method), remove it.  We pass the
-        # distribution function to `DistributionLambda.__init__` below as the first
-        # positional argument.
-        kwargs.pop("make_distribution_fn", None)
-
-        super().__init__(event_size, convert_to_tensor_fn, validate_args, **kwargs)
-        self._event_size = event_size
-        self._convert_to_tensor_fn = convert_to_tensor_fn
-        self._validate_args = validate_args
-
-    def get_config(self):
-        """Returns the config of this layer.
-        NOTE: At the moment, this configuration can only be serialized if the
-        Layer's `convert_to_tensor_fn` is a serializable Keras object (i.e.,
-        implements `get_config`) or one of the standard values:
-        - `Distribution.sample` (or `"sample"`)
-        - `Distribution.mean` (or `"mean"`)
-        - `Distribution.mode` (or `"mode"`)
-        - `Distribution.stddev` (or `"stddev"`)
-        - `Distribution.variance` (or `"variance"`)
-        """
-        config = {
-            "event_size": self._event_size,
-            "convert_to_tensor_fn": _serialize(self._convert_to_tensor_fn),
-            "validate_args": self._validate_args,
-        }
-        base_config = super(MultivariateNormalTriL, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        return _distribution_lambda_from_config(cls, config)
-
-    @property
-    def output(self):
-        """This allows the use of this layer with the shap package."""
-        return super(MultivariateNormalTriL, self).output[0]
+        config = dict(config)
+        config["distribution"] = _deserialize_distribution(config["distribution"])
+        if isinstance(config.get("bias_init"), dict):
+            config["bias_init"] = keras.initializers.deserialize(config["bias_init"])
+        return cls(**config)

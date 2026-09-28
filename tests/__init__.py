@@ -1,3 +1,3 @@
 import os
 
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
+os.environ.setdefault("KERAS_BACKEND", "torch")

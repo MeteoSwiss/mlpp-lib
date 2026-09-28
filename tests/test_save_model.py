@@ -1,171 +1,141 @@
 import subprocess
-from inspect import getmembers, isfunction, isclass
+import sys
+import textwrap
 
+import keras
 import numpy as np
 import pytest
-import tensorflow as tf
-from tensorflow.keras import Model
+import torch
 
 from mlpp_lib import models
-from mlpp_lib import losses, metrics
-from mlpp_lib import probabilistic_layers
-from mlpp_lib.utils import get_loss, get_metric, get_optimizer
+from mlpp_lib.probabilistic_layers import DISTRIBUTIONS
+from mlpp_lib.utils import get_loss, get_metric
 
-
-def _belongs_here(obj, module):
-    return obj[1].__module__ == module.__name__
-
-
-ALL_PROB_LAYERS = [
-    obj[0]
-    for obj in getmembers(probabilistic_layers, isclass)
-    if _belongs_here(obj, probabilistic_layers)
-]
-
-ALL_LOSSES = [
-    obj[0]
-    for obj in getmembers(losses, isfunction) + getmembers(losses, isclass)
-    if _belongs_here(obj, losses)
-]
-
-ALL_METRICS = [
-    obj[0]
-    for obj in getmembers(metrics, isfunction) + getmembers(metrics, isclass)
-    if _belongs_here(obj, metrics)
-]
-
-
-TEST_LOSSES = [
-    "crps_energy_ensemble",
-    "crps_energy",
-    {"WeightedCRPSEnergy": {"threshold": 0}},
-    {"MultivariateLoss": {"metric": "mse"}},
-]
+N_INPUTS = 5
 
 TEST_METRICS = [
-    "bias",
-    "mean_absolute_error",
+    "expected_bias",
+    "expected_mean_absolute_error",
     {"MAEBusts": {"threshold": 0.5}},
 ]
 
+MODELS = {
+    "fcn": lambda **kw: models.fully_connected_network(
+        2, hidden_layers=[3], dropout=0.1, **kw
+    ),
+    "multibranch": lambda **kw: models.fully_connected_multibranch_network(
+        2, hidden_layers=[3], **kw
+    ),
+    "dcn": lambda **kw: models.deep_cross_network(
+        2, hidden_layers=[3], cross_layers_hiddensize=4, **kw
+    ),
+}
 
-@pytest.mark.parametrize("save_format", ["tf", "keras"])
-@pytest.mark.parametrize("loss", TEST_LOSSES)
-@pytest.mark.parametrize("prob_layer", ALL_PROB_LAYERS)
-def test_save_model(save_format, loss, prob_layer, tmp_path):
+
+def _loss_for(distribution):
+    if distribution == "MultivariateNormalTriL":
+        return {"EnergyScore": {"num_samples": 10}}
+    if distribution in ("Poisson", "Bernoulli", "MixtureNormal"):
+        return "NegativeLogLikelihood"
+    return {"CRPSEnsemble": {"num_samples": 10}}
+
+
+def _assert_same_predictions(model, loaded_model, inputs):
+    for w1, w2 in zip(model.weights, loaded_model.weights):
+        np.testing.assert_allclose(w1.numpy(), w2.numpy())
+    pred, loaded_pred = model(inputs), loaded_model(inputs)
+    torch.testing.assert_close(pred.mean, loaded_pred.mean, equal_nan=True)
+    torch.testing.assert_close(pred.variance, loaded_pred.variance, equal_nan=True)
+
+
+@pytest.mark.parametrize("model_name", list(MODELS))
+@pytest.mark.parametrize("distribution", list(DISTRIBUTIONS))
+def test_save_model(distribution, model_name, tmp_path):
     """Test model save/load"""
+    path = tmp_path / "model.keras"
 
-    if save_format == "keras":
-        tmp_path = f"{tmp_path}.keras"
-        save_traces = True  # default value
-    else:
-        tmp_path = f"{tmp_path}"
-        save_traces = False
+    model = MODELS[model_name](
+        probabilistic_layer=distribution,
+        out_bias_init=np.array([0.1, 0.2]),
+    )
+    inputs = keras.random.normal((32, N_INPUTS))
+    model(inputs)
+    model.compile(
+        loss=get_loss(_loss_for(distribution)),
+        metrics=[get_metric(metric) for metric in TEST_METRICS],
+    )
+    model.save(path)
 
+    loaded_model = keras.saving.load_model(path)
+    assert isinstance(loaded_model, type(model))
+    assert type(loaded_model.loss) is type(model.loss)
+    _assert_same_predictions(model, loaded_model, inputs)
+    assert (
+        loaded_model.output_distribution.get_config()
+        == model.output_distribution.get_config()
+    )
+
+
+def test_save_model_deterministic(tmp_path):
+    path = tmp_path / "model.keras"
+    model = models.fully_connected_network(2, hidden_layers=[3])
+    inputs = keras.random.normal((32, N_INPUTS))
+    model(inputs)
+    model.compile(loss=get_loss("mse"), metrics=[get_metric("expected_bias")])
+    model.save(path)
+    loaded_model = keras.saving.load_model(path)
+    np.testing.assert_allclose(
+        model(inputs).detach().numpy(), loaded_model(inputs).detach().numpy()
+    )
+
+
+def test_load_model_in_new_process(tmp_path):
+    """The model must be loadable in a fresh process, without unsafe deserialization."""
+    path = tmp_path / "model.keras"
+    inputs = np.random.default_rng(0).normal(size=(8, N_INPUTS)).astype("float32")
     model = models.fully_connected_network(
-        (5,),
         2,
         hidden_layers=[3],
-        probabilistic_layer=prob_layer,
-        mc_dropout=False,
+        probabilistic_layer="TruncatedNormal",
+        prob_layer_kwargs={"low": -1.0},
     )
-    # The assertion below fails because of safety mechanism in keras against
-    # the deserialization of Lambda layers that we cannot switch off
-    # assert isinstance(model.from_config(model.get_config()), Model)
-    loss = get_loss(loss)
-    metrics = [get_metric(metric) for metric in TEST_METRICS]
-    model.compile(loss=loss, metrics=metrics)
-    if save_format != "keras":
-        model.save(tmp_path, save_traces=save_traces)
-    else:
-        model.save(tmp_path)
+    model(inputs)
+    model.compile(loss=get_loss("CRPSTruncatedNormal"))
+    model.save(path)
+    np.save(tmp_path / "inputs.npy", inputs)
+    np.save(tmp_path / "mean.npy", model(inputs).mean.detach().numpy())
 
-    # test trying to load the model from a new process
-    # this is a bit slow, since each process needs to reload all the dependencies ...
+    script = textwrap.dedent(f"""
+        import numpy as np
+        import mlpp_lib  # registers the custom objects and sets the backend
+        import keras
 
-    # not compiling
-    args = [
-        "python",
-        "-c",
-        "import tensorflow as tf;"
-        f"from mlpp_lib.probabilistic_layers import {prob_layer};"
-        f"tf.keras.saving.load_model('{tmp_path}', compile=False, safe_mode=False)",
-    ]
-    completed_process = subprocess.run(args, shell=True)
-    assert completed_process.returncode == 0, "failed to reload model"
-
-    # compiling
-    args = [
-        "python",
-        "-c",
-        "import tensorflow as tf;"
-        f"from mlpp_lib.losses import {loss};"
-        f"from mlpp_lib.probabilistic_layers import {prob_layer};"
-        f"tf.keras.saving.load_model('{tmp_path}', custom_objects={{'{loss}':{loss}}}, safe_mode=False)",
-    ]
-    completed_process = subprocess.run(args, shell=True)
-    assert completed_process.returncode == 0, "failed to reload model"
-
-    input_arr = tf.random.uniform((1, 5))
-    pred1 = model(input_arr)
-    del model
-    tf.keras.backend.clear_session()
-    model = tf.keras.saving.load_model(tmp_path, compile=False, safe_mode=False)
-    assert isinstance(model, Model)
-
-    pred2 = model(input_arr)
-    try:
-        # Idependent layers have a "distribution" attribute
-        pred1_params = pred1.parameters["distribution"].parameters
-        pred2_params = pred2.parameters["distribution"].parameters
-    except KeyError:
-        pred1_params = pred1.parameters
-        pred2_params = pred2.parameters
-
-    for param in pred1_params.keys():
-        try:
-            param_array1 = pred1_params[param].numpy()
-            param_array2 = pred2_params[param].numpy()
-        except AttributeError:
-            continue
-
-        np.testing.assert_allclose(param_array1, param_array2)
+        model = keras.saving.load_model({str(path)!r}, safe_mode=True)
+        mean = model(np.load({str(tmp_path / "inputs.npy")!r})).mean
+        np.testing.assert_allclose(
+            mean.detach().numpy(), np.load({str(tmp_path / "mean.npy")!r}), rtol=1e-6
+        )
+        assert model.output_distribution.distribution.low == -1.0
+        """)
+    subprocess.run([sys.executable, "-c", script], check=True)
 
 
 def test_save_model_mlflow(tmp_path):
-    """Test model save/load"""
-    pytest.importorskip("mlflow")
+    """Test model save/load with mlflow"""
+    mlflow = pytest.importorskip("mlflow")
 
-    import mlflow
-
-    mlflow_uri = f"sqlite:///{tmp_path.absolute()}/mlflow.db"
-    mlflow.set_tracking_uri(mlflow_uri)
+    mlflow.set_tracking_uri(f"sqlite:///{tmp_path.absolute()}/mlflow.db")
 
     model = models.fully_connected_network(
-        (5,),
-        2,
-        hidden_layers=[3, 3],
-        dropout=0.5,
-        mc_dropout=True,
-        probabilistic_layer="IndependentNormal",
+        2, hidden_layers=[3], probabilistic_layer="Normal"
     )
-    optimizer = get_optimizer("Adam")
-    model.compile(optimizer=optimizer, loss=None, metrics=None)
-    custom_objects = tf.keras.layers.serialize(model)
+    inputs = keras.random.normal((32, N_INPUTS))
+    model(inputs)
+    model.compile(loss=get_loss("CRPSNormal"))
 
-    model_info = mlflow.tensorflow.log_model(
-        model,
-        "model_save",
-        custom_objects=custom_objects,
-        keras_model_kwargs={"save_format": "keras"},
-    )
+    with mlflow.start_run():
+        model_info = mlflow.keras.log_model(model, name="model")
 
-    tf.keras.backend.clear_session()
-
-    # Thanks to the custom `from_config` on each probabilistic layer (which
-    # reconstructs the layer from its own parameters instead of
-    # deserializing Lambda's bytecode-serialized function), loading no
-    # longer requires `safe_mode=False`.
-    model: tf.tensorflow.Model = mlflow.tensorflow.load_model(model_info.model_uri)
-
-    assert isinstance(model, Model)
+    loaded_model = mlflow.keras.load_model(model_info.model_uri)
+    assert isinstance(loaded_model, models.ProbabilisticModel)
+    _assert_same_predictions(model, loaded_model, inputs)

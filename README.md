@@ -1,12 +1,23 @@
 # mlpp-lib
 
-[![.github/workflows/run-tests.yml](https://github.com/MeteoSwiss/mlpp-lib/actions/workflows/run-tests.yml/badge.svg)](https://github.com/MeteoSwiss/mlpp-lib/actions/workflows/run-tests.yml)
-[![pypi](https://img.shields.io/pypi/v/mlpp-lib.svg?colorB=<brightgreen>)](https://pypi.python.org/pypi/mlpp-lib/)
-
 Collection of methods for ML-based postprocessing of weather forecasts.
+
+Since version 1.0, mlpp-lib is built on [Keras 3](https://keras.io) with the [PyTorch](https://pytorch.org) backend, uses [`torch.distributions`](https://pytorch.org/docs/stable/distributions.html) for its probabilistic layers and [scoringrules](https://frazane.github.io/scoringrules/) for its loss functions. See [MIGRATION.md](MIGRATION.md) if you are upgrading from mlpp-lib < 1.0 (tensorflow).
 
 :warning: **The code in this repository is currently work-in-progress and not recommended for production use.** :warning:
 
+## Installation
+
+```
+pip install mlpp-lib
+```
+
+To avoid downloading the (large) CUDA build of PyTorch on machines without a GPU, install the CPU build of torch first:
+
+```
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install mlpp-lib
+```
 
 
 # Quickstart
@@ -20,19 +31,10 @@ import pandas as pd
 from mlpp_lib.datasets import DataModule, DataSplitter
 ```
 
-    2024-03-12 11:01:48.532698: I tensorflow/tsl/cuda/cudart_stub.cc:28] Could not find cuda drivers on your machine, GPU will not be used.
-    2024-03-12 11:01:48.594233: I tensorflow/tsl/cuda/cudart_stub.cc:28] Could not find cuda drivers on your machine, GPU will not be used.
-    2024-03-12 11:01:48.595154: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
-    To enable the following instructions: AVX2 AVX512F FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
-
-
-    2024-03-12 11:01:49.442240: W tensorflow/compiler/tf2tensorrt/utils/py_utils.cc:38] TF-TRT Warning: Could not find TensorRT
-
-
 
 ```python
 LEADTIMES = np.arange(24)
-REFTIMES = pd.date_range("2018-01-01", "2018-03-31", freq="24H")
+REFTIMES = pd.date_range("2018-01-01", "2018-03-31", freq="24h")
 STATIONS = [chr(i) * 3 for i in range(ord("A"), ord("Z"))]
 SHAPE = (len(REFTIMES), len(LEADTIMES), len(STATIONS))
 DIMS = ["forecast_reference_time", "lead_time", "station"]
@@ -89,18 +91,18 @@ print(features)
 
 ```
 
-    <xarray.Dataset>
+    <xarray.Dataset> Size: 2MB
     Dimensions:                  (forecast_reference_time: 90, lead_time: 24,
                                   station: 25)
     Coordinates:
-      * forecast_reference_time  (forecast_reference_time) datetime64[ns] 2018-01...
-      * lead_time                (lead_time) int64 0 1 2 3 4 5 ... 18 19 20 21 22 23
-      * station                  (station) <U3 'AAA' 'BBB' 'CCC' ... 'XXX' 'YYY'
+      * forecast_reference_time  (forecast_reference_time) datetime64[us] 720B 20...
+      * lead_time                (lead_time) int64 192B 0 1 2 3 4 ... 19 20 21 22 23
+      * station                  (station) <U3 300B 'AAA' 'BBB' ... 'XXX' 'YYY'
     Data variables:
-        coe:x1                   (forecast_reference_time, lead_time, station) float64 ...
-        coe:x2                   (forecast_reference_time, lead_time, station) float64 ...
-        obs:x3                   (forecast_reference_time, lead_time, station) float64 ...
-        dem:x4                   (forecast_reference_time, lead_time, station) float64 ...
+        coe:x1                   (forecast_reference_time, lead_time, station) float64 432kB ...
+        coe:x2                   (forecast_reference_time, lead_time, station) float64 432kB ...
+        obs:x3                   (forecast_reference_time, lead_time, station) float64 432kB ...
+        dem:x4                   (forecast_reference_time, lead_time, station) float64 432kB ...
 
 
 
@@ -109,16 +111,16 @@ targets = targets_dataset()
 print(targets)
 ```
 
-    <xarray.Dataset>
+    <xarray.Dataset> Size: 865kB
     Dimensions:                  (forecast_reference_time: 90, lead_time: 24,
                                   station: 25)
     Coordinates:
-      * forecast_reference_time  (forecast_reference_time) datetime64[ns] 2018-01...
-      * lead_time                (lead_time) int64 0 1 2 3 4 5 ... 18 19 20 21 22 23
-      * station                  (station) <U3 'AAA' 'BBB' 'CCC' ... 'XXX' 'YYY'
+      * forecast_reference_time  (forecast_reference_time) datetime64[us] 720B 20...
+      * lead_time                (lead_time) int64 192B 0 1 2 3 4 ... 19 20 21 22 23
+      * station                  (station) <U3 300B 'AAA' 'BBB' ... 'XXX' 'YYY'
     Data variables:
-        obs:y1                   (forecast_reference_time, lead_time, station) float64 ...
-        obs:y2                   (forecast_reference_time, lead_time, station) float64 ...
+        obs:y1                   (forecast_reference_time, lead_time, station) float64 432kB ...
+        obs:y2                   (forecast_reference_time, lead_time, station) float64 432kB ...
 
 
 ## Preparing data
@@ -147,57 +149,190 @@ datamodule = DataModule(
 datamodule.setup(stage=None)
 ```
 
+    No normalizer found, data are standardized by default.
+
+
 ## Training
-The library builds on top of the tensorflow + keras API and provides some useful methods to quickly build probabilistic models, as well as a collection of probabilistic metrics. Of course, you're free to use tensorflow and tensorflow probability to build your own custom model. MLPP won't get in your way!
+The library builds on top of PyTorch + Keras 3 API and provides some useful methods to quickly build probabilistic models, while integrating probabilistic metrics thanks to `scoringrules`. Of course, you're free to use torch and torch distributions to build your own custom model. MLPP won't get in your way!
+
+In the following example the model consists of a fully connected layer and a probabilistic layer modelling a normal distribution parametrized by some predicted parameters, optimized with a closed form CRPS.
 
 
 ```python
-from mlpp_lib.models import fully_connected_network
-from mlpp_lib.losses import crps_energy
-import tensorflow as tf 
+import mlpp_lib  # sets the torch backend of keras
+import keras
 
-model: tf.keras.Model = fully_connected_network(
-    input_shape = datamodule.train.x.shape[1:],
-    output_size = datamodule.train.y.shape[-1],
-    hidden_layers = [32, 32],
-    activations = "relu",
-    probabilistic_layer = "IndependentNormal"
+from mlpp_lib.layers import MultilayerPerceptron
+from mlpp_lib.losses import CRPSNormal
+from mlpp_lib.models import ProbabilisticModel
+from mlpp_lib.probabilistic_layers import DistributionLayer
+
+encoder = MultilayerPerceptron(
+    hidden_layers=[16, 8],
+    dropout=0.1,
+    activations="sigmoid",
 )
+prob_layer = DistributionLayer("Normal")
 
-model.compile(loss=crps_energy, optimizer="adam")
+model = ProbabilisticModel(encoder=encoder, output_distribution=prob_layer)
+model.compile(loss=CRPSNormal(), optimizer=keras.optimizers.Adam(learning_rate=0.1))
 
 history = model.fit(
-    datamodule.train.x, datamodule.train.y,
-    epochs = 2,
-    batch_size = 32,
-    validation_data = (datamodule.val.x, datamodule.val.y)
+    datamodule.train.x,
+    datamodule.train.y,
+    epochs=2,
+    batch_size=32,
+    validation_data=(datamodule.val.x, datamodule.val.y),
+    verbose=2,
 )
 ```
 
     Epoch 1/2
-    689/689 [==============================] - 2s 2ms/step - loss: 0.5633 - val_loss: 0.5721
+
+
+    689/689 - 4s - 5ms/step - loss: 0.5644 - val_loss: 0.5565
+
 
     Epoch 2/2
-    689/689 [==============================] - 1s 2ms/step - loss: 0.5607 - val_loss: 0.5695
 
+
+    689/689 - 4s - 7ms/step - loss: 0.5631 - val_loss: 0.5527
+
+
+The same model can be built with `mlpp_lib.models.fully_connected_network`, as done by `mlpp_lib.train.train` from a configuration:
+
+
+```python
+from mlpp_lib.models import fully_connected_network
+
+model = fully_connected_network(
+    output_size=1,
+    hidden_layers=[16, 8],
+    dropout=0.1,
+    activations="sigmoid",
+    probabilistic_layer="Normal",
+)
+```
 
 ## Predictions
 Once your model is trained, you can make predictions and create ensembles by sampling from the predictive distribution. The `Dataset` class comes with a method to wrap your ensemble predictions in a xarray object with the correct dimensions and coordinates.
 
 
 ```python
-test_pred_ensemble = model(datamodule.test.x).sample(21)
+test_pred_ensemble = model(datamodule.test.x).sample(21).numpy()
 test_pred_ensemble = datamodule.test.dataset_from_predictions(test_pred_ensemble, ensemble_axis=0)
 print(test_pred_ensemble)
 ```
 
-    <xarray.Dataset>
+    <xarray.Dataset> Size: 363kB
     Dimensions:                  (realization: 21, forecast_reference_time: 18,
                                   lead_time: 24, station: 5)
     Coordinates:
-      * forecast_reference_time  (forecast_reference_time) datetime64[ns] 2018-03...
-      * lead_time                (lead_time) int64 0 1 2 3 4 5 ... 18 19 20 21 22 23
-      * station                  (station) <U3 'AAA' 'EEE' 'JJJ' 'PPP' 'RRR'
-      * realization              (realization) int64 0 1 2 3 4 5 ... 16 17 18 19 20
+      * realization              (realization) int64 168B 0 1 2 3 4 ... 17 18 19 20
+      * forecast_reference_time  (forecast_reference_time) datetime64[us] 144B 20...
+      * lead_time                (lead_time) int64 192B 0 1 2 3 4 ... 19 20 21 22 23
+      * station                  (station) <U3 60B 'AAA' 'III' 'NNN' 'VVV' 'YYY'
     Data variables:
-        obs:y1                   (realization, forecast_reference_time, lead_time, station) float64 ...
+        obs:y1                   (realization, forecast_reference_time, lead_time, station) float64 363kB ...
+
+
+# Predictive Distributions
+
+Many predictive distributions are supported out-of-the-box and ready to be used in your model, by their name. All of them (but `MultivariateNormalTriL`) model each of the `output_size` target variables independently.
+
+| Name | Comment | Reparametrized sampling | Closed form CRPS |
+|------------|------------|:------------:|:------------:|
+| `Normal` | | ✔️ | `CRPSNormal` |
+| `Logistic` | | ✔️ | `CRPSLogistic` |
+| `LogNormal` | | ✔️ | `CRPSLogNormal` |
+| `TruncatedNormal` | A normal distribution with support bounded to $[low, high]$ (default $[0, \infty]$). | ✔️ | `CRPSTruncatedNormal` |
+| `CensoredNormal` | A normal distribution where values outside $[low, high]$ are assigned to $low$ and $high$ (default $[0, \infty]$). | ✔️ | `CRPSCensoredNormal` |
+| `Gamma` | | ✔️ | |
+| `Beta` | | ✔️ | |
+| `Weibull` | | ✔️ | |
+| `Exponential` | | ✔️ | `CRPSExponential` |
+| `Poisson` | | | `CRPSPoisson` |
+| `Bernoulli` | | | |
+| `MixtureNormal` | A mixture of `num_components` (default 2) normal distributions. | | `CRPSMixtureNormal` |
+| `MultivariateNormalTriL` | A multivariate normal distribution, parametrized by the Cholesky factor of its covariance matrix. | ✔️ | |
+
+Distribution options are passed with `distribution_kwargs`, e.g. `DistributionLayer("TruncatedNormal", distribution_kwargs={"low": -1.0})`, or with `prob_layer_kwargs` in the model builders.
+
+Any other distribution available in [PyTorch](https://pytorch.org/docs/stable/distributions.html) can be introduced in our framework with little effort:
+- Extend the `BaseParametricDistribution` class.
+- Implement `BaseParametricDistribution.base_distribution` to enforce constraints on the parameters (e.g make sure they stay positive).
+- Add a `DistributionLayer` layer to your model, instantiated with your new distribution. It will make sure to transform its input data into the expected number of parameters.
+
+# Loss functions
+
+Depending on the predictive distribution, the model can be optimized via a closed form CRPS, a sample-based CRPS or its log-likelihood.
+
+In `mlpp` there are:
+- Named closed-form losses such as `CRPSNormal`, `CRPSTruncatedNormal`, ... (see the table above).
+- Named sample-based losses such as `CRPSEnsemble`, `TWCRPSEnsemble` (threshold-weighted CRPS) and `EnergyScore` (for multivariate distributions).
+- `NegativeLogLikelihood`, `MultivariateLoss` and `CombinedLoss`.
+- Wrappers for external modules, implemented in `DistributionLossWrapper` and `SampleLossWrapper`, for closed form and sample-based scores respectively.
+
+For sample-based losses, the underlying distribution needs to have a reparametrized sampling function. If that was not available, `SampleLossWrapper` will let you know.
+
+All losses ignore missing (NaN) target values.
+
+Currently, `mlpp` relies on [scoringrules](https://frazane.github.io/scoringrules/) for its loss functions.
+
+
+```python
+import scoringrules as sr
+
+from mlpp_lib.losses import (
+    CRPSEnsemble,
+    CRPSNormal,
+    DistributionLossWrapper,
+    NegativeLogLikelihood,
+    SampleLossWrapper,
+)
+
+# Named losses
+loss = CRPSNormal()
+loss = CRPSEnsemble(num_samples=100)
+loss = NegativeLogLikelihood()
+# Closed form loss
+loss = DistributionLossWrapper(fn=sr.crps_normal)
+# Sample-based loss
+loss = SampleLossWrapper(fn=sr.crps_ensemble, num_samples=100)
+```
+
+# Models
+
+Probabilistic models return by default an object representing the parametric predictive distribution, which is used internally during the model optimization. It is however also possible to directly obtain a certain number of samples from the distribution or its expected value.
+
+
+```python
+encoder = MultilayerPerceptron(hidden_layers=[16, 8], activations="sigmoid")
+prob_layer = DistributionLayer("Normal", event_size=2)
+
+model = ProbabilisticModel(encoder=encoder, output_distribution=prob_layer)
+
+inputs = keras.random.uniform((32, 5))
+
+output_distribution = model(inputs)
+print(f"Output distribution is a: {output_distribution} \n")
+
+output_samples = model(inputs, output_type="samples", num_samples=21)
+print(f"Output samples of shape: {output_samples.shape} \n")
+
+expected_output = model(inputs, output_type="expected")
+print(f"Expected output of shape: {expected_output.shape}")
+```
+
+    Output distribution is a: WrappingTorchDist(Independent(Normal(loc: torch.Size([32, 2]), scale: torch.Size([32, 2])), 1)) 
+    
+    Output samples of shape: torch.Size([21, 32, 2]) 
+    
+    Expected output of shape: torch.Size([32, 2])
+
+
+## Build the README
+
+```
+poetry run jupyter nbconvert --execute --to markdown README.ipynb
+```
