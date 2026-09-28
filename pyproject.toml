@@ -7,11 +7,11 @@ include = ["LICENSE", "README.md"]
 
 [tool.poetry.dependencies]
 python = ">=3.9, <3.13"
-numpy = "*"
-tensorflow = {version = "~2.16.1", optional = true}
-tensorflow-cpu = {version = "~2.16.1", optional = true}
-tensorflow-probability = "~0.24.0"
-tf-keras = "~2.16.0"
+numpy = ">=1.26,<3"
+tensorflow = {version = ">=2.16.1,<2.19", optional = true}
+tensorflow-cpu = {version = ">=2.16.1,<2.19", optional = true}
+tensorflow-probability = ">=0.24.0,<0.26"
+tf-keras = ">=2.16.0,<2.19"
 pandas = "*"
 scipy = "*"
 xarray = "*"
@@ -26,11 +26,12 @@ tensorflow-cpu = ["tensorflow-cpu"]
 extended = ["zarr", "numba", "tensorflow"]
 
 [tool.poetry.group.dev.dependencies]
-tensorflow = "~2.16.1"
+tensorflow = ">=2.16.1,<2.19"
 pytest = "*"
 black = "*"
-mlflow = "*"
-jupyter = "*"
+mlflow = {version = ">=3.15.0", python = ">=3.10"}
+urllib3 = {version = ">=2.7.0", python = ">=3.10"}
+gitpython = {version = ">=3.1.59", python = ">=3.10"}
 
 [build-system]
 requires = ["poetry-core>=1.0.8"]
