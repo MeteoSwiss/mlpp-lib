@@ -23,11 +23,51 @@ from tensorflow_probability.python.layers import (
 )
 
 
+# Keys that Lambda/DistributionLambda's own `get_config()` serializes the
+# wrapped function as: Python-version-specific marshalled bytecode, not
+# accepted by any of these layers' `__init__`. Every layer below reconstructs
+# its distribution function purely from `event_shape`/`event_size`,
+# `convert_to_tensor_fn` and `validate_args`, so these keys are unnecessary
+# and are dropped rather than deserialized.
+_LEGACY_LAMBDA_CONFIG_KEYS = (
+    "function",
+    "function_type",
+    "module",
+    "arguments",
+    "output_shape",
+    "output_shape_type",
+    "output_shape_module",
+    "mask",
+    "mask_module",
+    "mask_type",
+    "make_distribution_fn",
+)
+
+
+def _distribution_lambda_from_config(cls, config):
+    """Shared `from_config` body for DistributionLambda-based layers.
+
+    Strips `_LEGACY_LAMBDA_CONFIG_KEYS` from `config` before reconstructing
+    the layer, so configs saved before `@register_keras_serializable()` was
+    applied (or otherwise carrying Lambda's own bytecode-serialized function)
+    can still be loaded, without going through the unsafe bytecode
+    deserialization in `Lambda.from_config`.
+    """
+    config = dict(config)
+    for key in _LEGACY_LAMBDA_CONFIG_KEYS:
+        config.pop(key, None)
+    return cls(**config)
+
+
 @tf.keras.saving.register_keras_serializable()
 class IndependentNormal(IndependentNormal):
     @property
     def output(self):  # this is necessary to use the layer within shap
         return super().output[0]
+
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
 
 
 @tf.keras.saving.register_keras_serializable()
@@ -36,6 +76,10 @@ class IndependentLogistic(IndependentLogistic):
     def output(self):
         return super().output[0]
 
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
+
 
 @tf.keras.saving.register_keras_serializable()
 class IndependentBernoulli(IndependentBernoulli):
@@ -43,12 +87,20 @@ class IndependentBernoulli(IndependentBernoulli):
     def output(self):
         return super().output[0]
 
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
+
 
 @tf.keras.saving.register_keras_serializable()
 class IndependentPoisson(IndependentPoisson):
     @property
     def output(self):
         return super().output[0]
+
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
 
 
 @tf.keras.saving.register_keras_serializable()
@@ -157,16 +209,7 @@ class IndependentBeta(tfpl.DistributionLambda):
 
     @classmethod
     def from_config(cls, config):
-        # Remove Lambda/DistributionLambda serialization keys that are
-        # Python-version-specific bytecode or otherwise not accepted by __init__.
-        for key in (
-            "function", "function_type", "module", "arguments",
-            "output_shape", "output_shape_type", "output_shape_module",
-            "mask", "mask_module", "mask_type",
-            "make_distribution_fn",
-        ):
-            config.pop(key, None)
-        return cls(**config)
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -284,16 +327,7 @@ class Independent4ParamsBeta(tfpl.DistributionLambda):
 
     @classmethod
     def from_config(cls, config):
-        # Remove Lambda/DistributionLambda serialization keys that are
-        # Python-version-specific bytecode or otherwise not accepted by __init__.
-        for key in (
-            "function", "function_type", "module", "arguments",
-            "output_shape", "output_shape_type", "output_shape_module",
-            "mask", "mask_module", "mask_type",
-            "make_distribution_fn",
-        ):
-            config.pop(key, None)
-        return cls(**config)
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -496,16 +530,7 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
 
     @classmethod
     def from_config(cls, config):
-        # Remove Lambda/DistributionLambda serialization keys that are
-        # Python-version-specific bytecode or otherwise not accepted by __init__.
-        for key in (
-            "function", "function_type", "module", "arguments",
-            "output_shape", "output_shape_type", "output_shape_module",
-            "mask", "mask_module", "mask_type",
-            "make_distribution_fn",
-        ):
-            config.pop(key, None)
-        return cls(**config)
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -624,16 +649,7 @@ class IndependentConcaveBeta(tfpl.DistributionLambda):
 
     @classmethod
     def from_config(cls, config):
-        # Remove Lambda/DistributionLambda serialization keys that are
-        # Python-version-specific bytecode or otherwise not accepted by __init__.
-        for key in (
-            "function", "function_type", "module", "arguments",
-            "output_shape", "output_shape_type", "output_shape_module",
-            "mask", "mask_module", "mask_type",
-            "make_distribution_fn",
-        ):
-            config.pop(key, None)
-        return cls(**config)
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -748,16 +764,7 @@ class IndependentGamma(tfpl.DistributionLambda):
 
     @classmethod
     def from_config(cls, config):
-        # Remove Lambda/DistributionLambda serialization keys that are
-        # Python-version-specific bytecode or otherwise not accepted by __init__.
-        for key in (
-            "function", "function_type", "module", "arguments",
-            "output_shape", "output_shape_type", "output_shape_module",
-            "mask", "mask_module", "mask_type",
-            "make_distribution_fn",
-        ):
-            config.pop(key, None)
-        return cls(**config)
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -870,16 +877,7 @@ class IndependentLogNormal(tfpl.DistributionLambda):
 
     @classmethod
     def from_config(cls, config):
-        # Remove Lambda/DistributionLambda serialization keys that are
-        # Python-version-specific bytecode or otherwise not accepted by __init__.
-        for key in (
-            "function", "function_type", "module", "arguments",
-            "output_shape", "output_shape_type", "output_shape_module",
-            "mask", "mask_module", "mask_type",
-            "make_distribution_fn",
-        ):
-            config.pop(key, None)
-        return cls(**config)
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -992,16 +990,7 @@ class IndependentLogitNormal(tfpl.DistributionLambda):
 
     @classmethod
     def from_config(cls, config):
-        # Remove Lambda/DistributionLambda serialization keys that are
-        # Python-version-specific bytecode or otherwise not accepted by __init__.
-        for key in (
-            "function", "function_type", "module", "arguments",
-            "output_shape", "output_shape_type", "output_shape_module",
-            "mask", "mask_module", "mask_type",
-            "make_distribution_fn",
-        ):
-            config.pop(key, None)
-        return cls(**config)
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -1182,16 +1171,7 @@ class IndependentMixtureNormal(tfpl.DistributionLambda):
 
     @classmethod
     def from_config(cls, config):
-        # Remove Lambda/DistributionLambda serialization keys that are
-        # Python-version-specific bytecode or otherwise not accepted by __init__.
-        for key in (
-            "function", "function_type", "module", "arguments",
-            "output_shape", "output_shape_type", "output_shape_module",
-            "mask", "mask_module", "mask_type",
-            "make_distribution_fn",
-        ):
-            config.pop(key, None)
-        return cls(**config)
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -1306,16 +1286,7 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
 
     @classmethod
     def from_config(cls, config):
-        # Remove Lambda/DistributionLambda serialization keys that are
-        # Python-version-specific bytecode or otherwise not accepted by __init__.
-        for key in (
-            "function", "function_type", "module", "arguments",
-            "output_shape", "output_shape_type", "output_shape_module",
-            "mask", "mask_module", "mask_type",
-            "make_distribution_fn",
-        ):
-            config.pop(key, None)
-        return cls(**config)
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -1431,16 +1402,7 @@ class IndependentWeibull(tfpl.DistributionLambda):
 
     @classmethod
     def from_config(cls, config):
-        # Remove Lambda/DistributionLambda serialization keys that are
-        # Python-version-specific bytecode or otherwise not accepted by __init__.
-        for key in (
-            "function", "function_type", "module", "arguments",
-            "output_shape", "output_shape_type", "output_shape_module",
-            "mask", "mask_module", "mask_type",
-            "make_distribution_fn",
-        ):
-            config.pop(key, None)
-        return cls(**config)
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -1541,16 +1503,7 @@ class MultivariateNormalDiag(tfpl.DistributionLambda):
 
     @classmethod
     def from_config(cls, config):
-        # Remove Lambda/DistributionLambda serialization keys that are
-        # Python-version-specific bytecode or otherwise not accepted by __init__.
-        for key in (
-            "function", "function_type", "module", "arguments",
-            "output_shape", "output_shape_type", "output_shape_module",
-            "mask", "mask_module", "mask_type",
-            "make_distribution_fn",
-        ):
-            config.pop(key, None)
-        return cls(**config)
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -1601,16 +1554,7 @@ class MultivariateNormalTriL(tfpl.MultivariateNormalTriL):
 
     @classmethod
     def from_config(cls, config):
-        # Remove Lambda/DistributionLambda serialization keys that are
-        # Python-version-specific bytecode or otherwise not accepted by __init__.
-        for key in (
-            "function", "function_type", "module", "arguments",
-            "output_shape", "output_shape_type", "output_shape_module",
-            "mask", "mask_module", "mask_type",
-            "make_distribution_fn",
-        ):
-            config.pop(key, None)
-        return cls(**config)
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
