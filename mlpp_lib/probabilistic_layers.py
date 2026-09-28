@@ -23,11 +23,51 @@ from tensorflow_probability.python.layers import (
 )
 
 
+# Keys that Lambda/DistributionLambda's own `get_config()` serializes the
+# wrapped function as: Python-version-specific marshalled bytecode, not
+# accepted by any of these layers' `__init__`. Every layer below reconstructs
+# its distribution function purely from `event_shape`/`event_size`,
+# `convert_to_tensor_fn` and `validate_args`, so these keys are unnecessary
+# and are dropped rather than deserialized.
+_LEGACY_LAMBDA_CONFIG_KEYS = (
+    "function",
+    "function_type",
+    "module",
+    "arguments",
+    "output_shape",
+    "output_shape_type",
+    "output_shape_module",
+    "mask",
+    "mask_module",
+    "mask_type",
+    "make_distribution_fn",
+)
+
+
+def _distribution_lambda_from_config(cls, config):
+    """Shared `from_config` body for DistributionLambda-based layers.
+
+    Strips `_LEGACY_LAMBDA_CONFIG_KEYS` from `config` before reconstructing
+    the layer, so configs saved before `@register_keras_serializable()` was
+    applied (or otherwise carrying Lambda's own bytecode-serialized function)
+    can still be loaded, without going through the unsafe bytecode
+    deserialization in `Lambda.from_config`.
+    """
+    config = dict(config)
+    for key in _LEGACY_LAMBDA_CONFIG_KEYS:
+        config.pop(key, None)
+    return cls(**config)
+
+
 @tf.keras.saving.register_keras_serializable()
 class IndependentNormal(IndependentNormal):
     @property
     def output(self):  # this is necessary to use the layer within shap
         return super().output[0]
+
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
 
 
 @tf.keras.saving.register_keras_serializable()
@@ -36,6 +76,10 @@ class IndependentLogistic(IndependentLogistic):
     def output(self):
         return super().output[0]
 
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
+
 
 @tf.keras.saving.register_keras_serializable()
 class IndependentBernoulli(IndependentBernoulli):
@@ -43,12 +87,20 @@ class IndependentBernoulli(IndependentBernoulli):
     def output(self):
         return super().output[0]
 
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
+
 
 @tf.keras.saving.register_keras_serializable()
 class IndependentPoisson(IndependentPoisson):
     @property
     def output(self):
         return super().output[0]
+
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
 
 
 @tf.keras.saving.register_keras_serializable()
@@ -154,6 +206,10 @@ class IndependentBeta(tfpl.DistributionLambda):
         }
         base_config = super(IndependentBeta, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -268,6 +324,10 @@ class Independent4ParamsBeta(tfpl.DistributionLambda):
         }
         base_config = super(Independent4ParamsBeta, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -468,6 +528,10 @@ class IndependentDoublyCensoredNormal(tfpl.DistributionLambda):
         base_config = super(IndependentDoublyCensoredNormal, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
+
     @property
     def output(self):
         """This allows the use of this layer with the shap package."""
@@ -583,6 +647,10 @@ class IndependentConcaveBeta(tfpl.DistributionLambda):
         base_config = super(IndependentConcaveBeta, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
+
     @property
     def output(self):
         """This allows the use of this layer with the shap package."""
@@ -694,6 +762,10 @@ class IndependentGamma(tfpl.DistributionLambda):
         base_config = super(IndependentGamma, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
+
     @property
     def output(self):
         """This allows the use of this layer with the shap package."""
@@ -803,6 +875,10 @@ class IndependentLogNormal(tfpl.DistributionLambda):
         base_config = super(IndependentLogNormal, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
+
     @property
     def output(self):
         """This allows the use of this layer with the shap package."""
@@ -911,6 +987,10 @@ class IndependentLogitNormal(tfpl.DistributionLambda):
         }
         base_config = super(IndependentLogitNormal, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -1089,6 +1169,10 @@ class IndependentMixtureNormal(tfpl.DistributionLambda):
         base_config = super(IndependentMixtureNormal, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
+
     @property
     def output(self):
         """This allows the use of this layer with the shap package."""
@@ -1199,6 +1283,10 @@ class IndependentTruncatedNormal(tfpl.DistributionLambda):
         }
         base_config = super(IndependentTruncatedNormal, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
@@ -1312,6 +1400,10 @@ class IndependentWeibull(tfpl.DistributionLambda):
         base_config = super(IndependentWeibull, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
+
     @property
     def output(self):
         """This allows the use of this layer with the shap package."""
@@ -1409,6 +1501,10 @@ class MultivariateNormalDiag(tfpl.DistributionLambda):
         base_config = super(MultivariateNormalDiag, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
+
     @property
     def output(self):
         """This allows the use of this layer with the shap package."""
@@ -1455,6 +1551,10 @@ class MultivariateNormalTriL(tfpl.MultivariateNormalTriL):
         }
         base_config = super(MultivariateNormalTriL, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+    @classmethod
+    def from_config(cls, config):
+        return _distribution_lambda_from_config(cls, config)
 
     @property
     def output(self):
