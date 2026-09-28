@@ -1,7 +1,9 @@
+import keras
+from keras import ops
 from keras.layers import Layer
-import keras.backend as K
 
 
+@keras.saving.register_keras_serializable(package="mlpp_lib")
 class ThermodynamicLayer(Layer):
     """
     Physical layer based on empirical approximations of thermodynamic
@@ -15,6 +17,8 @@ class ThermodynamicLayer(Layer):
 
     """
 
+    EPSILON = 622.0
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
@@ -23,14 +27,8 @@ class ThermodynamicLayer(Layer):
         self.D_idx = 1  # dew_point_deficit
         self.P_idx = 2  # surface_air_pressure
 
-        self.EPSILON = K.constant(622.0)
-
-    def build(self, input_shape: tuple[int]) -> None:
-        super().build(input_shape)
-
-    def get_config(self) -> None:
-        base_config = super().get_config()
-        return dict(list(base_config.items()))
+    def compute_output_shape(self, input_shape):
+        return (*input_shape[:-1], 5)
 
     def call(self, inputs):
 
@@ -38,11 +36,11 @@ class ThermodynamicLayer(Layer):
         dew_point_deficit = inputs[..., self.D_idx]
         surface_air_pressure = inputs[..., self.P_idx]
 
-        dew_point_temperature = air_temperature - K.relu(dew_point_deficit)
-        water_vapor_saturation_pressure = 6.112 * K.exp(
+        dew_point_temperature = air_temperature - ops.relu(dew_point_deficit)
+        water_vapor_saturation_pressure = 6.112 * ops.exp(
             (17.67 * air_temperature) / (air_temperature + 243.5)
         )
-        water_vapor_pressure = 6.112 * K.exp(
+        water_vapor_pressure = 6.112 * ops.exp(
             (17.67 * dew_point_temperature) / (dew_point_temperature + 243.5)
         )
         relative_humidity = (
@@ -52,15 +50,13 @@ class ThermodynamicLayer(Layer):
             water_vapor_pressure / (surface_air_pressure - water_vapor_pressure)
         )
 
-        out = K.concat(
+        return ops.stack(
             [
-                air_temperature[..., None],
-                dew_point_temperature[..., None],
-                surface_air_pressure[..., None],
-                relative_humidity[..., None],
-                humidity_mixing_ratio[..., None],
+                air_temperature,
+                dew_point_temperature,
+                surface_air_pressure,
+                relative_humidity,
+                humidity_mixing_ratio,
             ],
             axis=-1,
         )
-
-        return out

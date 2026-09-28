@@ -1,292 +1,207 @@
-import torch
-from inspect import getmembers, isclass
+import itertools
+import warnings
+
+import keras
+import numpy as np
 import pytest
+import torch
+from numpy.testing import assert_array_equal
 
-from mlpp_lib.probabilistic_layers import (
-    BaseParametricDistributionModule,
-    distribution_to_layer,
+from mlpp_lib import models
+from mlpp_lib.probabilistic_layers import DISTRIBUTIONS, WrappingTorchDist
+from mlpp_lib.utils import get_model
+
+N_INPUTS, BATCH = 5, 32
+
+OPTIONS = dict(
+    output_size=[1, 2],
+    hidden_layers=[[8, 8]],
+    activations=["relu", ["relu", "elu"]],
+    dropout=[None, 0.1, [0.1, 0.0]],
+    mc_dropout=[True, False],
+    out_bias_init=["zeros", np.array([0.2]), np.array([0.2, 2.1])],
+    probabilistic_layer=[None, "Gamma", "MultivariateNormalTriL"],
+    skip_connection=[False, True],
 )
-from mlpp_lib.models import (
-    fully_connected_network,
-    fully_connected_multibranch_network,
-    deep_cross_network,
-)
 
-from mlpp_lib import probabilistic_layers
-
-DISTRIBUTIONS = [
-    obj[1]
-    for obj in getmembers(probabilistic_layers, isclass)
-    if issubclass(obj[1], BaseParametricDistributionModule)
-    and obj[0] != "BaseParametricDistributionModule"
+SCENARIOS = [
+    dict(zip(OPTIONS.keys(), values)) for values in itertools.product(*OPTIONS.values())
 ]
 
 
-distribution_modules_kwargs = {"a": 0, "b": 1, "dim": 3}
-
-
-@pytest.mark.parametrize("distribution", list(distribution_to_layer.keys()) + [None])
-@pytest.mark.parametrize("skip_connection", [True, False])
-@pytest.mark.parametrize("batchnorm", [True, False])
-def test_fcn_model_creation(distribution, skip_connection, batchnorm):
-
-    hidden_layers = [16, 16, 8]
-    output_size = 4
-
-    model = fully_connected_network(
-        output_size=output_size,
-        hidden_layers=hidden_layers,
-        batchnorm=batchnorm,
-        skip_connection=skip_connection,
-        probabilistic_layer=distribution,
-        prob_layer_kwargs=distribution_modules_kwargs,
+def _scenario_id(scenario):
+    return "-".join(
+        f"{k}={v.tolist() if isinstance(v, np.ndarray) else v}"
+        for k, v in scenario.items()
     )
 
-    inputs = torch.randn(32, 6)
 
-    output = model(inputs)
-
-
-@pytest.mark.parametrize("distribution", list(distribution_to_layer.keys()) + [None])
-@pytest.mark.parametrize("skip_connection", [True, False])
-@pytest.mark.parametrize("batchnorm", [True, False])
-@pytest.mark.parametrize("aggregation", ["sum", "concat"])
-def test_multibranch_fcn_creation(
-    distribution, skip_connection, batchnorm, aggregation
-):
-    hidden_layers = [16, 16, 8]
-    output_size = 4
-    n_branches = 3
-
-    model = fully_connected_multibranch_network(
-        output_size=output_size,
-        hidden_layers=hidden_layers,
-        batchnorm=batchnorm,
-        skip_connection=skip_connection,
-        probabilistic_layer=distribution,
-        n_branches=n_branches,
-        aggregation=aggregation,
-        prob_layer_kwargs=distribution_modules_kwargs,
-    )
-
-    inputs = torch.randn(32, 6)
-
-    output = model(inputs)
+def _parameters(output):
+    """Parameters of the predicted distribution (or the prediction itself)."""
+    if isinstance(output, WrappingTorchDist):
+        return [output.mean, output.variance]
+    return [output]
 
 
+def _check_model(model_fn, scenario):
+    scenario = scenario.copy()
+    output_size = scenario.pop("output_size")
+    out_bias_init = scenario["out_bias_init"]
+    if isinstance(out_bias_init, np.ndarray) and len(out_bias_init) != output_size:
+        with pytest.raises(ValueError, match="Bias initialization"):
+            model_fn(output_size, **scenario)
+        return
+
+    model = model_fn(output_size, **scenario)
+    assert isinstance(model, keras.Model)
+    inputs = torch.randn(BATCH, N_INPUTS)
+    pred1 = model(inputs)
+    pred2 = model(inputs)
+
+    if scenario["probabilistic_layer"] is None:
+        assert pred1.shape == (BATCH, output_size)
+    else:
+        assert isinstance(pred1, WrappingTorchDist)
+        assert pred1.mean.shape == (BATCH, output_size)
+        assert model(inputs, output_type="expected").shape == (BATCH, output_size)
+        samples = model(inputs, output_type="samples", num_samples=3)
+        assert samples.shape == (3, BATCH, output_size)
+
+    # MC dropout makes predictions stochastic, standard dropout does not at inference
+    is_deterministic = scenario["dropout"] is None or not scenario["mc_dropout"]
+    for p1, p2 in zip(_parameters(pred1), _parameters(pred2)):
+        p1, p2 = p1.detach().numpy(), p2.detach().numpy()
+        if is_deterministic:
+            assert_array_equal(p1, p2)
+        else:
+            assert not np.array_equal(p1, p2)
+
+
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=_scenario_id)
+def test_fully_connected_network(scenario):
+    _check_model(models.fully_connected_network, scenario)
+
+
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=_scenario_id)
+def test_fully_connected_multibranch_network(scenario):
+    _check_model(models.fully_connected_multibranch_network, scenario)
+
+
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=_scenario_id)
+def test_deep_cross_network(scenario):
+    _check_model(models.deep_cross_network, scenario)
+
+
+@pytest.mark.parametrize("distribution", list(DISTRIBUTIONS))
 @pytest.mark.parametrize(
-    "distribution",
-    list(distribution_to_layer.keys()) + [None],
-    ids=lambda d: f"distribution={d}" if d else "distribution=None",
+    "model_fn",
+    [
+        models.fully_connected_network,
+        models.fully_connected_multibranch_network,
+        models.deep_cross_network,
+    ],
 )
-def test_deep_cross_network(distribution):
-    hidden_layers = [16, 16, 8]
-    output_size = 4
-    n_crosses = 3
+def test_all_distributions(model_fn, distribution):
+    model = model_fn(3, hidden_layers=[8], probabilistic_layer=distribution)
+    output = model(torch.randn(BATCH, N_INPUTS))
+    assert output.mean.shape == (BATCH, 3)
 
-    model = deep_cross_network(
-        output_size=output_size,
-        hidden_layers=hidden_layers,
-        n_cross_layers=n_crosses,
-        cross_layers_hiddensize=16,
-        probabilistic_layer=distribution,
-        prob_layer_kwargs=distribution_modules_kwargs,
+
+def test_out_bias_init():
+    bias = np.array([0.5, -2.0])
+    model = models.fully_connected_network(
+        2, hidden_layers=[4], probabilistic_layer="Normal", out_bias_init=bias
     )
+    model(torch.randn(BATCH, N_INPUTS))
+    encoder_bias = model.output_distribution.parameters_encoder.bias.numpy()
+    assert_array_equal(encoder_bias, [0.5, -2.0, 0.0, 0.0])
 
-    inputs = torch.randn(32, 6)
-
-    output = model(inputs)
-
-
-# import itertools
-
-# import numpy as np
-# import pytest
-# import tensorflow as tf
-# from tensorflow.keras import Model
-# from numpy.testing import assert_array_equal
-
-# from mlpp_lib import models
+    model = models.fully_connected_network(2, hidden_layers=[4], out_bias_init=bias)
+    model(torch.randn(BATCH, N_INPUTS))
+    assert_array_equal(model.layers[-1].bias.numpy(), bias)
 
 
-# FCN_OPTIONS = dict(
-#     input_shape=[(5,)],
-#     output_size=[1, 2],
-#     hidden_layers=[[8, 8]],
-#     activations=["relu", ["relu", "elu"]],
-#     dropout=[None, 0.1, [0.1, 0.0]],
-#     mc_dropout=[True, False],
-#     out_bias_init=["zeros", np.array([0.2]), np.array([0.2, 2.1])],
-#     probabilistic_layer=[None] + ["IndependentGamma", "MultivariateNormalDiag"],
-#     skip_connection=[False, True],
-# )
+def test_dropout_float_is_not_applied_to_last_hidden_layer():
+    model = models.fully_connected_network(1, hidden_layers=[8, 8, 8], dropout=0.1)
+    model(torch.randn(BATCH, N_INPUTS))
+    mlp = model.layers[0]
+    assert sum(isinstance(l, keras.layers.Dropout) for l in mlp.layers) == 2
 
 
-# FCN_SCENARIOS = [
-#     dict(zip(list(FCN_OPTIONS.keys()), x))
-#     for x in itertools.product(*FCN_OPTIONS.values())
-# ]
+def test_multibranch_number_of_branches():
+    # by default, one branch per distribution parameter
+    model = models.fully_connected_multibranch_network(
+        2, hidden_layers=[4], probabilistic_layer="Normal"
+    )
+    assert len(model.encoder.branches) == 4
+    model = models.fully_connected_multibranch_network(2, hidden_layers=[4])
+    assert len(model.layers[0].branches) == 2
+    model = models.fully_connected_multibranch_network(
+        2, hidden_layers=[4], n_branches=3, aggregation="sum"
+    )
+    assert len(model.layers[0].branches) == 3
+    assert model(torch.randn(BATCH, N_INPUTS)).shape == (BATCH, 2)
 
 
-# DCN_SCENARIOS = [
-#     dict(zip(list(FCN_OPTIONS.keys()), x))
-#     for x in itertools.product(*FCN_OPTIONS.values())
-# ]
+def test_legacy_probabilistic_layer_config():
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        model = models.fully_connected_network(
+            2,
+            hidden_layers=[4],
+            probabilistic_layer={"IndependentTruncatedNormal": {"event_shape": [2]}},
+        )
+    assert any(issubclass(w.category, DeprecationWarning) for w in record)
+    distribution = model.output_distribution.distribution
+    assert distribution.name == "TruncatedNormal"
+    assert (distribution.low, distribution.high) == (0.0, float("inf"))
+
+    model = models.fully_connected_network(
+        2,
+        hidden_layers=[4],
+        probabilistic_layer={"TruncatedNormal": {"low": -1.0}},
+        prob_layer_kwargs={"high": 1.0},
+    )
+    distribution = model.output_distribution.distribution
+    assert (distribution.low, distribution.high) == (-1.0, 1.0)
 
 
-# def _test_model(model):
-#     moodel_is_keras = isinstance(model, tf.keras.Model)
-#     assert moodel_is_keras
-#     assert isinstance(model, Model)
-#     assert len(model.layers[-1]._inbound_nodes) > 0
-#     model_output = model.layers[-1].output
-#     assert not isinstance(
-#         model_output, list
-#     ), "The model output must be a single tensor!"
-#     assert (
-#         len(model_output.shape) < 3
-#     ), "The model output must be a vector or a single value!"
+def test_get_model_builds_the_model():
+    model = get_model(
+        (N_INPUTS,),
+        (2,),
+        {
+            "fully_connected_network": {
+                "hidden_layers": [4],
+                "probabilistic_layer": "Normal",
+            }
+        },
+    )
+    assert model.built
+    # (4 + 1) * 5 + (2 * 2) * (4 + 1)
+    assert model.count_params() == 4 * N_INPUTS + 4 + 4 * 4 + 4
 
 
-# def _test_prediction(model, scenario_kwargs, dummy_input, output_size):
-#     is_deterministic = (
-#         scenario_kwargs["dropout"] is None or not scenario_kwargs["mc_dropout"]
-#     )
-#     is_probabilistic = scenario_kwargs["probabilistic_layer"] is not None
-#     if is_probabilistic:
-#         return
+def test_architecture_constrained_fcn():
+    model = get_model(
+        (N_INPUTS,),
+        3,
+        {"architecture_constrained_fcn": {"hidden_layers": [8]}},
+    )
+    inputs = torch.randn(BATCH, N_INPUTS)
+    outputs = model(inputs)
+    assert outputs.shape == (BATCH, 5)
+    # dew point temperature is lower than or equal to air temperature
+    assert (outputs[:, 1] <= outputs[:, 0]).all()
 
-#     pred = model(dummy_input)
-#     assert pred.shape == (32, output_size)
-#     pred2 = model(dummy_input)
-
-#     if is_deterministic:
-#         assert_array_equal(pred, pred2)
-#     else:
-#         with pytest.raises(AssertionError):
-#             assert_array_equal(pred, pred2)
-
-
-# def _test_prediction_prob(model, scenario_kwargs, dummy_input, output_size):
-#     is_deterministic = (
-#         scenario_kwargs["dropout"] is None or not scenario_kwargs["mc_dropout"]
-#     )
-#     is_probabilistic = scenario_kwargs["probabilistic_layer"] is not None
-#     if not is_probabilistic:
-#         return
-
-#     pred1 = model(dummy_input)
-#     assert pred1.shape == (32, output_size)
-#     pred2 = model(dummy_input)
-#     try:
-#         # Idependent layers have a "distribution" attribute
-#         pred1_params = pred1.parameters["distribution"].parameters
-#         pred2_params = pred2.parameters["distribution"].parameters
-#     except KeyError:
-#         pred1_params = pred1.parameters
-#         pred2_params = pred2.parameters
-
-#     for param in pred1_params.keys():
-#         try:
-#             param_array1 = pred1_params[param].numpy()
-#             param_array2 = pred2_params[param].numpy()
-#         except AttributeError:
-#             continue
-
-#         if is_deterministic:
-#             assert_array_equal(param_array1, param_array2)
-#         else:
-#             with pytest.raises(AssertionError):
-#                 assert_array_equal(param_array1, param_array2)
+    with pytest.raises(NotImplementedError):
+        models.architecture_constrained_fcn(
+            None, 3, hidden_layers=[8], probabilistic_layer="Normal"
+        )
 
 
-# @pytest.mark.parametrize("scenario_kwargs", FCN_SCENARIOS)
-# def test_fully_connected_network(scenario_kwargs):
-
-#     tf.keras.backend.clear_session()
-
-#     scenario_kwargs = scenario_kwargs.copy()
-#     input_shape = scenario_kwargs.pop("input_shape")
-#     output_size = scenario_kwargs.pop("output_size")
-#     dummy_input = np.random.randn(32, *input_shape)
-
-#     # check that correct errors are raised for some scenarios
-#     if isinstance(scenario_kwargs["out_bias_init"], np.ndarray):
-#         if scenario_kwargs["out_bias_init"].shape[-1] != output_size:
-#             with pytest.raises(AssertionError):
-#                 models.fully_connected_network(
-#                     input_shape, output_size, **scenario_kwargs
-#                 )
-#             return
-#         else:
-#             model = models.fully_connected_network(
-#                 input_shape, output_size, **scenario_kwargs
-#             )
-
-#     else:
-#         model = models.fully_connected_network(
-#             input_shape, output_size, **scenario_kwargs
-#         )
-
-#     _test_model(model)
-#     _test_prediction(model, scenario_kwargs, dummy_input, output_size)
-#     _test_prediction_prob(model, scenario_kwargs, dummy_input, output_size)
-
-
-# @pytest.mark.parametrize("scenario_kwargs", FCN_SCENARIOS)
-# def test_fully_connected_multibranch_network(scenario_kwargs):
-
-#     tf.keras.backend.clear_session()
-
-#     scenario_kwargs = scenario_kwargs.copy()
-#     input_shape = scenario_kwargs.pop("input_shape")
-#     output_size = scenario_kwargs.pop("output_size")
-#     dummy_input = np.random.randn(32, *input_shape)
-
-#     # check that correct errors are raised for some scenarios
-#     if isinstance(scenario_kwargs["out_bias_init"], np.ndarray):
-#         if scenario_kwargs["out_bias_init"].shape[-1] != output_size:
-#             with pytest.raises(AssertionError):
-#                 models.fully_connected_multibranch_network(
-#                     input_shape, output_size, **scenario_kwargs
-#                 )
-#             return
-#         else:
-#             model = models.fully_connected_multibranch_network(
-#                 input_shape, output_size, **scenario_kwargs
-#             )
-
-#     else:
-#         model = models.fully_connected_multibranch_network(
-#             input_shape, output_size, **scenario_kwargs
-#         )
-
-#     _test_model(model)
-#     _test_prediction(model, scenario_kwargs, dummy_input, output_size)
-#     _test_prediction_prob(model, scenario_kwargs, dummy_input, output_size)
-
-
-# @pytest.mark.parametrize("scenario_kwargs", DCN_SCENARIOS)
-# def test_deep_cross_network(scenario_kwargs):
-
-#     scenario_kwargs = scenario_kwargs.copy()
-#     input_shape = scenario_kwargs.pop("input_shape")
-#     output_size = scenario_kwargs.pop("output_size")
-#     dummy_input = np.random.randn(32, *input_shape)
-#     # check that correct errors are raised for some scenarios
-#     if isinstance(scenario_kwargs["out_bias_init"], np.ndarray):
-#         if scenario_kwargs["out_bias_init"].shape[-1] != output_size:
-#             with pytest.raises(AssertionError):
-#                 models.deep_cross_network(input_shape, output_size, **scenario_kwargs)
-#             return
-#         else:
-#             model = models.deep_cross_network(
-#                 input_shape, output_size, **scenario_kwargs
-#             )
-
-#     else:
-#         model = models.deep_cross_network(input_shape, output_size, **scenario_kwargs)
-
-#     _test_model(model)
-#     _test_prediction(model, scenario_kwargs, dummy_input, output_size)
-#     _test_prediction_prob(model, scenario_kwargs, dummy_input, output_size)
+def test_tcn_not_supported():
+    with pytest.raises(NotImplementedError):
+        models.temporal_convolutional_network((5, 3), 1, nb_filters=4)
+    with pytest.raises(NotImplementedError):
+        models.architecture_constrained_tcn((5, 3), 3, nb_filters=4)

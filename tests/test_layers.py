@@ -1,4 +1,3 @@
-import torch
 from inspect import getmembers, isclass, getmodule
 import pytest
 from keras.layers import Layer
@@ -26,14 +25,16 @@ layers_args = {
         ]
     },
     "CrossNetLayer": {"hidden_size": 16, "depth": 2},
+    "CrossNetLayerNoProjection": {"depth": 2},
     "ParallelConcatenateLayer": {
         "layers": [
             layers.MultilayerPerceptron(hidden_layers=[16, 8]),
             layers.MultilayerPerceptron(hidden_layers=[16, 4]),
         ]
     },
-    "MeanAndTriLCovLayer": {"d1": 8},
 }
+
+ALL_LAYERS["CrossNetLayerNoProjection"] = layers.CrossNetLayer
 
 
 @pytest.mark.parametrize("layer", ALL_LAYERS)
@@ -76,11 +77,7 @@ def test_single_layer_serialization(layer, tmp_path):
         assert (w1 == w2).all()
 
     # check that the two outputs are the same
-    if isinstance(model_out, tuple):
-        for o1, o2 in zip(model_out, loaded_model_out):
-            assert keras.ops.isclose(o1, o2).all()
-    else:
-        assert keras.ops.isclose(model_out, loaded_model_out).all()
+    assert keras.ops.isclose(model_out, loaded_model_out).all()
 
 
 @pytest.mark.parametrize("layer", ALL_LAYERS)
@@ -110,13 +107,7 @@ def test_gradient_flow(layer):
     model.compile(optimizer="adam", loss="mse")
 
     x = keras.random.normal((32, 4))
-    if isinstance(layer, layers.MeanAndTriLCovLayer):
-        y = [
-            keras.random.normal((32, model.output_shape[0][1])),  # mean
-            keras.random.normal((32, *model.output_shape[1][1:3])),  # cov
-        ]
-    else:
-        y = keras.random.normal((32, model.output_shape[1]))
+    y = keras.random.normal((32, model.output_shape[1]))
 
     # Check that before training, no parameter has a gradient tensor
     trainable_params = get_trainable_weights(layer)
@@ -135,3 +126,21 @@ def test_gradient_flow(layer):
             assert param.value.grad is not None
     else:
         pytest.fail(f"Implement gradient checking for {keras.backend.backend()}")
+
+
+@pytest.mark.parametrize("layer", ALL_LAYERS)
+def test_batch_size_one(layer):
+    layer = ALL_LAYERS[layer](**layers_args[layer])
+    out = layer(keras.random.normal((1, 4)))
+    assert out.shape[0] == 1
+    assert tuple(out.shape) == tuple(layer.compute_output_shape((1, 4)))
+
+
+def test_cross_net_layer():
+    x = keras.random.normal((8, 4))
+    layer = layers.CrossNetLayer(depth=1)
+    out = layer(x)
+    w, b = layer.ws[0], layer.bs[0]
+    # x_1 = x_0 * (x_0^T w) + b + x_0
+    expected = x * keras.ops.matmul(x, w) + b + x
+    assert keras.ops.all(keras.ops.isclose(out, expected))
