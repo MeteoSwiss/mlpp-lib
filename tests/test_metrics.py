@@ -57,3 +57,30 @@ class TestMAEBusts:
         assert maebusts.result().numpy() == pytest.approx(1 / 3)
         maebusts.reset_state()
         assert np.isnan(maebusts.result().numpy())
+
+
+def test_metrics_with_distributions():
+    import torch
+
+    from mlpp_lib.probabilistic_layers import WrappingTorchDist
+
+    y_true = torch.tensor([[1.0], [2.0], [3.0]])
+    dist = WrappingTorchDist(
+        torch.distributions.Normal(torch.tensor([[0.8], [2.2], [2.9]]), 1.0)
+    )
+    expected_bias = (-0.2 + 0.2 - 0.1) / 3
+    expected_mae = (0.2 + 0.2 + 0.1) / 3
+    bias = metrics.expected_bias(y_true, dist).mean().item()
+    assert bias == pytest.approx(expected_bias, rel=1e-5)
+    assert metrics.bias(y_true, dist).mean().item() == pytest.approx(bias)
+    mae = metrics.expected_mean_absolute_error(y_true, dist).mean().item()
+    assert mae == pytest.approx(expected_mae, rel=1e-5)
+
+
+def test_maebusts_multioutput_sample_weight():
+    maebusts = metrics.MAEBusts(threshold=0.5)
+    y_true = ops.convert_to_tensor([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]])
+    y_pred = ops.convert_to_tensor([[1.0, 2.0], [2.0, 2.0], [4.0, 4.0]])
+    maebusts.update_state(y_true, y_pred, ops.convert_to_tensor([1.0, 1.0, 0.0]))
+    assert maebusts.n_busts.numpy() == 1
+    assert maebusts.n_samples.numpy() == 4

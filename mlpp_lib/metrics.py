@@ -1,23 +1,32 @@
 import keras
 import keras.ops as ops
 from torch.distributions import Distribution
+
 from mlpp_lib.probabilistic_layers import WrappingTorchDist
+
+
+def _expected_value(y_pred):
+    if isinstance(y_pred, (Distribution, WrappingTorchDist)):
+        return y_pred.mean
+    return y_pred
 
 
 @keras.saving.register_keras_serializable(package="mlpp_lib.metrics")
 def expected_bias(y_true, y_pred):
-    if isinstance(y_pred, Distribution) or isinstance(y_pred, WrappingTorchDist):
-        return ops.mean(y_pred.mean - y_true, axis=-1)
+    """Bias of the expected value of the prediction."""
+    return ops.mean(_expected_value(y_pred) - y_true, axis=-1)
 
-    return ops.mean(y_pred - y_true, axis=-1)
+
+@keras.saving.register_keras_serializable(package="mlpp_lib.metrics")
+def bias(y_true, y_pred):
+    """Alias of `expected_bias`, for compatibility with mlpp-lib < 1.0."""
+    return expected_bias(y_true, y_pred)
 
 
 @keras.saving.register_keras_serializable(package="mlpp_lib.metrics")
 def expected_mean_absolute_error(y_true, y_pred):
-    if isinstance(y_pred, Distribution) or isinstance(y_pred, WrappingTorchDist):
-        return ops.mean(ops.absolute(y_pred.mean - y_true), axis=-1)
-
-    return ops.mean(ops.absolute(y_pred - y_true), axis=-1)
+    """Mean absolute error of the expected value of the prediction."""
+    return ops.mean(ops.absolute(_expected_value(y_pred) - y_true), axis=-1)
 
 
 @keras.saving.register_keras_serializable(package="mlpp_lib.metrics")
@@ -31,12 +40,16 @@ class MAEBusts(keras.metrics.Metric):
         self.n_samples = self.add_weight(name="ns", initializer="zeros")
 
     def update_state(self, y_true, y_pred, sample_weight=None):
-        if isinstance(y_pred, Distribution) or isinstance(y_pred, WrappingTorchDist):
-            y_pred = y_pred.mean
+        y_true = ops.convert_to_tensor(y_true, self.dtype)
+        y_pred = _expected_value(y_pred)
         values = ops.cast(ops.abs(y_pred - y_true) > self.threshold, self.dtype)
 
         if sample_weight is not None:
             sample_weight = ops.cast(sample_weight, self.dtype)
+            # broadcast the weights of each sample to all target dimensions
+            while ops.ndim(sample_weight) < ops.ndim(values):
+                sample_weight = ops.expand_dims(sample_weight, -1)
+            sample_weight = ops.broadcast_to(sample_weight, ops.shape(values))
             values = ops.multiply(values, sample_weight)
             self.n_samples.assign_add(ops.sum(sample_weight))
         else:
@@ -53,13 +66,5 @@ class MAEBusts(keras.metrics.Metric):
 
     def get_config(self):
         config = super().get_config()
-        config.update(
-            {
-                "threshold": self.threshold,
-            }
-        )
+        config.update({"threshold": self.threshold})
         return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
