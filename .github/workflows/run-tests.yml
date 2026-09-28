@@ -14,16 +14,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10","3.11","3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Setup poetry
-        uses: abatilo/actions-poetry@v2
+        run: pip install poetry
+      - name: Install CPU-only torch
+        # Avoid pulling the multi-GB CUDA wheels on CI runners.
+        run: |
+          poetry env use python
+          poetry run pip install torch --index-url https://download.pytorch.org/whl/cpu
       - name: Install the project dependencies
-        run: poetry install
+        run: poetry install --all-extras
       - name: Run the tests
         run: poetry run pytest tests/
