@@ -67,7 +67,7 @@ New: `Exponential`. See the README for the full list.
 |---|---|
 | `crps_energy` | `CRPSEnsemble` (`crps_energy` still works, with `num_samples=1000`) |
 | `WeightedCRPSEnergy(threshold, n_samples, correct_crps)` | `WeightedCRPSEnergy(threshold, num_samples, estimator)`. `n_samples` and `correct_crps` are deprecated but still work. Also see `TWCRPSEnsemble(a, b)`. |
-| `EnergyScore(n_samples)` | `EnergyScore(num_samples)` (default 100 samples; `n_samples` is deprecated) |
+| `EnergyScore(n_samples)` | `EnergyScore(num_samples)` (default 100 samples; `n_samples` is deprecated). The default `akr_circperm` estimator is unbiased and its memory grows linearly with the number of samples, like in 0.x. |
 | `MultivariateLoss` | `MultivariateLoss` (for distributions, "mse"/"mae" use the mean) |
 | `CombinedLoss` | `CombinedLoss` |
 | `crps_energy_ensemble` | `CRPSEnsemble` with an ensemble tensor `y_pred`. Note that the members are now on axis 1 (`[batch, members, ...]`). |
@@ -83,7 +83,8 @@ All losses now ignore missing (NaN) targets. mlpp-lib 0.x raised an error instea
 ### Metrics
 
 `bias` is an alias of `expected_bias`. `EnsembleMetrics` uses scoringrules with the same
-(biased, "nrg") CRPS estimator as properscoring, so its values stay comparable.
+values as the (biased) CRPS estimator of properscoring, so they stay comparable. It
+predicts in batches (`batch_size`, default 100000) to limit memory.
 
 ### Models
 

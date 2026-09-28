@@ -321,7 +321,10 @@ class SampleLossWrapper(DistributionLoss):
     num_samples: int
         The number of samples drawn from the predicted distribution.
     estimator: str
-        The estimator used by scoringrules (e.g. "pwm", "fair", "nrg").
+        The estimator used by scoringrules (e.g. "pwm", "fair", "qd", "nrg").
+        Prefer estimators whose memory grows linearly with `num_samples`, such as
+        "pwm" (unbiased) and "qd" (biased) for the CRPS: "fair" and "nrg" give the
+        same values but compare all pairs of samples.
         If None, the scoringrules default is used.
     **fn_kwargs:
         Extra keyword arguments passed to `fn`.
@@ -500,7 +503,7 @@ class WeightedCRPSEnergy(TWCRPSEnsemble):
         Deprecated alias of `num_samples`.
     correct_crps: bool
         Deprecated, use `estimator` instead. `True` (the default) corresponds to the
-        unbiased "pwm" estimator, `False` to the biased "nrg" estimator.
+        unbiased "pwm" estimator, `False` to the biased "qd" estimator.
     """
 
     def __init__(
@@ -520,7 +523,7 @@ class WeightedCRPSEnergy(TWCRPSEnsemble):
                 DeprecationWarning,
                 stacklevel=2,
             )
-            kwargs.setdefault("estimator", "pwm" if correct_crps else "nrg")
+            kwargs.setdefault("estimator", "pwm" if correct_crps else "qd")
         kwargs.setdefault("name", "weighted_crps_energy")
         super().__init__(a=threshold, num_samples=num_samples, **kwargs)
         self.threshold = float(threshold)
@@ -544,7 +547,11 @@ class EnergyScore(_SampleScore):
     n_samples: int
         Deprecated alias of `num_samples`.
     estimator: str
-        "nrg" (default) or "fair".
+        The scoringrules estimator. The default "akr_circperm" compares each sample
+        with a shifted copy of the ensemble, so its memory grows linearly with
+        `num_samples`, and it is unbiased for samples drawn from the predicted
+        distribution. "nrg" and "fair" compare all pairs of samples, which needs
+        memory proportional to batch_size * num_samples**2.
     """
 
     # `energy_score` was renamed to `es_ensemble` in scoringrules 0.10
@@ -554,7 +561,7 @@ class EnergyScore(_SampleScore):
         self,
         num_samples: Optional[int] = None,
         n_samples: Optional[int] = None,
-        estimator: str = "nrg",
+        estimator: str = "akr_circperm",
         **kwargs,
     ):
         num_samples = _resolve_num_samples(num_samples, n_samples, default=100)

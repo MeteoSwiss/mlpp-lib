@@ -279,7 +279,7 @@ def test_weighted_crps_energy_legacy_arguments():
             threshold=0.1, n_samples=50, correct_crps=False
         )
     assert loss.num_samples == 50
-    assert loss.estimator == "nrg"
+    assert loss.estimator == "qd"
     assert loss.fn_kwargs == {"a": 0.1, "b": float("inf")}
     assert losses.WeightedCRPSEnergy(threshold=0.1).num_samples == 1000
 
@@ -372,3 +372,36 @@ def test_crps_truncated_and_censored_normal_tails():
         )
         np.testing.assert_allclose(crps.detach(), mc, rtol=3e-2)
         loc.grad, scale.grad = None, None
+
+
+# estimators comparing all pairs of samples need memory ~ batch * num_samples**2
+PAIRWISE_ESTIMATORS = {"nrg", "fair"}
+
+
+@pytest.mark.parametrize(
+    "loss",
+    [
+        losses.CRPSEnsemble(),
+        losses.TWCRPSEnsemble(a=0.0),
+        losses.WeightedCRPSEnergy(threshold=0.0),
+        losses.EnergyScore(),
+        losses.SampleLossWrapper(fn=sr.crps_ensemble),
+    ],
+    ids=lambda loss: type(loss).__name__,
+)
+def test_default_estimators_are_not_pairwise(loss):
+    assert loss.estimator not in PAIRWISE_ESTIMATORS
+    with pytest.warns(DeprecationWarning):
+        biased = losses.WeightedCRPSEnergy(threshold=0.0, correct_crps=False)
+    assert biased.estimator not in PAIRWISE_ESTIMATORS
+
+
+def test_energy_score_estimator_matches_fair():
+    """The default (linear-memory) estimator agrees with the fair estimator."""
+    _, y_pred = _predict("MultivariateNormalTriL", event_size=2)
+    y_true = _targets("MultivariateNormalTriL", event_size=2)
+    torch.manual_seed(0)
+    with torch.no_grad():
+        default = losses.EnergyScore(num_samples=2000)(y_true, y_pred)
+        fair = losses.EnergyScore(num_samples=2000, estimator="fair")(y_true, y_pred)
+    np.testing.assert_allclose(default.item(), fair.item(), rtol=2e-2)
