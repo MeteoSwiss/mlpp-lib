@@ -16,7 +16,6 @@ from mlpp_lib.utils import (
     process_out_bias_init,
 )
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -61,7 +60,7 @@ def train(
     # prepare model
     event_dims = list(set(datamodule.x.dims) - set(datamodule.batch_dims))
     out_bias_init = process_out_bias_init(
-        datamodule.train.x, cfg.get("out_bias_init", "zeros"), event_dims
+        datamodule.train.y, cfg.get("out_bias_init", "zeros"), event_dims
     )
     model_config[list(model_config)[0]].update({"out_bias_init": out_bias_init})
     input_shape = datamodule.train.x.shape[1:]

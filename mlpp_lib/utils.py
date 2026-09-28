@@ -4,9 +4,9 @@ from typing import Any, Callable, Union, Optional
 import numpy as np
 import xarray as xr
 import keras
-import importlib
+import inspect
+import warnings
 from mlpp_lib import callbacks, losses, metrics, models
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -48,7 +48,11 @@ def get_model(
     output_shape: Union[int, tuple[int]],
     model_config: dict[str, Any],
 ) -> keras.Model:
-    """Get the keras model."""
+    """Get the keras model.
+
+    The model is built for inputs of shape `input_shape` (not including the batch
+    size), unless `input_shape` is None.
+    """
 
     model_name = list(model_config.keys())[0]
     model_options = model_config[model_name]
@@ -58,42 +62,90 @@ def get_model(
     LOGGER.debug(model_options)
     if isinstance(output_shape, int):
         output_shape = (output_shape,)
-    model = getattr(models, model_name)(output_shape[-1], **model_options)
+    if isinstance(input_shape, int):
+        input_shape = (input_shape,)
+    if not hasattr(models, model_name):
+        raise KeyError(f"The model {model_name} is not available.")
+    model_fn = getattr(models, model_name)
+    if "input_shape" in inspect.signature(model_fn).parameters:
+        model = model_fn(input_shape, output_shape[-1], **model_options)
+    else:
+        model = model_fn(output_shape[-1], **model_options)
+
+    if input_shape is not None and not model.built:
+        # run a forward pass to build all layers (e.g. to use `summary()`)
+        model(keras.ops.zeros((1, *input_shape)))
 
     return model
 
 
+# Wrappers of scoringrules functions, configured with the path of the function
+LOSS_WRAPPERS = ("DistributionLossWrapper", "SampleLossWrapper")
+
+# Loss names used by mlpp-lib < 1.0, mapped to the new names and default options
+LEGACY_LOSSES = {
+    "crps_energy": ("CRPSEnsemble", {"num_samples": 1000, "estimator": "pwm"}),
+}
+
+
 def get_loss(loss: Union[str, dict]) -> Callable:
-    """Get the loss function, either keras built-in or mlpp custom."""
+    """Get the loss function, either mlpp custom or keras built-in.
+
+    The loss can be given as a name (e.g. `"CRPSNormal"`, `"mse"`) or as a dictionary
+    with the name as key and the options as value (e.g. `{"CRPSEnsemble":
+    {"num_samples": 100}}`). A scoringrules function can be wrapped with, e.g.,
+    `{"DistributionLossWrapper": "scoringrules.crps_normal"}` or
+    `{"SampleLossWrapper": {"scoringrules.crps_ensemble": {"num_samples": 100}}}`.
+    """
 
     if isinstance(loss, dict):
-        name = list(loss.keys())[0]
-        if "Wrapper" in name:
-            # If the loss is a wrapper for another score, such as
-            # one coming from scoringrules
-            fn_ = loss[name]
-            if isinstance(fn_, dict):
-                # if there are extra arguments
-                fn = list(fn_.keys())[0]
-                fn_args = fn_[fn]
-                module_name, fn_name = fn.rsplit(".", 1)
-            else:
-                module_name, fn_name = fn_.rsplit(".", 1)
-                fn_args = {}
-            module = importlib.import_module(module_name)
-            loss_fn = getattr(module, fn_name)
-            LOGGER.info(f"Using {fn_name} loss from {module_name}")
-            return getattr(losses, name)(fn=loss_fn, **fn_args)
-        else:
-            # If the loss is a pre-defined loss in mlpp with arguments
-            fn_args = loss[name]
-            loss_fn = getattr(losses, name)
-            LOGGER.info(f"Using {name} loss.")
-            return loss_fn(**fn_args)
+        names = [key for key in loss if key != "weight"]
+        if len(names) != 1:
+            raise ValueError(f"Expected exactly one loss name, got {names}.")
+        name = names[0]
+        options = loss[name]
     else:
-        # If the loss is a pre-defined loss in mlpp without arguments
-        loss_fn = getattr(losses, loss)
-        return loss_fn()
+        name = loss
+        options = None
+    options = {} if options is None else options
+
+    if name in LOSS_WRAPPERS:
+        # a wrapper for another score, such as one coming from scoringrules
+        if isinstance(options, str):
+            fn, fn_args = options, {}
+        elif "fn" in options:
+            fn_args = dict(options)
+            fn = fn_args.pop("fn")
+        else:
+            (fn, fn_args), *_ = options.items()
+            fn_args = fn_args or {}
+        LOGGER.info(f"Using {name} with {fn}.")
+        return getattr(losses, name)(fn=fn, **fn_args)
+
+    if name in LEGACY_LOSSES:
+        new_name, defaults = LEGACY_LOSSES[name]
+        warnings.warn(
+            f"The loss '{name}' is deprecated, use '{new_name}' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        name, options = new_name, {**defaults, **options}
+
+    if hasattr(losses, name):
+        LOGGER.info(f"Using custom mlpp loss: {name}")
+        loss_obj = getattr(losses, name)
+    elif hasattr(keras.losses, name):
+        LOGGER.info(f"Using keras built-in loss: {name}")
+        loss_obj = getattr(keras.losses, name)
+    else:
+        try:
+            # aliases such as "mse"
+            loss_obj = keras.losses.get(name)
+        except ValueError:
+            raise KeyError(f"The loss {name} is not available.") from None
+        LOGGER.info(f"Using keras built-in loss: {name}")
+
+    return loss_obj(**options) if isinstance(loss_obj, type) else loss_obj
 
 
 def get_metric(metric: Union[str, dict]) -> Callable:
@@ -119,7 +171,12 @@ def get_metric(metric: Union[str, dict]) -> Callable:
             metric_obj(**metric_options) if isinstance(metric_obj, type) else metric_obj
         )
     else:
-        raise KeyError(f"The metric {metric_name} is not available.")
+        try:
+            # aliases such as "mae"
+            metric = keras.metrics.get(metric_name)
+        except ValueError:
+            raise KeyError(f"The metric {metric_name} is not available.") from None
+        LOGGER.info(f"Using keras built-in metric: {metric_name}")
 
     return metric
 
@@ -191,10 +248,18 @@ def process_out_bias_init(
     out_bias_init: Optional[Union[str, np.ndarray[Any, float]]],
     event_dims: list,
 ) -> Union[str, np.ndarray[Any, float]]:
-    """If needed, pre-compute the initial bias for the output layer."""
-    out_bias_init = out_bias_init if out_bias_init else "zeros"
-    if out_bias_init == "mean":
-        out_bias_init = data.mean(dim=["sample", *event_dims]).values
+    """If needed, pre-compute the initial bias for the output layer.
+
+    With `out_bias_init="mean"`, the bias is initialized with the mean of the
+    target `data` (ignoring missing values) for each target variable.
+    """
+    out_bias_init = out_bias_init if out_bias_init is not None else "zeros"
+    if isinstance(out_bias_init, str) and out_bias_init == "mean":
+        if isinstance(data, xr.DataArray):
+            out_bias_init = data.mean(dim=["sample", *event_dims]).values
+        else:
+            data = np.asarray(data)
+            out_bias_init = np.nanmean(data, axis=tuple(range(data.ndim - 1)))
     return out_bias_init
 
 

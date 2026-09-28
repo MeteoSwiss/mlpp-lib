@@ -301,3 +301,64 @@ class TestDataset:
         assert ds_pred.sizes["realization"] == n_samples
         assert all([ds_pred.sizes[c] == ds.coords[c].size for c in ds.coords])
         assert list(ds_pred.data_vars) == targets
+
+
+class _ArrayDataset:
+    def __init__(self, n, with_weights=False):
+        self.x = np.arange(n, dtype="float32")[:, None].repeat(3, axis=1)
+        self.y = np.arange(n, dtype="float32")[:, None]
+        self.w = np.ones(n, dtype="float32") if with_weights else None
+
+
+@pytest.mark.parametrize("block_size", [1, 4])
+@pytest.mark.parametrize("with_weights", [False, True])
+def test_dataloader(block_size, with_weights):
+    from mlpp_lib.datasets import DataLoader
+
+    n, batch_size = 42, 8
+    dataset = _ArrayDataset(n, with_weights)
+    x_orig = dataset.x.copy()
+    loader = DataLoader(dataset, batch_size=batch_size, block_size=block_size)
+    assert len(loader) == loader.num_batches == int(np.ceil(n / batch_size))
+
+    batches = [loader[i] for i in range(len(loader))]
+    assert all(len(b) == (3 if with_weights else 2) for b in batches)
+    assert all(isinstance(b[0], np.ndarray) for b in batches)
+    ys = np.concatenate([b[1] for b in batches])[:, 0]
+    # all samples are seen exactly once, and they are shuffled
+    assert sorted(ys) == list(range(n))
+    assert not np.array_equal(ys, np.arange(n))
+    # x and y stay aligned
+    xs = np.concatenate([b[0] for b in batches])
+    np.testing.assert_array_equal(xs[:, 0], ys)
+    # blocks keep their internal order
+    if block_size > 1:
+        full_blocks = ys[: (n // block_size) * block_size].reshape(-1, block_size)
+        assert (np.diff(full_blocks, axis=1) == 1).all()
+        assert (full_blocks[:, 0] % block_size == 0).all()
+    # the dataset itself is not modified
+    np.testing.assert_array_equal(dataset.x, x_orig)
+
+    # a new permutation after each epoch
+    loader.on_epoch_end()
+    ys2 = np.concatenate([loader[i][1] for i in range(len(loader))])[:, 0]
+    assert not np.array_equal(ys, ys2)
+
+    with pytest.raises(IndexError):
+        loader[len(loader)]
+
+
+def test_dataloader_no_shuffle_and_fit():
+    import keras
+
+    from mlpp_lib.datasets import DataLoader
+
+    dataset = _ArrayDataset(20)
+    loader = DataLoader(dataset, batch_size=6, shuffle=False)
+    ys = np.concatenate([loader[i][1] for i in range(len(loader))])[:, 0]
+    np.testing.assert_array_equal(ys, np.arange(20))
+
+    model = keras.Sequential([keras.layers.Dense(1)])
+    model.compile(loss="mse", optimizer="sgd")
+    history = model.fit(loader, epochs=2, verbose=0)
+    assert len(history.history["loss"]) == 2

@@ -6,7 +6,6 @@ import keras
 
 from mlpp_lib.utils import get_loss, get_model
 
-
 LEADTIMES = np.arange(24)
 REFTIMES = pd.date_range("2018-01-01", "2018-03-31", freq="24h")
 STATIONS = [chr(i) * 3 for i in range(ord("A"), ord("Z"))]
@@ -171,7 +170,7 @@ def get_prob_model() -> keras.Model:
             }
         }
         model = get_model(n_inputs, n_outputs, model_config)
-        loss = get_loss({"DistributionLossWrapper": "scoringrules.crps_normal"})
+        loss = get_loss("CRPSNormal")
         model.compile(
             optimizer=keras.optimizers.RMSprop(learning_rate=0.1),
             loss=loss,

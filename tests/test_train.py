@@ -1,14 +1,14 @@
-import torch
-import scoringrules as sr
-import keras
-import pytest
 import json
+import warnings
 
 import cloudpickle
+import keras
 import numpy as np
 import pytest
-from keras import Model
+import scoringrules as sr
+import torch
 import xarray as xr
+from keras import Model
 
 from mlpp_lib import train
 from mlpp_lib.normalizers import DataTransformer
@@ -16,7 +16,7 @@ from mlpp_lib.datasets import DataModule, DataSplitter
 from mlpp_lib.layers import MultilayerPerceptron
 from mlpp_lib.losses import DistributionLossWrapper, SampleLossWrapper
 from mlpp_lib.models import ProbabilisticModel
-from mlpp_lib.probabilistic_layers import DistributionLayer, UnivariateGaussianModule
+from mlpp_lib.probabilistic_layers import DistributionLayer
 
 from .test_model_selection import ValidDataSplitterOptions
 
@@ -44,9 +44,7 @@ def test_train_noisy_polynomial(loss_type):
     else:
         crps_normal = SampleLossWrapper(fn=sr.crps_ensemble, num_samples=100)
 
-    prob_layer = DistributionLayer(
-        distribution=UnivariateGaussianModule(), num_samples=21
-    )
+    prob_layer = DistributionLayer("Normal", num_samples=21)
     encoder = MultilayerPerceptron(
         hidden_layers=[16, 8],
         batchnorm=False,
@@ -119,6 +117,7 @@ RUNS = [
         "model": {
             "fully_connected_network": {
                 "hidden_layers": [10],
+                # legacy name, still supported
                 "probabilistic_layer": "IndependentBeta",
             }
         },
@@ -193,43 +192,68 @@ RUNS = [
             {"EnsembleMetrics": {"thresholds": [0, 1, 2]}},
         ],
     },
-    #     # with multiscale CRPS loss
-    #     {
-    #         "features": ["coe:x1"],
-    #         "targets": ["obs:y1"],
-    #         "normalizer": {"default": "MinMaxScaler"},
-    #         "model": {
-    #             "fully_connected_network": {
-    #                 "hidden_layers": [10],
-    #                 "probabilistic_layer": "IndependentNormal",
-    #             }
-    #         },
-    #         "group_samples": {"t": 2},
-    #         "loss": {
-    #             "MultiScaleCRPSEnergy": {"scales": [1, 2], "threshold": 0, "n_samples": 5}
-    #         },
-    #         "metrics": ["bias"],
-    #     },
-    #     # with combined loss
-    #     {
-    #         "features": ["coe:x1"],
-    #         "targets": ["obs:y1"],
-    #         "normalizer": {"default": "MinMaxScaler"},
-    #         "model": {
-    #             "fully_connected_network": {
-    #                 "hidden_layers": [10],
-    #                 "probabilistic_layer": "IndependentNormal",
-    #             }
-    #         },
-    #         "loss": {
-    #             "CombinedLoss": {
-    #                 "losses": [
-    #                     {"BinaryClassifierLoss": {"threshold": 1}, "weight": 0.7},
-    #                     {"WeightedCRPSEnergy": {"threshold": 0.1}, "weight": 0.1},
-    #                 ],
-    #             }
-    #         },
-    #     },
+    # with combined loss and legacy names
+    {
+        "features": ["coe:x1"],
+        "targets": ["obs:y1"],
+        "normalizer": {"default": "MinMaxScaler"},
+        "model": {
+            "fully_connected_network": {
+                "hidden_layers": [10],
+                "probabilistic_layer": "IndependentNormal",
+            }
+        },
+        "loss": {
+            "CombinedLoss": {
+                "losses": [
+                    {"CRPSNormal": {}, "weight": 0.7},
+                    {
+                        "WeightedCRPSEnergy": {"threshold": 0.1, "n_samples": 5},
+                        "weight": 0.1,
+                    },
+                ],
+            }
+        },
+        "metrics": ["bias"],
+    },
+    # with grouped samples (block shuffling) and a sample-based loss
+    {
+        "features": ["coe:x1", "coe:x2"],
+        "targets": ["obs:y1"],
+        "normalizer": {"default": "Standardizer"},
+        "model": {
+            "fully_connected_multibranch_network": {
+                "hidden_layers": [10],
+                "probabilistic_layer": {"TruncatedNormal": {"low": -5.0}},
+            }
+        },
+        "group_samples": {"t": 2},
+        "out_bias_init": "mean",
+        "loss": {"TWCRPSEnsemble": {"num_samples": 10, "a": 0.0}},
+    },
+    # multivariate targets
+    {
+        "features": ["coe:x1", "coe:x2"],
+        "targets": ["obs:y1", "obs:y2"],
+        "normalizer": {"default": "MinMaxScaler"},
+        "model": {
+            "deep_cross_network": {
+                "hidden_layers": [10, 4],
+                "probabilistic_layer": "MultivariateNormalTriL",
+            }
+        },
+        "loss": {"EnergyScore": {"num_samples": 10}},
+        "metrics": ["expected_mean_absolute_error"],
+    },
+    # deterministic model with a keras loss
+    {
+        "features": ["coe:x1"],
+        "targets": ["obs:y1", "obs:y2"],
+        "normalizer": {"default": "MinMaxScaler"},
+        "model": {"fully_connected_network": {"hidden_layers": [10]}},
+        "loss": {"MultivariateLoss": {"metric": "mse", "scaling": "standard"}},
+        "metrics": ["mae"],
+    },
 ]
 
 

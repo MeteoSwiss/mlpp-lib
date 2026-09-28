@@ -1,5 +1,3 @@
 import os
 
-import os
-
-os.environ["KERAS_BACKEND"] = "torch"
+os.environ.setdefault("KERAS_BACKEND", "torch")
