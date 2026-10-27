@@ -43,6 +43,23 @@ class TestCallbacks(object):
             invalid
         ), f"Objects of type float32 are not JSON serializable: {invalid}"
 
+    def test_EnsembleMetrics_batched(self):
+        """Batched predictions give the same scores (up to sampling noise)."""
+        import keras
+
+        logs = {}
+        for batch_size in (1_000_000, 17):
+            custom_callback = callbacks.EnsembleMetrics(
+                n_samples=2000, thresholds=[0], batch_size=batch_size
+            )
+            custom_callback.set_model(self.model)
+            custom_callback.add_validation_data(self.validation_data)
+            keras.utils.set_random_seed(0)
+            logs[batch_size] = {}
+            custom_callback.on_epoch_end(0, logs[batch_size])
+        for key, value in logs[17].items():
+            np.testing.assert_allclose(value, logs[1_000_000][key], rtol=3e-2)
+
     def test_TimeHistory(self):
         custom_callback = callbacks.TimeHistory()
         res = self._train_with_callback(custom_callback)

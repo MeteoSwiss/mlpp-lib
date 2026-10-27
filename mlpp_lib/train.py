@@ -2,7 +2,7 @@ import logging
 from pprint import pformat
 from typing import Optional
 
-import tensorflow as tf
+import keras
 
 from mlpp_lib.callbacks import TimeHistory, EnsembleMetrics
 from mlpp_lib.datasets import DataLoader, DataModule
@@ -15,7 +15,6 @@ from mlpp_lib.utils import (
     get_optimizer,
     process_out_bias_init,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,11 +36,11 @@ def get_log_params(param_run: dict) -> dict:
     return log_params
 
 
-def get_lr(optimizer: tf.keras.optimizers.Optimizer) -> float:
+def get_lr(optimizer: keras.optimizers.Optimizer) -> float:
     """Get the learning rate of the optimizer"""
 
     def lr(y_true, y_pred):
-        return optimizer.lr
+        return optimizer.learning_rate
 
     return lr
 
@@ -61,7 +60,7 @@ def train(
     # prepare model
     event_dims = list(set(datamodule.x.dims) - set(datamodule.batch_dims))
     out_bias_init = process_out_bias_init(
-        datamodule.train.x, cfg.get("out_bias_init", "zeros"), event_dims
+        datamodule.train.y, cfg.get("out_bias_init", "zeros"), event_dims
     )
     model_config[list(model_config)[0]].update({"out_bias_init": out_bias_init})
     input_shape = datamodule.train.x.shape[1:]
@@ -126,7 +125,7 @@ def train(
     # we don't need to export loss and metric functions for deployments
     model.compile(optimizer=optimizer, loss=None, metrics=None)
 
-    custom_objects = tf.keras.layers.serialize(model)
+    custom_objects = keras.layers.serialize(model)
 
     history = res.history
     # for some reasons, 'lr' is provided as float32
