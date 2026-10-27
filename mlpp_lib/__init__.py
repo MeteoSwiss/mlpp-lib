@@ -1,6 +1,10 @@
-__version__ = "1.0.0"
-
+from importlib.metadata import PackageNotFoundError, version
 import os
+
+try:
+    __version__ = version("mlpp-lib")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
 
 # mlpp-lib relies on the torch backend of keras (and on torch.distributions).
 os.environ.setdefault("KERAS_BACKEND", "torch")
